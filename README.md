@@ -57,10 +57,10 @@ Compatable Datasets see: https://huggingface.co/collections/wxcai/fidel-ts-68ef3
 
 ## Architecture Overview
 
-The framework consists of several key components:
 
 ```
 .
+├── cli/                   # Command-line interface (Typer-based)
 ├── data_provider/         # Data loading and preparation
 ├── models/                # Model definitions
 ├── exp/                   # Experiment handling
@@ -68,8 +68,28 @@ The framework consists of several key components:
 ├── layers/                # Model building blocks
 ├── data_configs/          # Dataset configurations 
 ├── model_configs/         # Model configurations
-├── run.py                 # Traditional PyTorch training entry point
-└── run_lightning.py       # PyTorch Lightning training entry point
+│   ├── train.py           # Training commands
+│   ├── test.py            # Testing/evaluation commands
+│   ├── visualize.py       # Visualization commands
+│   ├── filter.py          # Filtering commands
+│   └── config/            # Configuration loading and management
+├── runs/                  # Training execution modules
+│   ├── pytorch.py         # PyTorch training execution
+│   ├── lightning.py       # Lightning training execution
+│   ├── llm.py             # LLM experiment execution
+│   └── fm.py              # Foundation model execution
+├── visualization/         # Visualization modules
+│   ├── tsf.py             # TSF/TGTSF visualization
+│   ├── llm.py             # LLM visualization
+│   └── lightning.py       # Lightning visualization
+├── evaluation/            # Evaluation modules
+│   ├── standard.py        # Standard evaluation
+│   ├── lightning.py       # Lightning evaluation
+│   └── llm.py             # LLM evaluation
+├── filtering/             # Filtering modules
+│   └── reasoning.py       # Reasoning sample filtering
+└── configs/               # Experiment configurations
+    └── experiments/        # Experiment config files
 ```
 
 ## Installation
@@ -77,46 +97,117 @@ The framework consists of several key components:
 1. Clone the repository:
    ```bash
    git clone <repository-url>
-   cd time-series-forecasting
    ```
 
 2. Install the required packages:
    
-
    ```bash
-   pip install -r requirements.txt
+   uv venv .venv
+   source .venv/bin/activate
+   uv pip install -r requirements.txt
    ```
+   or the equivalent on your system.
 
 ## Quick Start
 
+The framework uses a modern CLI structure based on Typer. All commands use YAML configuration files for clean, reproducible experiments.
 
-### Start with a predefined task:
+### Training Models
 
-```bash
-bash scripts/solar/DLinear/DLinear_day.sh
-```
+#### PyTorch Training
 
-### Develop with PyTorch:
-
-Use the `run.py` script to train a model with PyTorch. This script allows you to specify the model, data configuration, and other parameters. It is exactly the same pipeline as the previous DLinear implementation. Easy to adapt and debug. 
+Train a model using the standard PyTorch pipeline (good for development and debugging):
 
 ```bash
-python run.py --model DLinear --data_config data_configs/fullsolar.yaml --model_config model_configs/general/DLinear.yaml --input_len 96 --output_len 96
+python -m cli.train pytorch configs/experiments/dlinear_solar.yaml
 ```
 
-### Training a model with PyTorch Lightning:
+#### PyTorch Lightning Training
 
-After the development, you may want to use multi-GPU training and other features provided by PyTorch Lightning. The `run_lightning.py` script is the entry point for training with Lightning. Just replace the `run.py` with `run_lightning.py` in the command line and add `--use_multi_gpu` and `--devices` arguments to enable multi-GPU training.
+Train a model using PyTorch Lightning (better for multi-GPU training and experiment tracking):
 
 ```bash
-python run_lightning.py --model DLinear --data_config data_configs/fullsolar.yaml --model_config model_configs/general/DLinear.yaml --input_len 96 --output_len 96
+python -m cli.train lightning configs/experiments/dlinear_solar.yaml
 ```
+
+#### LLM Experiments
+
+Run LLM-based time series forecasting experiments:
 
 ```bash
-python run_lightning.py --model DLinear --data_config data_configs/fullsolar.yaml --model_config model_configs/general/DLinear.yaml --input_len 96 --output_len 96 --use_multi_gpu --devices 0,1,2,3
+python -m cli.train llm configs/experiments/llm_solar.yaml
 ```
 
-> Please Do not run the FITS model with pytorch lightning, as the loss will explode. It is speculated that there might still be problems with the communication optimization of complex number computation.
+#### Foundation Model Testing
+
+Test foundation models for time series forecasting:
+
+```bash
+python -m cli.train fm configs/experiments/fm_solar.yaml
+```
+
+### Testing/Evaluation
+
+Evaluate trained models:
+
+```bash
+# Standard PyTorch models
+python -m cli.test standard configs/experiments/dlinear_solar.yaml
+
+# Lightning-trained models
+python -m cli.test lightning configs/experiments/dlinear_solar.yaml
+
+# LLM predictions
+python -m cli.test llm configs/experiments/llm_solar.yaml
+```
+
+### Visualization
+
+Generate prediction visualizations:
+
+```bash
+# TSF/TGTSF models
+python -m cli.visualize tsf configs/experiments/dlinear_solar.yaml
+
+# Lightning models
+python -m cli.visualize lightning configs/experiments/dlinear_solar.yaml
+
+# LLM results
+python -m cli.visualize llm configs/experiments/llm_solar.yaml
+```
+
+### Configuration Files
+
+All commands use YAML configuration files. See the [Configuration](#configuration) section for details on creating config files.
+
+**Example config file** (`configs/experiments/dlinear_solar.yaml`):
+
+```yaml
+model:
+  name: DLinear
+  config_path: model_configs/general/DLinear.yaml
+
+data:
+  name: solar
+  config_path: data_configs/fullsolar.yaml
+
+training:
+  epochs: 20
+  batch_size: 96
+  learning_rate: 5e-4
+  ahead: day  # Auto-sets input_len and output_len based on sampling_rate
+  # Or manually specify:
+  # input_len: 96
+  # output_len: 96
+
+device:
+  use_gpu: true
+  gpu: 0
+  use_multi_gpu: false
+  devices: "0,1,2,3"
+```
+
+> **Note**: Please do not run the FITS model with PyTorch Lightning, as the loss will explode. It is speculated that there might still be problems with the communication optimization of complex number computation.
 
 ## Features
 
@@ -163,14 +254,14 @@ The framework provides two training pipelines:
 1. **PyTorch Pipeline**:
    - Manually implemented training loop in `exp/exp_universal.py`
    - Provides granular control over training details
-   - Entry point: `run.py`
+   - CLI command: `python -m cli.train pytorch <config>`
 
 2. **PyTorch Lightning Pipeline**:
    - Uses Lightning's structured approach in `exp/exp_lightning.py`
    - Simplified multi-GPU training
    - Better experiment tracking
    - More efficient code organization
-   - Entry point: `run_lightning.py`
+   - CLI command: `python -m cli.train lightning <config>`
 
 ## Configuration
 
@@ -272,61 +363,107 @@ Common data configuration parameters:
 - `sampling_rate`: Time series sampling rate
 - `base_T`: Base periodicity for time series
 
-### Command-line Arguments
+### Experiment Configuration
 
-#### Common Arguments
+All experiments are configured via YAML files. The configuration system supports:
+- **Primary config files**: Main experiment configuration
+- **Nested subconfigs**: Referenced configs for specific components (plotting, evaluation, etc.)
+- **Automatic validation**: Config structure validation on load
 
-- `--model`: Model name (e.g., DLinear, TGTSF)
-- `--model_config`: Path to model configuration file
-- `--data_config`: Path to data configuration file
-- `--input_len`: Input sequence length
-- `--output_len`: Output sequence length (prediction horizon)
-- `--ahead`: Shorthand for day/week/month ahead forecasting
-- `--batch_size`: Batch size for training
+#### Example Experiment Config
 
-#### Training Arguments
+Create a config file (e.g., `configs/experiments/dlinear_solar.yaml`):
 
-- `--train_epochs`: Number of training epochs
-- `--learning_rate`: Initial learning rate
-- `--loss`: Loss function (mse, l1)
-- `--lradj`: Learning rate adjustment strategy
-- `--patience`: Early stopping patience
+```yaml
+model:
+  name: DLinear
+  config_path: model_configs/general/DLinear.yaml
 
-#### GPU Arguments
+data:
+  name: solar
+  config_path: data_configs/fullsolar.yaml
 
-- `--use_gpu`: Whether to use GPU
-- `--gpu`: GPU device ID
-- `--use_multi_gpu`: Whether to use multiple GPUs
-- `--devices`: GPU device IDs for multi-GPU training
+training:
+  epochs: 20
+  batch_size: 96
+  learning_rate: 5e-4
+  patience: 3
+  loss: mse
+  lradj: type3
+  ahead: day  # Auto-sets input_len and output_len based on sampling_rate
+  # Or manually specify:
+  # input_len: 96
+  # output_len: 96
+  scale: true
+  disable_buffer: false
+  preload_hetero: false
+  num_workers: 0
+  prefetch_factor: 2
 
-#### Data Loading Arguments
+device:
+  use_gpu: true
+  gpu: 0
+  use_multi_gpu: false
+  devices: "0,1,2,3"
 
-- `--scale`: Whether to scale the data
-- `--disable_buffer`: Disable data buffer for memory efficiency
-- `--preload_hetero`: Preload heterogeneous data
-- `--num_workers`: Number of dataloader workers
-- `--prefetch_factor`: Prefetch factor for dataloader
-
-#### Lightning-Specific Arguments
-
-- `--precision`: Training precision ('32', '16', or 'bf16')
-- `--gradient_clip_val`: Gradient clipping value
-
-### Ahead task definition
-
-The framework supports ahead task definition, which is a shorthand for the prediction horizon. The ahead task is automatically aligns with the sampling rate of the dataset. E.g. if the ahead is 1 day, the prediction horizon is 24 for hourly data and 24*60=1440 for minutely sampled data.
-
-```bash
-python run.py --model DLinear --data_config data_configs/fullsolar.yaml --model_config model_configs/general/DLinear.yaml --ahead day
+# Optional: Nested subconfigs
+plotting: "configs/plotting/default.yaml"
+evaluation: "configs/evaluation/default.yaml"
 ```
 
-You can add your own ahead task definition in the `utils/task.py` file. The predefined ahead task is as below:
+#### Ahead Task Definition
+
+The framework supports ahead task definition, which is a shorthand for the prediction horizon. The ahead task automatically aligns with the sampling rate of the dataset. E.g., if the ahead is 1 day, the prediction horizon is 24 for hourly data and 24*60=1440 for minutely sampled data.
+
+**In config file:**
+```yaml
+training:
+  ahead: day  # Automatically sets input_len and output_len
+```
+
+You can add your own ahead task definition in the `utils/task.py` file. The predefined ahead tasks are:
 
 | Ahead Task | Prediction Horizon | Lookback Window |
 | ---------- | ------------------ | --------------- |
 | day        | 1 day              | 7 day           |
 | week       | 7 day              | 30 day          |
 | month      | 30 day             | 60 day          |
+
+#### Configuration Parameters
+
+**Model Configuration:**
+- `model.name`: Model name (e.g., DLinear, TGTSF)
+- `model.config_path`: Path to model configuration file
+
+**Data Configuration:**
+- `data.name`: Dataset name
+- `data.config_path`: Path to data configuration file
+
+**Training Parameters:**
+- `training.epochs`: Number of training epochs
+- `training.batch_size`: Batch size for training
+- `training.learning_rate`: Initial learning rate
+- `training.loss`: Loss function (mse, l1)
+- `training.lradj`: Learning rate adjustment strategy
+- `training.patience`: Early stopping patience
+- `training.ahead`: Shorthand for day/week/month ahead forecasting
+- `training.input_len`: Input sequence length (if not using ahead)
+- `training.output_len`: Output sequence length (if not using ahead)
+- `training.scale`: Whether to scale the data
+- `training.disable_buffer`: Disable data buffer for memory efficiency
+- `training.preload_hetero`: Preload heterogeneous data
+- `training.num_workers`: Number of dataloader workers
+- `training.prefetch_factor`: Prefetch factor for dataloader
+
+**Device Configuration:**
+- `device.use_gpu`: Whether to use GPU
+- `device.gpu`: GPU device ID
+- `device.use_multi_gpu`: Whether to use multiple GPUs
+- `device.devices`: GPU device IDs for multi-GPU training (comma-separated)
+
+**Lightning-Specific (in training section):**
+- `training.precision`: Training precision ('32', '16', or 'bf16')
+- `training.gradient_clip_val`: Gradient clipping value
 
 ## Heterogeneous Data Support
 
@@ -549,21 +686,31 @@ When dealing with large heterogeneous data, consider:
 
 ### Multi-GPU Training
 
-Use Lightning for efficient multi-GPU training:
+Use Lightning for efficient multi-GPU training. Configure in your YAML file:
 
-```bash
-python run_lightning.py --model DLinear --data_config data_configs/fullsolar.yaml --model_config model_configs/general/DLinear.yaml --use_multi_gpu --devices 0,1,2,3
+```yaml
+device:
+  use_gpu: true
+  use_multi_gpu: true
+  devices: "0,1,2,3"
 ```
 
-For PyTorch, multi-GPU is also supported but less optimized:
+Then run:
+```bash
+python -m cli.train lightning configs/experiments/dlinear_solar.yaml
+```
+
+For PyTorch, multi-GPU is also supported but less optimized. Use the same config:
 
 ```bash
-python run.py --model DLinear --data_config data_configs/fullsolar.yaml --model_config model_configs/general/DLinear.yaml --use_multi_gpu --devices 0,1,2,3
+python -m cli.train pytorch configs/experiments/dlinear_solar.yaml
 ```
 
 ### Checkpoint Management
 
-Checkpoints are saved in `./checkpoints/{setting_name}/`, including:
+Checkpoints are saved in `./checkpoints/{experiment_id}/`, including:
 - `checkpoint.pth`: Best model based on validation loss
-- `args.json`: Command-line arguments used for training
-- TensorBoard logs (for Lightning): `./checkpoints/tb_logs/{setting_name}/`
+- `args.json`: Full experiment configuration (including all nested configs)
+- TensorBoard logs (for Lightning): `./checkpoints/tb_logs/{experiment_id}/`
+
+The experiment ID is automatically generated from the configuration, ensuring each unique experiment configuration gets its own directory.

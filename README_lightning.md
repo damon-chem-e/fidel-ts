@@ -14,35 +14,86 @@ This extension provides a PyTorch Lightning implementation of the time series fo
 
 ### Running a Training Job
 
+The PyTorch Lightning pipeline uses the new CLI structure with YAML configuration files:
+
 ```bash
-python run_lightning.py --model FITS --data solar --input_len 96 --output_len 96 --use_multi_gpu --devices 0,1,2,3
+python -m cli.train lightning configs/experiments/dlinear_solar.yaml
 ```
 
-### Key Parameters
+### Configuration File
 
-- **Model Configuration**: `--model`, `--model_config`
-- **Data Configuration**: `--data`, `--data_config`, `--input_len`, `--output_len`
-- **Training Parameters**: `--train_epochs`, `--batch_size`, `--learning_rate`, `--patience`
-- **GPU Options**: `--use_gpu`, `--gpu`, `--use_multi_gpu`, `--devices`
-- **Lightning-Specific**: `--precision`, `--gradient_clip_val`
+Create a YAML configuration file (e.g., `configs/experiments/dlinear_solar.yaml`):
+
+```yaml
+model:
+  name: DLinear
+  config_path: model_configs/general/DLinear.yaml
+
+data:
+  name: solar
+  config_path: data_configs/fullsolar.yaml
+
+training:
+  epochs: 20
+  batch_size: 96
+  learning_rate: 5e-4
+  patience: 3
+  input_len: 96
+  output_len: 96
+  precision: 16  # Lightning-specific: 32, 16, or bf16
+  gradient_clip_val: 0.0  # Lightning-specific: gradient clipping
+
+device:
+  use_gpu: true
+  use_multi_gpu: true
+  devices: "0,1,2,3"
+```
+
+### Key Configuration Parameters
+
+- **Model Configuration**: `model.name`, `model.config_path`
+- **Data Configuration**: `data.name`, `data.config_path`, `training.input_len`, `training.output_len`
+- **Training Parameters**: `training.epochs`, `training.batch_size`, `training.learning_rate`, `training.patience`
+- **GPU Options**: `device.use_gpu`, `device.gpu`, `device.use_multi_gpu`, `device.devices`
+- **Lightning-Specific**: `training.precision`, `training.gradient_clip_val`
 
 ### Sample Multi-GPU Command
 
 ```bash
-python run_lightning.py \
-    --model DLinear \
-    --data ETTh1 \
-    --input_len 96 \
-    --output_len 96 \
-    --use_multi_gpu \
-    --devices 0,1,2,3 \
-    --precision 16 \
-    --batch_size 256
+python -m cli.train lightning configs/experiments/dlinear_etth1.yaml
+```
+
+With config file containing:
+```yaml
+model:
+  name: DLinear
+  config_path: model_configs/general/DLinear.yaml
+
+data:
+  name: ETTh1
+  config_path: data_configs/ETT/fullETT_H.yaml
+
+training:
+  epochs: 20
+  batch_size: 256
+  input_len: 96
+  output_len: 96
+  precision: 16
+
+device:
+  use_gpu: true
+  use_multi_gpu: true
+  devices: "0,1,2,3"
 ```
 
 ## Directory Structure
 
 ```
+├── cli/
+│   ├── train.py               # Training CLI commands
+│   └── config/                # Configuration loading
+├── runs/
+│   └── lightning.py           # Lightning training execution
 ├── data_provider/
 │   ├── data_factory.py        # Original data provider
 │   ├── data_loader.py         # Original dataset loader
@@ -50,8 +101,8 @@ python run_lightning.py \
 ├── exp/
 │   ├── exp_universal.py       # Original training pipeline
 │   └── exp_lightning.py       # Lightning model and training logic
-├── run.py                     # Original run script
-└── run_lightning.py           # PyTorch Lightning run script
+└── configs/
+    └── experiments/           # Experiment configuration files
 ```
 
 ## Implementation Details
@@ -68,14 +119,30 @@ The implementation is designed to be compatible with the existing codebase, so y
 
 ### Mixed Precision Training
 
+Configure in your YAML file:
+
+```yaml
+training:
+  precision: 16  # Options: 32, 16, bf16
+```
+
+Then run:
 ```bash
-python run_lightning.py --model FITS --data solar --precision 16
+python -m cli.train lightning configs/experiments/your_config.yaml
 ```
 
 ### Gradient Clipping
 
+Configure in your YAML file:
+
+```yaml
+training:
+  gradient_clip_val: 0.5
+```
+
+Then run:
 ```bash
-python run_lightning.py --model FITS --data solar --gradient_clip_val 0.5
+python -m cli.train lightning configs/experiments/your_config.yaml
 ```
 
 ### Changing Early Stopping Criteria

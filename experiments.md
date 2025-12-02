@@ -618,6 +618,575 @@ For existing experiments:
 
 ---
 
+## Configuration System Modernization Plan
+
+This section outlines a comprehensive plan to modernize the configuration system, eliminate fragile string-based experiment identifiers, improve type safety, and ensure complete experiment reproducibility.
+
+### 1. Eliminating 'Settings' Strings
+
+#### Current Problem
+
+Currently, experiments use "settings" strings that are constructed by concatenating config values with underscores:
+- Example: `f'{current_time}_{args.model}_{args.data}_{args.output_len}_{args.input_len}'`
+- Example: `f'{current_time}_{args.model}_{args.data}_{args.ahead}_ahead'`
+- Example: `f'filtered_{current_time}_{args.model}_{args.data}_{args.output_len}_{args.input_len}'`
+
+**Issues with this approach:**
+1. **Fragility**: String concatenation is error-prone and breaks easily when config values change
+2. **Incompleteness**: Only a subset of config values are included (model, data, output_len, input_len)
+3. **Ambiguity**: Different experiments with different configs can produce identical setting strings
+4. **Maintenance burden**: Adding new config fields requires updating setting string generation logic
+5. **No validation**: No way to ensure setting strings are unique or meaningful
+6. **Hard to search**: Difficult to find experiments based on specific config combinations
+
+#### Proposed Solution
+
+**Replace settings with experiment IDs derived from complete config hash:**
+
+1. **Experiment ID Generation**:
+   - Generate a deterministic hash (e.g., SHA256) from the complete nested config structure
+   - Include all config values (primary + nested configs) in the hash
+   - Use first 8-12 characters of hash as experiment ID
+   - Format: `{timestamp}_{short_hash}` for human readability and uniqueness
+
+2. **Complete Config as Experiment Identifier**:
+   - The entire nested config structure IS the experiment identifier
+   - No separate "setting" string needed
+   - Experiment folder name: `outputs/{experiment_id}/` where `experiment_id` is derived from config hash
+   - Config hash ensures uniqueness and reproducibility
+
+3. **Benefits**:
+   - **Robust**: Changes to any config value automatically produce different experiment ID
+   - **Complete**: All config values are considered, not just a subset
+   - **Deterministic**: Same config always produces same experiment ID
+   - **Searchable**: Can search experiments by config values (not string matching)
+   - **No maintenance**: No need to update string generation when adding config fields
+
+4. **Implementation**:
+   ```python
+   def generate_experiment_id(config_hierarchy, timestamp=None):
+       """Generate experiment ID from complete config hierarchy."""
+       import hashlib
+       import json
+       
+       # Serialize complete config (primary + nested) to JSON
+       config_json = json.dumps(
+           {
+               'primary': config_hierarchy['primary'],
+               'nested': config_hierarchy['nested']
+           },
+           sort_keys=True  # Ensure deterministic ordering
+       )
+       
+       # Generate hash
+       config_hash = hashlib.sha256(config_json.encode()).hexdigest()[:12]
+       
+       # Combine with timestamp for human readability
+       if timestamp is None:
+           timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+       
+       return f"{timestamp}_{config_hash}"
+   ```
+
+5. **Migration Strategy**:
+   - Phase 1: Generate experiment IDs from config hash, but still support legacy setting strings for backward compatibility
+   - Phase 2: Update all experiment classes to use experiment ID instead of setting
+   - Phase 3: Remove setting string generation entirely
+   - Phase 4: Update checkpoint paths and references to use experiment ID
+
+### 2. Configuration Structure: dotdict vs Dataclasses
+
+#### Current State: dotdict
+
+**dotdict** is a custom dictionary subclass that allows attribute-style access:
+```python
+class dotdict(dict):
+    def __getattr__(self, name):
+        return self[name] if name in self.keys() else None
+    def __setattr__(self, name, value):
+        self[name] = value
+```
+
+**Pros:**
+- Simple and lightweight
+- Easy to convert from YAML (just wrap dict)
+- Flexible: can add arbitrary keys dynamically
+- Familiar dict-like interface
+- Works well with nested structures (with recursive conversion)
+
+**Cons:**
+- No type checking or validation
+- No IDE autocomplete support
+- No default values (returns None for missing keys)
+- No schema validation
+- Easy to introduce typos (e.g., `config.learing_rate` instead of `config.learning_rate`)
+- No documentation of expected fields
+- Runtime errors instead of static analysis
+
+#### Alternative: Dataclasses
+
+**Dataclasses** provide structured, typed configuration:
+
+```python
+from dataclasses import dataclass, field
+from typing import Optional
+
+@dataclass
+class ModelConfig:
+    name: str
+    config_path: str
+
+@dataclass
+class DataConfig:
+    name: str
+    config_path: str
+
+@dataclass
+class TrainingConfig:
+    epochs: int = 20
+    batch_size: int = 96
+    learning_rate: float = 5e-4
+    patience: int = 3
+    loss: str = "mse"
+    # ... other fields with defaults
+
+@dataclass
+class ExperimentConfig:
+    model: ModelConfig
+    data: DataConfig
+    training: TrainingConfig
+    device: DeviceConfig
+    # ... nested configs
+```
+
+**Pros:**
+- **Type safety**: Static type checking with mypy/pyright
+- **IDE support**: Autocomplete, type hints, refactoring
+- **Validation**: Can add `__post_init__` for validation
+- **Documentation**: Type hints serve as documentation
+- **Default values**: Clear defaults for optional fields
+- **Catch errors early**: Typos caught at import/validation time
+- **Standard library**: Well-supported, familiar to Python developers
+
+**Cons:**
+- More verbose: need to define classes for each config section
+- Less flexible: can't add arbitrary fields easily
+- YAML loading: Need custom loader to convert YAML → dataclass
+- Migration effort: Requires refactoring existing code
+
+#### Hybrid Approach: Pydantic Models
+
+**Pydantic** combines benefits of both:
+
+```python
+from pydantic import BaseModel, Field
+from typing import Optional
+
+class ModelConfig(BaseModel):
+    name: str
+    config_path: str
+
+class TrainingConfig(BaseModel):
+    epochs: int = Field(default=20, ge=1)
+    batch_size: int = Field(default=96, ge=1)
+    learning_rate: float = Field(default=5e-4, gt=0)
+    patience: int = Field(default=3, ge=1)
+    loss: str = Field(default="mse", pattern="^(mse|l1)$")
+
+class ExperimentConfig(BaseModel):
+    model: ModelConfig
+    data: DataConfig
+    training: TrainingConfig
+    # ... nested configs
+    
+    class Config:
+        extra = "forbid"  # Reject unknown fields
+```
+
+**Pros:**
+- **Type safety**: Like dataclasses
+- **Validation**: Automatic validation with helpful error messages
+- **YAML support**: Built-in YAML loading via `pydantic.yaml`
+- **Flexible**: Can allow extra fields or forbid them
+- **Rich error messages**: Clear validation errors
+- **JSON schema**: Can generate JSON schemas for documentation
+- **Default values**: Clear defaults with validation
+
+**Cons:**
+- External dependency: Requires `pydantic` package
+- Slightly more complex: More features than needed for simple cases
+
+#### Recommendation
+
+**Migrate to Pydantic models** for the following reasons:
+
+1. **Best of both worlds**: Type safety + validation + YAML support
+2. **Validation**: Catches config errors early with clear messages
+3. **Documentation**: Type hints + JSON schema generation
+4. **Future-proof**: Well-maintained, widely used in ML ecosystem
+5. **Migration path**: Can gradually migrate, starting with new code
+
+**Migration Strategy:**
+1. Phase 1: Define Pydantic models for all config structures
+2. Phase 2: Migrate config loader to use Pydantic (completely replace dotdict, no backward compatibility)
+3. Phase 3: Update experiment classes to accept Pydantic models directly
+4. Phase 4: Remove all dotdict usage from codebase entirely
+5. Phase 5: Update all config references to use Pydantic models
+
+**Note**: The experiment class updates to accept configs directly will mesh nicely with the Pydantic migration - both changes can be done together, as experiment classes will naturally work with Pydantic's type-safe config objects. We will completely phase out dotdict usage everywhere with no backward compatibility layer.
+
+### 3. Eliminating config_to_args Methods
+
+#### Current Problem
+
+The `config_to_args()` methods in `runs/*.py` convert config objects to argparse-like objects:
+- `runs/pytorch.py`: `config_to_args(config)`
+- `runs/lightning.py`: `config_to_args(config)`
+- `runs/llm.py`: `config_to_args(config)`
+- `runs/fm.py`: `config_to_args(config)`
+
+**Issues:**
+1. **Unnecessary conversion**: Config → Args → Config (redundant)
+2. **Maintenance burden**: Must update conversion logic when config structure changes
+3. **Error-prone**: Easy to miss fields or convert incorrectly
+4. **Tight coupling**: Experiment classes depend on argparse structure
+5. **Loss of type information**: Args are untyped, lose validation
+
+#### Proposed Solution
+
+**Make experiment classes natively accept config structure:**
+
+1. **Update Experiment Classes**:
+   - Modify `Exp_Basic.__init__()` to accept config object directly
+   - Remove dependency on argparse-like structure
+   - Access config values directly: `config.training.epochs` instead of `args.train_epochs`
+
+2. **Unified Config Structure**:
+   - All experiment classes use the same config structure
+   - Config includes: model, data, training, device, wandb, job info, etc.
+   - No conversion needed: config → experiment class directly
+
+3. **Benefits**:
+   - **Simpler**: No intermediate conversion step
+   - **Type-safe**: With Pydantic, get validation and type checking
+   - **Maintainable**: One config structure, not two (config + args)
+   - **Consistent**: Same config format across all experiment types
+
+4. **Implementation Example**:
+   ```python
+   # Before (current)
+   def run(config):
+       args = config_to_args(config)  # Convert config → args
+       exp = Experiment(args)  # Experiment expects args
+   
+   # After (proposed)
+   def run(config: ExperimentConfig):
+       exp = Experiment(config)  # Experiment accepts config directly
+   ```
+
+5. **Config Structure Includes Everything**:
+   ```python
+   class ExperimentConfig(BaseModel):
+       # Core experiment info
+       experiment_id: Optional[str] = None  # Auto-generated if not provided
+       experiment_name: Optional[str] = None
+       
+       # Model and data
+       model: ModelConfig
+       data: DataConfig
+       
+       # Training parameters
+       training: TrainingConfig
+       
+       # Device configuration
+       device: DeviceConfig
+       
+       # WandB configuration
+       wandb: WandBConfig
+       
+       # Job information (from scheduler or manual)
+       job: JobConfig  # job_id, job_name
+       
+       # Reproducibility
+       random_seed: int = Field(default=2021, description="Random seed for reproducibility")
+       
+       # Embedding metadata (see section 7)
+       embeddings: Optional[EmbeddingConfig] = None
+   ```
+
+### 4. Random Seed in Config
+
+#### Current Problem
+
+Random seed is hardcoded in multiple places:
+- `runs/pytorch.py`: `fix_seed = 2021`
+- `runs/lightning.py`: `fix_seed = 2021`
+- `runs/fm.py`: `fix_seed = 2021`
+- `run.py`: `fix_seed = 2021`
+
+**Issues:**
+1. **Not configurable**: Can't vary random seed without code changes
+2. **Inconsistent**: Different values in different files (potential)
+3. **Not tracked**: Seed value not saved in experiment metadata
+4. **Hard to reproduce**: If seed changes, can't reproduce exact experiment
+
+#### Proposed Solution
+
+1. **Add to Config**:
+   ```yaml
+   # configs/experiments/example.yaml
+   training:
+     random_seed: 2021  # Default, but configurable
+     epochs: 20
+     # ...
+   ```
+
+2. **Default Value**: Default to 2021 for backward compatibility, but allow override
+
+3. **Track in Metadata**: Save actual seed value used (even if default) in experiment metadata
+
+4. **Set All Random Seeds**:
+   ```python
+   def set_random_seed(seed: int):
+       """Set random seed for all random number generators."""
+       random.seed(seed)
+       torch.manual_seed(seed)
+       np.random.seed(seed)
+       if torch.cuda.is_available():
+           torch.cuda.manual_seed_all(seed)
+       # Set Python hash seed for deterministic dict ordering
+       os.environ['PYTHONHASHSEED'] = str(seed)
+   ```
+
+5. **Metadata Tracking**: Include in experiment metadata:
+   ```json
+   {
+     "random_seed": 2021,
+     "random_seed_source": "config.training.random_seed (default)"
+   }
+   ```
+
+### 5. Complete Config File Copying
+
+#### Current Problem
+
+Experiments reference config files but don't copy them:
+- `model_config_path: "model_configs/general/TGTSF.yaml"`
+- If `TGTSF.yaml` is modified after experiment, can't reproduce
+
+#### Proposed Solution
+
+**Copy all referenced config files to experiment folder:**
+
+1. **Config Copying Strategy**:
+   - Copy primary config file to `outputs/{experiment_id}/configs/primary_config.yaml`
+   - Copy all nested configs to `outputs/{experiment_id}/configs/nested/`
+   - Copy model config: `outputs/{experiment_id}/configs/model_config.yaml`
+   - Copy data config: `outputs/{experiment_id}/configs/data_config.yaml`
+   - Copy any other referenced configs
+
+2. **Implementation**:
+   ```python
+   def copy_config_files(config_hierarchy, experiment_dir):
+       """Copy all config files to experiment directory."""
+       configs_dir = experiment_dir / "configs"
+       configs_dir.mkdir(parents=True, exist_ok=True)
+       
+       # Copy primary config
+       shutil.copy(
+           config_hierarchy['config_paths']['primary'],
+           configs_dir / "primary_config.yaml"
+       )
+       
+       # Copy nested configs
+       for key, path in config_hierarchy['config_paths'].items():
+           if key != 'primary':
+               shutil.copy(path, configs_dir / f"{key}_config.yaml")
+   ```
+
+3. **Benefits**:
+   - **Reproducibility**: Know exactly what configs were used
+   - **Immutable**: Config files in experiment folder never change
+   - **Self-contained**: Experiment folder has everything needed to reproduce
+
+4. **Metadata Tracking**:
+   - Save config file paths and hashes in metadata
+   - Verify config files haven't changed if re-running
+
+### 6. Removing Args Printing
+
+#### Current Problem
+
+Experiment args are printed at the beginning of training:
+```python
+print('Args in experiment:')
+print(args)
+```
+
+**Issues:**
+1. **Not pretty-printed**: Hard to read, especially with nested structures
+2. **Redundant**: All this info is saved in experiment folder anyway
+3. **Clutters output**: Makes logs harder to read
+4. **Inconsistent**: Different formats in different experiment types
+
+#### Proposed Solution
+
+1. **Remove Print Statements**: Remove all `print(args)` statements
+
+2. **Log to File Instead**: 
+   - Save config to `outputs/{experiment_id}/configs/resolved_config.yaml` (with all defaults filled in)
+   - Save pretty-printed config to `outputs/{experiment_id}/metadata/config_summary.txt`
+
+3. **Optional Verbose Mode**: 
+   - Add `--verbose` flag to CLI to optionally print config summary
+   - Use Rich for pretty printing if verbose mode enabled
+
+4. **Config Summary File**:
+   ```python
+   def save_config_summary(config, experiment_dir):
+       """Save human-readable config summary."""
+       summary_path = experiment_dir / "metadata" / "config_summary.txt"
+       with open(summary_path, 'w') as f:
+           f.write("Experiment Configuration Summary\n")
+           f.write("=" * 50 + "\n\n")
+           f.write(f"Model: {config.model.name}\n")
+           f.write(f"Data: {config.data.name}\n")
+           f.write(f"Epochs: {config.training.epochs}\n")
+           # ... formatted summary
+   ```
+
+### 7. Embedding Metadata Tracking
+
+#### Current Problem
+
+Embedding information is not properly tracked:
+- Pre-computed embeddings: No metadata about which model was used, when generated, from what text
+- On-the-fly embeddings: Model is specified in config but not tracked in experiment metadata
+- Raw text: Not documented that raw text was used (vs embeddings)
+
+#### Proposed Solution
+
+**Add comprehensive embedding metadata to config and experiment tracking:**
+
+1. **Embedding Config Structure**:
+   ```yaml
+   # In data config or experiment config
+   embeddings:
+     # Option 1: Pre-computed embeddings
+     source: "precomputed"  # precomputed, on_the_fly, raw_text
+     embedding_model: "bert-base-uncased"  # Model used to generate
+     embedding_dim: 768
+     generation_date: "2024-01-15"  # When embeddings were generated
+     source_text_files: 
+       - "data/Canada_photovoltaics_plants/weather/calgary/report_embedding/formal_report/fast_general_formal_embeddings_2021.pkl"
+     embedding_metadata:
+       token_extraction: "CLS"  # CLS token, last token, mean pooling, etc.
+       max_length: 512
+       batch_size: 200
+     notes: "Embeddings generated using BERT-base-uncased, extracted from HuggingFace cache"
+     
+     # Option 2: On-the-fly embeddings
+     source: "on_the_fly"
+     embedding_model: "bert-base-uncased"
+     embedding_dim: 768
+     token_extraction: "CLS"
+     max_length: 512
+     batch_size: 200
+     
+     # Option 3: Raw text (no embeddings)
+     source: "raw_text"
+     notes: "Text passed directly to LLM model without embedding"
+   ```
+
+2. **Auto-Detection from Config**:
+   ```python
+   def detect_embedding_config(data_config):
+       """Detect embedding configuration from data config."""
+       embedding_config = {}
+       
+       if data_config.hetero_info.input_format == 'embedding':
+           # Pre-computed embeddings
+           embedding_config['source'] = 'precomputed'
+           # Try to infer model from file names or metadata
+           # If no metadata, note that it's from HuggingFace
+           embedding_config['notes'] = "Pre-computed embeddings, source model unknown (likely BERT-base-uncased from HuggingFace)"
+       elif hasattr(data_config, 'postemb') and data_config.postemb:
+           # On-the-fly embeddings
+           embedding_config['source'] = 'on_the_fly'
+           embedding_config['embedding_model'] = data_config.postemb_model
+           embedding_config['embedding_dim'] = data_config.postemb_d
+           embedding_config['token_extraction'] = 'CLS'  # Default, could be configurable
+       else:
+           # Raw text
+           embedding_config['source'] = 'raw_text'
+       
+       return embedding_config
+   ```
+
+3. **Track in Experiment Metadata**:
+   - Save embedding config to `outputs/{experiment_id}/metadata/embeddings.json`
+   - Include in WandB config
+   - Document in experiment README
+
+4. **Data File Tracking**:
+   - Track which data files were used (already partially done in data config)
+   - Include file paths and checksums in metadata
+   - Document text source files for embeddings
+
+5. **Implementation**:
+   ```python
+   def capture_embedding_metadata(data_config, experiment_dir):
+       """Capture and save embedding metadata."""
+       embedding_config = detect_embedding_config(data_config)
+       
+       # Save to metadata
+       metadata_path = experiment_dir / "metadata" / "embeddings.json"
+       with open(metadata_path, 'w') as f:
+           json.dump(embedding_config, f, indent=2)
+       
+       # Also include in main experiment metadata
+       return embedding_config
+   ```
+
+### Implementation Phases
+
+#### Phase 1: Foundation (Week 1)
+1. Add random seed to config with default value
+2. Implement config file copying to experiment folder
+3. Remove args printing, replace with file logging
+4. Add embedding metadata detection and tracking
+
+#### Phase 2: Config Structure (Week 2)
+1. Define Pydantic models for config structure
+2. Create config loader that returns Pydantic models
+3. Implement experiment ID generation from config hash
+4. Update one experiment class (e.g., `exp_universal.py`) to accept config directly
+
+#### Phase 3: Migration (Week 3-4)
+1. Update all experiment classes to accept config directly
+2. Remove `config_to_args()` methods
+3. Replace setting strings with experiment IDs
+4. Update checkpoint paths to use experiment IDs
+
+#### Phase 4: Validation and Testing (Week 4-5)
+1. Add config validation with Pydantic
+2. Test experiment ID generation and uniqueness
+3. Verify config copying works correctly
+4. Test embedding metadata tracking
+5. Update documentation
+
+### Benefits Summary
+
+1. **Robustness**: No fragile string concatenation for experiment IDs
+2. **Type Safety**: Pydantic models provide validation and type checking
+3. **Simplicity**: No config_to_args conversion needed
+4. **Reproducibility**: Complete config files copied, all defaults tracked
+5. **Traceability**: Embedding metadata fully documented
+6. **Maintainability**: Single config structure, no duplication
+7. **Developer Experience**: IDE autocomplete, type hints, validation errors
+
+---
+
 ## Bash Scripts to Config Migration Plan
 
 ### Current State Analysis
@@ -1012,6 +1581,7 @@ class SuiteExecutor:
 2. Create `configs/templates/` directory
 3. Document config format and structure
 4. Create example suite and template configs
+5. Move `scripts/download_datasets.py` to `utils/download_datasets.py` (or appropriate utility folder) as part of the bash script migration
 
 #### Phase 2: Implement Suite Execution (Week 1-2)
 1. Create `cli/suite.py` with suite commands
