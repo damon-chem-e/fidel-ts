@@ -18,7 +18,15 @@ def get_activation_fn(activation):
     elif activation.lower() == "relu": return nn.ReLU()
     elif activation.lower() == "gelu": return nn.GELU()
     raise ValueError(f'{activation} is not available. You can use "relu", "gelu", or a callable') 
-    
+
+
+def pv(message, verbose=False):
+    """
+    Print message if verbose mode is enabled.
+    """
+    if verbose:
+        print(message)
+
     
 # decomposition
 
