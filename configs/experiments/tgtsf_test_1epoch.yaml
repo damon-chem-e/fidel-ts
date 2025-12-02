@@ -1,0 +1,40 @@
+# Test configuration for TGTSF with 1 epoch
+# Usage: python -m cli.train pytorch configs/experiments/tgtsf_test_1epoch.yaml
+
+model:
+  name: TGTSF
+  config_path: model_configs/general/TGTSF.yaml
+
+data:
+  name: Canada_photovoltaics_plants
+  config_path: data_configs/Canada_photovoltaics_plants/fullCPP_hetero_TGTSF.yaml
+
+training:
+  checkpoints: ./checkpoints/
+  epochs: 1  # Single epoch for testing
+  batch_size: 32  # Smaller batch size for testing
+  learning_rate: 5e-4
+  patience: 3
+  loss: mse
+  lradj: type3
+  scale: true
+  disable_buffer: false
+  preload_hetero: false
+  prefetch_factor: 2
+  noise: 0.0
+  ahead: day  # This will auto-set input_len and output_len based on sampling_rate
+  # Or you can manually set:
+  # input_len: 360
+  # output_len: 24
+  num_workers: 0
+
+device:
+  use_gpu: true
+  gpu: 0
+  use_multi_gpu: false
+  devices: "0"
+
+# Optional: HuggingFace settings
+hf_mirror: false
+hf_offline: false
+
