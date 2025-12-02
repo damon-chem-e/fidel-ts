@@ -52,9 +52,9 @@ HF_DATASET_MAP: Dict[str, str] = {
     "NYC_traffic_speed": "VEWOXIC/NYC_traffic_speed",
 }
 
-# Mapping of dataset names to their target subdirectories based on data configs
-# Some datasets have different subdirectory structures
-DATASET_SUBDIRS: Dict[str, str] = {
+# Mapping of dataset names to their time series subdirectories (for checking if data exists)
+# This is where the time series data should be after download
+DATASET_TIME_SERIES_DIRS: Dict[str, str] = {
     "Bear_room": "time_series",
     "California_ISO": "time_series",
     "Canada_photovoltaics_plants": "time_series",
@@ -68,23 +68,25 @@ def download_dataset(
     dataset_name: str,
     hf_repo_id: str,
     target_dir: Path,
-    subdir: str = "time_series",
 ) -> bool:
     """
     Download a single dataset from HuggingFace to the target directory.
+    
+    Downloads to the dataset root directory to preserve the repository structure
+    (which includes time_series, weather, hetero, etc. at the same level).
 
     Args:
         dataset_name: Name of the dataset (for display)
         hf_repo_id: HuggingFace repository ID (e.g., "wxcai/Bear_room")
         target_dir: Base target directory (e.g., "./data")
-        subdir: Subdirectory within the dataset folder (e.g., "time_series")
 
     Returns:
         True if download succeeded, False otherwise
     """
-    # Construct full target path
-    full_target_dir = target_dir / dataset_name / subdir
-    full_target_dir.parent.mkdir(parents=True, exist_ok=True)
+    # Download to dataset root directory to preserve HuggingFace repo structure
+    # The repo structure has time_series, weather, hetero, etc. at the same level
+    full_target_dir = target_dir / dataset_name
+    full_target_dir.mkdir(parents=True, exist_ok=True)
 
     typer.echo(f"\n{'='*60}")
     typer.echo(f"Downloading: {dataset_name}")
@@ -196,9 +198,9 @@ def main(
     results: Dict[str, bool] = {}
     skipped: Dict[str, Path] = {}
     for dataset_name in datasets_to_download:
-        # Check if dataset already exists
-        subdir = DATASET_SUBDIRS.get(dataset_name, "time_series")
-        target_path = base_dir / dataset_name / subdir
+        # Check if dataset already exists by looking for time series directory
+        time_series_subdir = DATASET_TIME_SERIES_DIRS.get(dataset_name, "time_series")
+        target_path = base_dir / dataset_name / time_series_subdir
 
         # Skip existing datasets unless force is enabled
         if not force and target_path.exists() and any(target_path.iterdir()):
@@ -214,7 +216,6 @@ def main(
             dataset_name=dataset_name,
             hf_repo_id=hf_repo_id,
             target_dir=base_dir,
-            subdir=subdir,
         )
         results[dataset_name] = success
 
@@ -233,8 +234,8 @@ def main(
     if successful:
         typer.echo(f"\n✓ Successfully downloaded ({len(successful)}):")
         for name in successful:
-            subdir = DATASET_SUBDIRS.get(name, "time_series")
-            typer.echo(f"  - {name} -> {base_dir / name / subdir}")
+            time_series_subdir = DATASET_TIME_SERIES_DIRS.get(name, "time_series")
+            typer.echo(f"  - {name} -> {base_dir / name} (time series: {base_dir / name / time_series_subdir})")
 
     if failed:
         typer.echo(f"\n✗ Failed to download ({len(failed)}):")
