@@ -29,10 +29,8 @@ vllm==0.7.2  # 0.8.3 provides reasoning compatability but consumes more memory
 fschat[model_worker,webui]
 flashinfer-python
 
-# Build-heavy dependencies that require torch to be installed first
-# Note: flash-attn needs torch available at build time. If build fails, try:
-# 1. Install torch first: uv pip install torch>=1.13.0
-# 2. Then install flash-attn: uv pip install flash-attn --no-build-isolation
-flash-attn
+# Build-heavy dependencies
+# Note: flash-attn removed - not used in codebase (code has pure PyTorch FlashAttention implementation)
+# If vllm or other packages require it, they will install it as a dependency
 nvitop
 chronos-forecasting
