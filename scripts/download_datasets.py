@@ -6,7 +6,7 @@ This script downloads all datasets from the Fidel-TS collection on HuggingFace
 and places them in the directory structure expected by the data configuration files.
 
 Usage:
-    python scripts/download_datasets.py [--datasets DATASET1,DATASET2] [--base_dir ./data]
+    python scripts/download_datasets.py [--datasets DATASET1,DATASET2] [--base-dir ./data]
 
 Examples:
     # Download all datasets
@@ -16,22 +16,29 @@ Examples:
     python scripts/download_datasets.py --datasets Bear_room,California_ISO
 
     # Specify custom base directory
-    python scripts/download_datasets.py --base_dir /path/to/data
+    python scripts/download_datasets.py --base-dir /path/to/data
 """
 
-import argparse
-import os
 import sys
 from pathlib import Path
 from typing import Dict, Optional
 
 try:
+    import typer
     from huggingface_hub import snapshot_download
     from huggingface_hub.utils import HfHubHTTPError
-except ImportError:
-    print("Error: huggingface_hub is not installed.")
-    print("Please install it with: pip install huggingface_hub")
+except ImportError as e:
+    missing_package = "typer" if "typer" in str(e) else "huggingface_hub"
+    print(f"Error: {missing_package} is not installed.")
+    print(f"Please install it with: pip install {missing_package}")
     sys.exit(1)
+
+# Create Typer app
+app = typer.Typer(
+    name="download-datasets",
+    help="Download Fidel-TS datasets from HuggingFace to the correct local directories.",
+    add_completion=False,
+)
 
 
 # Mapping of local dataset names to HuggingFace repository IDs
@@ -79,11 +86,11 @@ def download_dataset(
     full_target_dir = target_dir / dataset_name / subdir
     full_target_dir.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n{'='*60}")
-    print(f"Downloading: {dataset_name}")
-    print(f"  HuggingFace: {hf_repo_id}")
-    print(f"  Target: {full_target_dir}")
-    print(f"{'='*60}")
+    typer.echo(f"\n{'='*60}")
+    typer.echo(f"Downloading: {dataset_name}")
+    typer.echo(f"  HuggingFace: {hf_repo_id}")
+    typer.echo(f"  Target: {full_target_dir}")
+    typer.echo(f"{'='*60}")
 
     try:
         # Download the dataset
@@ -95,96 +102,110 @@ def download_dataset(
             local_dir_use_symlinks=False,  # Use actual files, not symlinks
         )
 
-        print(f"✓ Successfully downloaded {dataset_name}")
-        print(f"  Location: {downloaded_path}")
+        typer.echo(f"✓ Successfully downloaded {dataset_name}")
+        typer.echo(f"  Location: {downloaded_path}")
         return True
 
     except HfHubHTTPError as e:
-        print(f"✗ Error downloading {dataset_name}: {e}")
-        print(f"  Please check if the repository exists: https://huggingface.co/{hf_repo_id}")
+        typer.echo(f"✗ Error downloading {dataset_name}: {e}", err=True)
+        typer.echo(
+            f"  Please check if the repository exists: https://huggingface.co/{hf_repo_id}",
+            err=True,
+        )
         return False
     except Exception as e:
-        print(f"✗ Unexpected error downloading {dataset_name}: {e}")
+        typer.echo(f"✗ Unexpected error downloading {dataset_name}: {e}", err=True)
         return False
 
 
-def main():
-    """Main function to download datasets."""
-    parser = argparse.ArgumentParser(
-        description="Download Fidel-TS datasets from HuggingFace",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Download all datasets
-  python scripts/download_datasets.py
-
-  # Download specific datasets
-  python scripts/download_datasets.py --datasets Bear_room,California_ISO
-
-  # Use custom base directory
-  python scripts/download_datasets.py --base_dir /path/to/data
-        """,
-    )
-
-    parser.add_argument(
+@app.command()
+def main(
+    datasets: Optional[str] = typer.Option(
+        None,
         "--datasets",
-        type=str,
-        default=None,
+        "-d",
         help="Comma-separated list of datasets to download. "
         "Available: Bear_room, California_ISO, Canada_photovoltaics_plants, "
         "Germany_Renewable_Power_Grid, Jena_Atmospheric_Physics, NYC_traffic_speed. "
         "If not specified, all datasets will be downloaded.",
-    )
-
-    parser.add_argument(
-        "--base_dir",
-        type=str,
-        default="./data",
+    ),
+    base_dir: Path = typer.Option(
+        Path("./data"),
+        "--base-dir",
+        "-b",
         help="Base directory for downloaded datasets (default: ./data)",
-    )
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force overwrite of existing datasets. By default, existing datasets are skipped.",
+    ),
+) -> None:
+    """
+    Download Fidel-TS datasets from HuggingFace.
 
-    parser.add_argument(
-        "--skip_existing",
-        action="store_true",
-        help="Skip datasets that already exist in the target directory",
-    )
+    By default, existing datasets are skipped. Use --force to overwrite them.
 
-    args = parser.parse_args()
+    Examples:
+        # Download all datasets (skip existing)
+        python scripts/download_datasets.py
 
+        # Download specific datasets
+        python scripts/download_datasets.py --datasets Bear_room,California_ISO
+
+        # Use custom base directory
+        python scripts/download_datasets.py --base-dir /path/to/data
+
+        # Force overwrite existing datasets
+        python scripts/download_datasets.py --force
+    """
     # Determine which datasets to download
-    if args.datasets:
+    if datasets:
         # Parse comma-separated list
-        requested_datasets = [ds.strip() for ds in args.datasets.split(",")]
+        requested_datasets = [ds.strip() for ds in datasets.split(",")]
         # Validate dataset names
         invalid = [ds for ds in requested_datasets if ds not in HF_DATASET_MAP]
         if invalid:
-            print(f"Error: Invalid dataset names: {', '.join(invalid)}")
-            print(f"Available datasets: {', '.join(HF_DATASET_MAP.keys())}")
-            sys.exit(1)
+            typer.echo(
+                f"Error: Invalid dataset names: {', '.join(invalid)}",
+                err=True,
+            )
+            typer.echo(
+                f"Available datasets: {', '.join(HF_DATASET_MAP.keys())}",
+                err=True,
+            )
+            raise typer.Exit(code=1)
         datasets_to_download = requested_datasets
     else:
         # Download all datasets
         datasets_to_download = list(HF_DATASET_MAP.keys())
 
-    # Convert base_dir to Path
-    base_dir = Path(args.base_dir).resolve()
+    # Convert base_dir to Path and resolve
+    base_dir = base_dir.resolve()
 
-    print(f"\nFidel-TS Dataset Downloader")
-    print(f"{'='*60}")
-    print(f"Base directory: {base_dir}")
-    print(f"Datasets to download: {len(datasets_to_download)}")
-    print(f"  {', '.join(datasets_to_download)}")
-    print(f"{'='*60}")
+    typer.echo("\nFidel-TS Dataset Downloader")
+    typer.echo("=" * 60)
+    typer.echo(f"Base directory: {base_dir}")
+    typer.echo(f"Force overwrite: {force}")
+    typer.echo(f"Datasets to process: {len(datasets_to_download)}")
+    typer.echo(f"  {', '.join(datasets_to_download)}")
+    typer.echo("=" * 60)
 
     # Download each dataset
-    results = {}
+    results: Dict[str, bool] = {}
+    skipped: Dict[str, Path] = {}
     for dataset_name in datasets_to_download:
         # Check if dataset already exists
         subdir = DATASET_SUBDIRS.get(dataset_name, "time_series")
         target_path = base_dir / dataset_name / subdir
 
-        if args.skip_existing and target_path.exists() and any(target_path.iterdir()):
-            print(f"\n⏭ Skipping {dataset_name} (already exists at {target_path})")
+        # Skip existing datasets unless force is enabled
+        if not force and target_path.exists() and any(target_path.iterdir()):
+            typer.echo(f"\n⏭ Skipping {dataset_name}")
+            typer.echo(f"   Dataset already exists at: {target_path}")
+            typer.echo("   Use --force to overwrite")
+            skipped[dataset_name] = target_path
             results[dataset_name] = True
             continue
 
@@ -198,30 +219,35 @@ Examples:
         results[dataset_name] = success
 
     # Print summary
-    print(f"\n{'='*60}")
-    print("Download Summary")
-    print(f"{'='*60}")
-    successful = [name for name, success in results.items() if success]
+    typer.echo("\n" + "=" * 60)
+    typer.echo("Download Summary")
+    typer.echo("=" * 60)
+    successful = [name for name, success in results.items() if success and name not in skipped]
     failed = [name for name, success in results.items() if not success]
 
+    if skipped:
+        typer.echo(f"\n⏭ Skipped (already exist) ({len(skipped)}):")
+        for name, path in skipped.items():
+            typer.echo(f"  - {name} -> {path}")
+
     if successful:
-        print(f"\n✓ Successfully downloaded ({len(successful)}):")
+        typer.echo(f"\n✓ Successfully downloaded ({len(successful)}):")
         for name in successful:
             subdir = DATASET_SUBDIRS.get(name, "time_series")
-            print(f"  - {name} -> {base_dir / name / subdir}")
+            typer.echo(f"  - {name} -> {base_dir / name / subdir}")
 
     if failed:
-        print(f"\n✗ Failed to download ({len(failed)}):")
+        typer.echo(f"\n✗ Failed to download ({len(failed)}):")
         for name in failed:
-            print(f"  - {name}")
+            typer.echo(f"  - {name}")
 
-    print(f"\n{'='*60}")
+    typer.echo("\n" + "=" * 60)
 
     # Exit with error code if any downloads failed
     if failed:
-        sys.exit(1)
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
-    main()
+    app()
 
