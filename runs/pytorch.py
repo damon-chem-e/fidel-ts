@@ -15,6 +15,7 @@ from pathlib import Path
 from utils.tools import dotdict
 from utils.task import ahead_task_parser
 from exp.exp_universal import Experiment
+from cli.utils import safe_float, safe_int, safe_bool
 
 
 def config_to_args(config):
@@ -40,30 +41,32 @@ def config_to_args(config):
     args.data = config.data.name
     args.data_config = config.data.config_path
     args.checkpoints = config.training.get('checkpoints', './checkpoints/')
-    args.scale = config.training.get('scale', True)
-    args.disable_buffer = config.training.get('disable_buffer', False)
-    args.preload_hetero = config.training.get('preload_hetero', False)
-    args.prefetch_factor = config.training.get('prefetch_factor', 2)
-    args.noise = config.training.get('noise', 0.0)
+    args.scale = safe_bool(config.training.get('scale', True), True)
+    args.disable_buffer = safe_bool(config.training.get('disable_buffer', False), False)
+    args.preload_hetero = safe_bool(config.training.get('preload_hetero', False), False)
+    args.prefetch_factor = safe_int(config.training.get('prefetch_factor', 2), 2)
+    args.noise = safe_float(config.training.get('noise', 0.0), 0.0)
     args.downsample = config.training.get('downsample', None)
+    if args.downsample is not None:
+        args.downsample = safe_int(args.downsample, None)
     
     # Forecasting task
     args.ahead = config.training.get('ahead', None)
-    args.output_len = config.training.get('output_len', 1000)
-    args.input_len = config.training.get('input_len', 1000)
+    args.output_len = safe_int(config.training.get('output_len', 1000), 1000)
+    args.input_len = safe_int(config.training.get('input_len', 1000), 1000)
     
     # Optimization
-    args.num_workers = config.training.get('num_workers', 0)
-    args.train_epochs = config.training.get('epochs', 20)
-    args.batch_size = config.training.get('batch_size', 96)
-    args.patience = config.training.get('patience', 3)
-    args.learning_rate = config.training.get('learning_rate', 5e-4)
+    args.num_workers = safe_int(config.training.get('num_workers', 0), 0)
+    args.train_epochs = safe_int(config.training.get('epochs', 20), 20)
+    args.batch_size = safe_int(config.training.get('batch_size', 96), 96)
+    args.patience = safe_int(config.training.get('patience', 3), 3)
+    args.learning_rate = safe_float(config.training.get('learning_rate', 5e-4), 5e-4)
     args.loss = config.training.get('loss', 'mse')
     args.lradj = config.training.get('lradj', 'type3')
     
     # GPU
-    args.use_gpu = config.device.get('use_gpu', True)
-    args.gpu = config.device.get('gpu', 0)
+    args.use_gpu = safe_bool(config.device.get('use_gpu', True), True)
+    args.gpu = safe_int(config.device.get('gpu', 0), 0)
     args.use_multi_gpu = config.device.get('use_multi_gpu', False)
     args.devices = config.device.get('devices', '0,1,2,3')
     

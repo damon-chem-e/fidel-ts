@@ -14,6 +14,7 @@ import yaml
 from utils.tools import dotdict
 from utils.task import ahead_task_parser
 from exp.exp_fm import Experiment
+from cli.utils import safe_float, safe_int, safe_bool
 
 
 def config_to_args(config):
@@ -36,30 +37,32 @@ def config_to_args(config):
     args.data = config.data.name
     args.data_config = config.data.config_path
     args.checkpoints = config.training.get('checkpoints', './checkpoints/')
-    args.scale = config.training.get('scale', True)
-    args.disable_buffer = config.training.get('disable_buffer', False)
-    args.preload_hetero = config.training.get('preload_hetero', False)
-    args.prefetch_factor = config.training.get('prefetch_factor', 2)
-    args.noise = config.training.get('noise', 0.0)
+    args.scale = safe_bool(config.training.get('scale', True), True)
+    args.disable_buffer = safe_bool(config.training.get('disable_buffer', False), False)
+    args.preload_hetero = safe_bool(config.training.get('preload_hetero', False), False)
+    args.prefetch_factor = safe_int(config.training.get('prefetch_factor', 2), 2)
+    args.noise = safe_float(config.training.get('noise', 0.0), 0.0)
     args.downsample = config.training.get('downsample', None)
+    if args.downsample is not None:
+        args.downsample = safe_int(args.downsample, None)
     
     # Forecasting task
     args.task = config.training.get('task', 'TSF')
     args.ahead = config.training.get('ahead', None)
-    args.output_len = config.training.get('output_len', 1000)
-    args.input_len = config.training.get('input_len', 1000)
+    args.output_len = safe_int(config.training.get('output_len', 1000), 1000)
+    args.input_len = safe_int(config.training.get('input_len', 1000), 1000)
     args.filtered_samples = config.training.get('filtered_samples', None)
-    args.individual = config.training.get('individual', True)
+    args.individual = safe_bool(config.training.get('individual', True), True)
     
     # Optimization
-    args.num_workers = config.training.get('num_workers', 0)
-    args.batch_size = config.training.get('batch_size', 96)
+    args.num_workers = safe_int(config.training.get('num_workers', 0), 0)
+    args.batch_size = safe_int(config.training.get('batch_size', 96), 96)
     args.loss = config.training.get('loss', 'mse')
     
     # GPU
-    args.use_gpu = config.device.get('use_gpu', True)
-    args.gpu = config.device.get('gpu', 0)
-    args.use_multi_gpu = config.device.get('use_multi_gpu', False)
+    args.use_gpu = safe_bool(config.device.get('use_gpu', True), True)
+    args.gpu = safe_int(config.device.get('gpu', 0), 0)
+    args.use_multi_gpu = safe_bool(config.device.get('use_multi_gpu', False), False)
     args.devices = config.device.get('devices', '0,1,2,3')
     
     # Environment variables
