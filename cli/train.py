@@ -11,6 +11,7 @@ This module provides CLI commands for training models using different frameworks
 import typer
 from pathlib import Path
 from cli.config.loader import load_config_with_nested
+from cli.utils import handle_error, console, RICH_AVAILABLE
 
 app = typer.Typer(
     name="train",
@@ -50,10 +51,13 @@ def pytorch(
         run(config)
         
     except FileNotFoundError as e:
-        typer.echo(f"Error: Config file not found: {e}", err=True)
+        if RICH_AVAILABLE:
+            console.print(f"[bold red]Error:[/bold red] Config file not found: {e}")
+        else:
+            typer.echo(f"Error: Config file not found: {e}", err=True)
         raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"Error during training: {e}", err=True)
+        handle_error(e, "Error during training")
         raise typer.Exit(code=1)
 
 
@@ -88,10 +92,13 @@ def lightning(
         run(config)
         
     except FileNotFoundError as e:
-        typer.echo(f"Error: Config file not found: {e}", err=True)
+        if RICH_AVAILABLE:
+            console.print(f"[bold red]Error:[/bold red] Config file not found: {e}")
+        else:
+            typer.echo(f"Error: Config file not found: {e}", err=True)
         raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"Error during training: {e}", err=True)
+        handle_error(e, "Error during training")
         raise typer.Exit(code=1)
 
 
@@ -126,10 +133,13 @@ def llm(
         run(config)
         
     except FileNotFoundError as e:
-        typer.echo(f"Error: Config file not found: {e}", err=True)
+        if RICH_AVAILABLE:
+            console.print(f"[bold red]Error:[/bold red] Config file not found: {e}")
+        else:
+            typer.echo(f"Error: Config file not found: {e}", err=True)
         raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"Error during LLM experiment: {e}", err=True)
+        handle_error(e, "Error during LLM experiment")
         raise typer.Exit(code=1)
 
 
@@ -164,10 +174,13 @@ def fm(
         run(config)
         
     except FileNotFoundError as e:
-        typer.echo(f"Error: Config file not found: {e}", err=True)
+        if RICH_AVAILABLE:
+            console.print(f"[bold red]Error:[/bold red] Config file not found: {e}")
+        else:
+            typer.echo(f"Error: Config file not found: {e}", err=True)
         raise typer.Exit(code=1)
     except Exception as e:
-        typer.echo(f"Error during FM testing: {e}", err=True)
+        handle_error(e, "Error during FM testing")
         raise typer.Exit(code=1)
 
 

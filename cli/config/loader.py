@@ -12,6 +12,27 @@ from typing import Dict, Any, Optional, Union
 from utils.tools import dotdict
 
 
+def _recursive_dotdict(obj):
+    """
+    Recursively convert nested dictionaries to dotdict objects.
+    
+    Args:
+        obj: Dictionary or other object to convert
+    
+    Returns:
+        dotdict or original object if not a dict
+    """
+    if isinstance(obj, dict):
+        result = dotdict()
+        for key, value in obj.items():
+            result[key] = _recursive_dotdict(value)
+        return result
+    elif isinstance(obj, list):
+        return [_recursive_dotdict(item) for item in obj]
+    else:
+        return obj
+
+
 def resolve_config_path(config_path: str, base_dir: Optional[Path] = None) -> Path:
     """
     Resolve a config path to an absolute path.
@@ -81,7 +102,7 @@ def load_config(config_path: str, base_dir: Optional[Path] = None) -> dotdict:
     """
     resolved_path = resolve_config_path(config_path, base_dir)
     config = load_yaml_config(resolved_path)
-    return dotdict(config)
+    return _recursive_dotdict(config)
 
 
 def load_config_with_nested(config_path: str, base_dir: Optional[Path] = None) -> Dict[str, Any]:
@@ -141,7 +162,7 @@ def load_config_with_nested(config_path: str, base_dir: Optional[Path] = None) -
                     subconfig_path = resolve_config_path(value, parent_path.parent)
                     if subconfig_path.exists():
                         subconfig = load_yaml_config(subconfig_path)
-                        nested_configs[key] = dotdict(subconfig)
+                        nested_configs[key] = _recursive_dotdict(subconfig)
                         config_paths[key] = subconfig_path
                         # Recursively check for nested configs within this subconfig
                         find_subconfigs(subconfig, subconfig_path)
@@ -156,7 +177,7 @@ def load_config_with_nested(config_path: str, base_dir: Optional[Path] = None) -
     find_subconfigs(primary_config, primary_path)
     
     return {
-        'primary': dotdict(primary_config),
+        'primary': _recursive_dotdict(primary_config),
         'nested': {k: v for k, v in nested_configs.items()},
         'config_paths': config_paths
     }
