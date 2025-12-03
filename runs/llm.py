@@ -7,8 +7,10 @@ migrated from run_llm.py. Uses Pydantic configs and ExperimentManager.
 
 import os
 import yaml
+import torch
 from utils.tools import dotdict
 from utils.task import ahead_task_parser
+from utils.gpu_monitor import gpu_monitoring_context
 from exp.exp_llm import Experiment
 from cli.config.models import ExperimentConfig
 from exp.manager import ExperimentManager
@@ -130,7 +132,9 @@ def run(config: ExperimentConfig):
     # Remove the "/" "\" in model name for path safety
     _model = args.model.replace('/', '-').replace('\\', '-')
     
-    # Initialize and run experiment
-    exp = Experiment(args)
-    exp.test(savepath=str(exp_manager.get_checkpoint_dir()), valiset=args.valisets)
+    # Run experiment with GPU monitoring context
+    with gpu_monitoring_context(args, exp_manager, log_interval_s=30.0):
+        # Initialize and run experiment
+        exp = Experiment(args)
+        exp.test(savepath=str(exp_manager.get_checkpoint_dir()), valiset=args.valisets)
 

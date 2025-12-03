@@ -5,16 +5,16 @@ This module provides functionality to execute collections of related experiments
 defined in suite configuration files, replacing the need for bash scripts.
 """
 
-import os
 import yaml
-import json
 import logging
+import torch
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from datetime import datetime
 
-from cli.config.loader import load_config, resolve_config_path
+from cli.config.loader import resolve_config_path
 from cli.config.models import ExperimentConfig
+from utils.gpu_monitor import GpuMonitor
 from runs.pytorch import run as run_pytorch
 from runs.lightning import run as run_lightning
 from runs.llm import run as run_llm
@@ -162,26 +162,42 @@ class SuiteExecutor:
         
         logger.info(f"Starting suite execution: {len(experiments)} experiments")
         
+        # Initialize suite-level GPU monitor if GPU is available
+        suite_gpu_monitor = None
+        if torch.cuda.is_available():
+            suite_csv_path = str(Path(self.log_dir) / "suite_gpu_telemetry.csv")
+            suite_gpu_monitor = GpuMonitor(device_index=0, out_csv=suite_csv_path)
+            suite_gpu_monitor.start()
+            logger.info("Started suite-level GPU monitoring")
+        
         success_count = 0
         error_count = 0
         
-        for exp_config in experiments:
-            exp_name = exp_config.get('name', 'unknown')
-            try:
-                logger.info(f"Executing experiment: {exp_name}")
-                self._execute_experiment(exp_config)
-                success_count += 1
-                logger.info(f"Successfully completed experiment: {exp_name}")
-            except Exception as e:
-                error_count += 1
-                error_msg = f"Error executing experiment '{exp_name}': {str(e)}"
-                logger.error(error_msg, exc_info=True)
-                
-                if not self.execution_config.get('continue_on_error', True):
-                    logger.error("Stopping suite execution due to error")
-                    raise
-                else:
-                    logger.warning(f"Continuing suite execution despite error in '{exp_name}'")
+        try:
+            for exp_config in experiments:
+                exp_name = exp_config.get('name', 'unknown')
+                try:
+                    logger.info(f"Executing experiment: {exp_name}")
+                    self._execute_experiment(exp_config)
+                    success_count += 1
+                    logger.info(f"Successfully completed experiment: {exp_name}")
+                except Exception as e:
+                    error_count += 1
+                    error_msg = f"Error executing experiment '{exp_name}': {str(e)}"
+                    logger.error(error_msg, exc_info=True)
+                    
+                    if not self.execution_config.get('continue_on_error', True):
+                        logger.error("Stopping suite execution due to error")
+                        raise
+                    else:
+                        logger.warning(f"Continuing suite execution despite error in '{exp_name}'")
+        finally:
+            # Stop suite-level GPU monitoring
+            if suite_gpu_monitor:
+                suite_gpu_monitor.stop()
+                summary = suite_gpu_monitor.summary()
+                if summary:
+                    logger.info(f"Suite GPU monitoring summary: {summary}")
         
         logger.info(f"Suite execution completed: {success_count} successful, {error_count} errors")
     

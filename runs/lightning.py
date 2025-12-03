@@ -12,6 +12,7 @@ import numpy as np
 import yaml
 from utils.tools import dotdict
 from utils.task import ahead_task_parser
+from utils.gpu_monitor import gpu_monitoring_context
 from exp.exp_lightning import train_lightning_model
 from cli.config.models import ExperimentConfig
 from exp.manager import ExperimentManager
@@ -152,10 +153,9 @@ def run(config: ExperimentConfig):
     # Clear CUDA cache
     torch.cuda.empty_cache()
     
-    # Train model (pass exp_manager for tracking)
-    model = train_lightning_model(args, exp_manager=exp_manager)
-    print(f'>>>>>>>training completed : {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>>')
-    
-    # Final cleanup
-    torch.cuda.empty_cache()
+    # Run training with GPU monitoring context
+    with gpu_monitoring_context(args, exp_manager, log_interval_s=30.0):
+        # Train model (pass exp_manager for tracking)
+        model = train_lightning_model(args, exp_manager=exp_manager)
+        print(f'>>>>>>>training completed : {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>>')
 

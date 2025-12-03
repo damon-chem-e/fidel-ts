@@ -12,6 +12,7 @@ import numpy as np
 import yaml
 from utils.tools import dotdict
 from utils.task import ahead_task_parser
+from utils.gpu_monitor import gpu_monitoring_context
 from exp.exp_fm import Experiment
 from cli.config.models import ExperimentConfig
 from exp.manager import ExperimentManager
@@ -147,11 +148,10 @@ def run(config: ExperimentConfig):
     # Clear CUDA cache
     torch.cuda.empty_cache()
     
-    # Initialize and run experiment (pass exp_manager for tracking)
-    exp = Experiment(args, exp_manager=exp_manager)
-    print(f'>>>>>>>start testing: {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>')
-    exp.test(savepath=str(exp_manager.get_checkpoint_dir()))
-    
-    # Final cleanup
-    torch.cuda.empty_cache()
+    # Run experiment with GPU monitoring context
+    with gpu_monitoring_context(args, exp_manager, log_interval_s=30.0):
+        # Initialize and run experiment (pass exp_manager for tracking)
+        exp = Experiment(args, exp_manager=exp_manager)
+        print(f'>>>>>>>start testing: {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>')
+        exp.test(savepath=str(exp_manager.get_checkpoint_dir()))
 
