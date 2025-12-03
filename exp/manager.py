@@ -14,68 +14,17 @@ import sys
 import json
 import hashlib
 import shutil
+import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
 import subprocess
 import yaml
 
+from rich.console import Console
+from rich.logging import RichHandler
+
 from cli.config.models import ExperimentConfig
-
-
-class Tee:
-    """
-    Tee class that writes to both a file and the original stream (stdout/stderr).
-    
-    This allows capturing all output to log files while still displaying it
-    in the console for real-time monitoring. Uses block buffering for the file
-    to maintain performance with high-frequency updates (e.g., tqdm progress bars).
-    """
-    
-    def __init__(self, file_path: Path, stream, file_buffer_size: int = 65536):
-        """
-        Initialize Tee.
-        
-        Args:
-            file_path: Path to log file
-            stream: Original stream (sys.stdout or sys.stderr)
-            file_buffer_size: Buffer size for file writes in bytes (default 64KB).
-                             Larger buffers improve performance with high-frequency updates.
-        """
-        # Use block buffering (larger buffer) for file to avoid slowdowns with tqdm
-        # The console stream remains fast, and file writes are batched efficiently
-        self.file = open(file_path, 'w', encoding='utf-8', buffering=file_buffer_size)
-        self.stream = stream
-    
-    def write(self, text: str) -> None:
-        """
-        Write to both file and original stream.
-        
-        Note: File is block-buffered, so writes are batched for performance.
-        The console stream writes immediately for real-time display.
-        """
-        self.file.write(text)
-        self.stream.write(text)
-        # Only flush the console stream immediately (for real-time display)
-        # File will flush when buffer is full or on explicit flush() calls
-        self.stream.flush()
-    
-    def flush(self) -> None:
-        """
-        Flush both file and stream.
-        
-        This is called explicitly by print(), tqdm, and other code that needs
-        immediate output, ensuring all data is written to the file.
-        """
-        self.file.flush()
-        self.stream.flush()
-    
-    def close(self) -> None:
-        """Close the file (stream remains open)."""
-        if self.file:
-            # Flush any remaining buffered data before closing
-            self.file.flush()
-            self.file.close()
 
 
 class ExperimentManager:
@@ -120,14 +69,8 @@ class ExperimentManager:
         self.experiment_dir = self.output_dir / self.experiment_id
         self._create_experiment_structure()
         
-        # Initialize stream references (will be set in _setup_log_capture)
-        self._original_stdout = None
-        self._original_stderr = None
-        self._stdout_tee = None
-        self._stderr_tee = None
-        
-        # Set up stdout/stderr logging to experiment logs folder
-        self._setup_log_capture()
+        # Set up proper logging (doesn't interfere with tqdm/rich progress bars)
+        self._setup_logging()
         
         # Capture metadata
         self.metadata = self._capture_metadata()
@@ -183,30 +126,49 @@ class ExperimentManager:
         if self.config.wandb.enabled:
             (self.experiment_dir / "wandb").mkdir(exist_ok=True)
     
-    def _setup_log_capture(self) -> None:
+    def _setup_logging(self) -> None:
         """
-        Set up stdout and stderr capture to log files.
+        Set up Rich-based logging system.
         
-        Creates Tee objects that write to both console and log files,
-        ensuring all output is captured for later analysis.
+        Creates a Rich Console for terminal output and progress bars.
+        All logging goes through the logger, giving us full control without
+        needing to redirect stdout/stderr.
         """
         log_dir = self.experiment_dir / "logs"
         
-        # Create Tee objects for stdout and stderr
-        stdout_path = log_dir / "stdout.log"
-        stderr_path = log_dir / "stderr.log"
+        # Create Rich Console for beautiful terminal output
+        self.console = Console(width=None, force_terminal=True)
         
-        # Store original streams before redirecting
-        self._original_stdout = sys.stdout
-        self._original_stderr = sys.stderr
+        # Set up Python logging with Rich handler
+        self.logger = logging.getLogger(f"experiment.{self.experiment_id}")
+        self.logger.setLevel(logging.INFO)
+        self.logger.propagate = False
+        self.logger.handlers.clear()
         
-        # Create Tee objects that write to both file and console
-        self._stdout_tee = Tee(stdout_path, self._original_stdout)
-        self._stderr_tee = Tee(stderr_path, self._original_stderr)
+        # File handler for structured logs
+        log_file = log_dir / "experiment.log"
+        file_handler = logging.FileHandler(log_file, encoding='utf-8', mode='w')
+        file_handler.setLevel(logging.INFO)
+        file_formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        file_handler.setFormatter(file_formatter)
+        self.logger.addHandler(file_handler)
         
-        # Redirect stdout and stderr
-        sys.stdout = self._stdout_tee
-        sys.stderr = self._stderr_tee
+        # Console handler: use RichHandler for beautiful output
+        console_handler = RichHandler(
+            console=self.console,
+            show_time=True,
+            show_path=False,
+            rich_tracebacks=True
+        )
+        
+        console_handler.setLevel(logging.INFO)
+        self.logger.addHandler(console_handler)
+        
+        # Store handlers for cleanup
+        self._log_handlers = [file_handler, console_handler]
     
     def _capture_metadata(self) -> Dict[str, Any]:
         """
@@ -711,8 +673,11 @@ class ExperimentManager:
             except Exception as e:
                 print(f"Warning: Failed to finish wandb run: {e}")
         
-        # Restore original stdout/stderr and close log files
-        self._restore_log_streams()
+        # Close logging handlers
+        for handler in getattr(self, '_log_handlers', []):
+            handler.close()
+            if handler in self.logger.handlers:
+                self.logger.removeHandler(handler)
         
         # Save final metadata
         self.metadata["end_timestamp"] = datetime.now().isoformat()
@@ -720,23 +685,6 @@ class ExperimentManager:
         with open(metadata_path, 'w', encoding='utf-8') as f:
             json.dump(self.metadata, f, indent=2, default=str)
     
-    def _restore_log_streams(self) -> None:
-        """
-        Restore original stdout/stderr and close log file handles.
-        
-        This should be called when the experiment ends to ensure
-        all log data is flushed and streams are restored.
-        """
-        # Flush and close Tee objects
-        if self._stdout_tee is not None:
-            self._stdout_tee.flush()
-            self._stdout_tee.close()
-            sys.stdout = self._original_stdout
-        
-        if self._stderr_tee is not None:
-            self._stderr_tee.flush()
-            self._stderr_tee.close()
-            sys.stderr = self._original_stderr
     
     def get_experiment_id(self) -> str:
         """Get experiment ID."""

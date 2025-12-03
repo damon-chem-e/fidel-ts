@@ -9,7 +9,10 @@ from models import model_init
 from utils.tools import general_move_to_device, adjust_learning_rate
 import json
 import time
-from tqdm import tqdm
+# Rich imports for progress bars
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TimeElapsedColumn
+from rich.console import Console
+
 import warnings
 import inspect
 
@@ -21,10 +24,11 @@ class TimeSeriesLightningModel(pl.LightningModule):
     PyTorch Lightning module for time series forecasting.
     Wraps the existing model implementations and training logic.
     """
-    def __init__(self, args):
+    def __init__(self, args, exp_manager=None):
         super(TimeSeriesLightningModel, self).__init__()
         self.args = args
-        self.save_hyperparameters(ignore=['args'])
+        self.exp_manager = exp_manager
+        self.save_hyperparameters(ignore=['args', 'exp_manager'])
         
         # Build model
         self.model = model_init(self.args.model, self.args.model_config, self.args)
@@ -130,58 +134,62 @@ class TimeSeriesLightningModel(pl.LightningModule):
         if not hasattr(self.trainer.datamodule, 'test_dataset'):
             self.trainer.datamodule.setup(stage='test')
         
-        print("\n\n------- Testing on Epoch {} -------".format(self.current_epoch + 1))
+        # Assume exp_manager and logger exist as they are required
+        logger = self.exp_manager.logger
+        console = self.exp_manager.console
+        
+        logger.info("\n\n------- Testing on Epoch {} -------".format(self.current_epoch + 1))
         
         # Save current state
         self.model.eval()
         test_loaders = self.trainer.datamodule.test_dataloader()
         
-        # --- MODIFICATION START ---
         # Track total loss and total samples to calculate the true average loss,
         # avoiding the "mean of means" error.
         subset_losses = {}
         overall_total_loss = 0.0
         overall_total_samples = 0
-        # --- MODIFICATION END ---
         
         with torch.no_grad():
             for subset_id, loader in test_loaders.items():
-                # --- MODIFICATION START ---
                 subset_total_loss = 0.0
                 subset_total_samples = 0
-                # --- MODIFICATION END ---
                 
                 # Process each batch
-                for i, batch in tqdm(enumerate(loader), total=len(loader), desc=f"Testing {subset_id}"):
-                    output, gt = self.forward(batch)
-                    loss = self.criterion(output, gt)
-                    
-                    # --- MODIFICATION START ---
-                    # The criterion calculates the mean loss for the batch. To get the total
-                    # loss for the batch, we multiply by the number of elements.
-                    num_samples_in_batch = gt.numel()
-                    total_batch_loss = loss.item() * num_samples_in_batch
-                    
-                    subset_total_loss += total_batch_loss
-                    subset_total_samples += num_samples_in_batch
-                    # --- MODIFICATION END ---
+                with Progress(
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                    TimeElapsedColumn(),
+                    console=console
+                ) as progress:
+                    task = progress.add_task(f"Testing {subset_id}", total=len(loader))
+                    for i, batch in enumerate(loader):
+                        output, gt = self.forward(batch)
+                        loss = self.criterion(output, gt)
+                        
+                        # The criterion calculates the mean loss for the batch. To get the total
+                        # loss for the batch, we multiply by the number of elements.
+                        num_samples_in_batch = gt.numel()
+                        total_batch_loss = loss.item() * num_samples_in_batch
+                        
+                        subset_total_loss += total_batch_loss
+                        subset_total_samples += num_samples_in_batch
+                        progress.update(task, advance=1)
                 
                 # Calculate average for this subset
-                # --- MODIFICATION START ---
                 if subset_total_samples > 0:
                     avg_loss = subset_total_loss / subset_total_samples
                     subset_losses[subset_id] = avg_loss
                     overall_total_loss += subset_total_loss
                     overall_total_samples += subset_total_samples
-                    print(f"Test loss for {subset_id}: {avg_loss:.7f}")
-                # --- MODIFICATION END ---
+                    
+                    logger.info(f"Test loss for {subset_id}: {avg_loss:.7f}")
         
         # Calculate overall average
-        # --- MODIFICATION START ---
         if overall_total_samples > 0:
             overall_avg = overall_total_loss / overall_total_samples
-            print(f"Overall test loss: {overall_avg:.7f}")
-        # --- MODIFICATION END ---
+            logger.info(f"Overall test loss: {overall_avg:.7f}")
             
         print("---------------------------------------\n")
         
@@ -240,17 +248,21 @@ class TimeSeriesLightningModel(pl.LightningModule):
         return [optimizer], [lr_scheduler]
 
 
-def train_lightning_model(args, exp_manager=None):
+def train_lightning_model(args, exp_manager):
     """
     Train the Lightning model and save it.
     
     Args:
         args: Arguments for the experiment
-        exp_manager: Optional ExperimentManager for experiment tracking
+        exp_manager: ExperimentManager for experiment tracking (required)
     
     Returns:
         Trained model
     """
+    # Verify exp_manager is provided
+    if exp_manager is None:
+        raise ValueError("exp_manager is required for training")
+
     from data_provider.lightning_data_module import TimeSeriesDataModule
     
     # Initialize data module
@@ -260,28 +272,19 @@ def train_lightning_model(args, exp_manager=None):
 
     if args.last_ckpt is not None:
         # Load the last checkpoint if provided
-        print(f"Loading model from checkpoint: {args.last_ckpt}")
-        model = TimeSeriesLightningModel.load_from_checkpoint(args.last_ckpt, args=args)
+        exp_manager.logger.info(f"Loading model from checkpoint: {args.last_ckpt}")
+        model = TimeSeriesLightningModel.load_from_checkpoint(args.last_ckpt, args=args, exp_manager=exp_manager)
         checkpoint_path = os.path.dirname(args.last_ckpt)
-        print(f"Checkpoint path: {checkpoint_path}")
+        exp_manager.logger.info(f"Checkpoint path: {checkpoint_path}")
     
     else:
         # Initialize model
-        model = TimeSeriesLightningModel(args)
-        # Use experiment_id from exp_manager if available, otherwise fall back to args.checkpoints
-        if exp_manager is not None:
-            checkpoint_path = str(exp_manager.get_checkpoint_dir())
-        else:
-            # Fallback for backward compatibility - use a default name
-            checkpoint_path = os.path.join(args.checkpoints, "lightning_experiment")
+        model = TimeSeriesLightningModel(args, exp_manager=exp_manager)
+        # Use experiment_id from exp_manager
+        checkpoint_path = str(exp_manager.get_checkpoint_dir())
         
         if not os.path.exists(checkpoint_path):
             os.makedirs(checkpoint_path)
-    
-        # Save args.json for backward compatibility (if not using exp_manager)
-        if exp_manager is None:
-            with open(os.path.join(checkpoint_path, 'args.json'), 'w') as f:
-                json.dump(args.__dict__, f)
     
     # Configure callbacks
     early_stopping = EarlyStopping(
@@ -302,13 +305,9 @@ def train_lightning_model(args, exp_manager=None):
     
     
     # Configure logger
-    # Use experiment_id from exp_manager if available
-    if exp_manager is not None:
-        logger_name = exp_manager.get_experiment_id()
-        logger_save_dir = str(exp_manager.get_experiment_dir() / "tb_logs")
-    else:
-        logger_name = "lightning_experiment"
-        logger_save_dir = os.path.join(args.checkpoints, 'tb_logs')
+    # Use experiment_id from exp_manager
+    logger_name = exp_manager.get_experiment_id()
+    logger_save_dir = str(exp_manager.get_experiment_dir() / "tb_logs")
     
     logger = TensorBoardLogger(
         save_dir=logger_save_dir,
@@ -342,32 +341,37 @@ def train_lightning_model(args, exp_manager=None):
     trainer = pl.Trainer(**trainer_kwargs)
     
     # Train model
-    print('>>>>>>>start training >>>>>>>>>>>>>>>>>>>>>>>>>>>')
+    exp_manager.logger.info('>>>>>>>start training >>>>>>>>>>>>>>>>>>>>>>>>>>>')
+        
     if not args.test:
         trainer.fit(model, data_module)
     
     # Get the path to the best model saved by the checkpoint callback
     best_model_path = checkpoint_callback.best_model_path
     if not best_model_path or not os.path.exists(best_model_path):
-        print("Could not find best model path. Using last model for testing.")
+        exp_manager.logger.warning("Could not find best model path. Using last model for testing.")
         # Fallback to the last saved model if best is not found
         best_model_path = checkpoint_callback.last_model_path 
     
     # Final test using the best model checkpoint
-    print(f'>>>>>>>final testing on best model: {best_model_path}>>>>>>>>>>>>>>>>>>>>>>>>>>>')
+    exp_manager.logger.info(f'>>>>>>>final testing on best model: {best_model_path}>>>>>>>>>>>>>>>>>>>>>>>>>>>')
+        
     data_module.setup(stage='test')
     test_loaders = data_module.test_dataloader()
 
     info_results = {}
     for i, (subset_id, loader) in enumerate(test_loaders.items()):
-        print(f"Testing {subset_id}...")
+        exp_manager.logger.info(f"Testing {subset_id}...")
+            
         trainer.test(model, dataloaders=loader, ckpt_path=best_model_path)
-        print(f"Test loss for {subset_id}: {trainer.callback_metrics['test_loss'].item():.7f}")
+        
+        exp_manager.logger.info(f"Test loss for {subset_id}: {trainer.callback_metrics['test_loss'].item():.7f}")
+            
         info_results[subset_id] = trainer.callback_metrics['test_loss'].item()
     
-    print(info_results)
     if trainer.is_global_zero:  # Only the main process writes the file
-        print(info_results)
+        exp_manager.logger.info(str(info_results))
+            
         with open(os.path.join(checkpoint_path, 'test_results.json'), 'w') as f:
             json.dump(info_results, f)
         with open(os.path.join(checkpoint_path, 'test_results_average.json'), 'w') as f:

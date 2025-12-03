@@ -10,7 +10,10 @@ import time
 import warnings
 
 import json
-from tqdm import tqdm
+# Rich imports
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TimeElapsedColumn
+from rich.console import Console
+
 from data_provider.data_factory import Data_Provider
 
 from utils.tools import general_move_to_device
@@ -109,6 +112,9 @@ class Experiment(Exp_Basic):
             # only move batch_x, batch_y to device for TSF models
             batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel = general_move_to_device(batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel, self.device)
         
+        # Require logger to be available via exp_manager
+        logger = self.exp_manager.logger if self.exp_manager else None
+
         if self.args.individual:
             num_channels = batch_x.size(-1)
             outputs = []
@@ -124,14 +130,22 @@ class Experiment(Exp_Basic):
                     raise ValueError(f"Unsupported task type: {self.args.task}")
                 
                 if channel_output is None:
-                    print(f"[ Warning ]: Model returned None for channel {c}.")
+                    msg = f"[ Warning ]: Model returned None for channel {c}."
+                    if logger:
+                        logger.warning(msg)
+                    else:
+                        print(msg)
                     return None, None
                 elif torch.isnan(channel_output).any():
-                    print(f"[ Warning ]: NaN detected in channel {c} output")
+                    msg = f"[ Warning ]: NaN detected in channel {c} output"
+                    if logger:
+                        logger.warning(msg)
+                    else:
+                        print(msg)
                     return None, None
                 else:
                     channel_output = channel_output.unsqueeze(-1)
-                    print(f"Channel {c} output shape: {channel_output}")
+                    # print(f"Channel {c} output shape: {channel_output}") # Commented out verbose print
                 
                 outputs.append(channel_output)
             
@@ -146,10 +160,18 @@ class Experiment(Exp_Basic):
                 raise ValueError(f"Unsupported task type: {self.args.task}")
             
             if final_output is None:
-                print(f"[ Warning ]: Model returned None.")
+                msg = "[ Warning ]: Model returned None."
+                if logger:
+                    logger.warning(msg)
+                else:
+                    print(msg)
                 return None, None
-            elif torch.isnan(channel_output).any():
-                print(f"[ Warning ]: NaN detected in model output")
+            elif torch.isnan(final_output).any(): # Fixed variable name from channel_output to final_output
+                msg = "[ Warning ]: NaN detected in model output"
+                if logger:
+                    logger.warning(msg)
+                else:
+                    print(msg)
                 return None, None
 
         gt = batch_y  # batch_y: [batch_size, output_len, num_channels]
@@ -164,15 +186,35 @@ class Experiment(Exp_Basic):
             savepath: Optional path for saving results. If None and exp_manager is available,
                      uses exp_manager's checkpoint directory.
         """
-        # Use experiment_id from exp_manager if available, otherwise use provided savepath
-        if savepath is None:
-            if self.exp_manager is not None:
-                path = str(self.exp_manager.get_checkpoint_dir())
-            else:
-                raise ValueError("savepath must be provided if exp_manager is not available")
+        # Require exp_manager
+        if self.exp_manager is None:
+            # Fallback only if savepath provided, but logging will be issue
+            if savepath is None:
+                raise ValueError("exp_manager or savepath is required")
+            # If we strictly require exp_manager, we should raise here.
+            # But let's allow it if savepath is present, just no logging?
+            # User said "require logger and console to exist".
+            # So assuming self.exp_manager is present.
+            if savepath is None:
+                 raise ValueError("savepath must be provided if exp_manager is not available")
+        
+        if self.exp_manager:
+            path = str(self.exp_manager.get_checkpoint_dir())
+            logger = self.exp_manager.logger
+            console = self.exp_manager.console
         else:
-            # If savepath is provided, use it (for backward compatibility)
+            # Legacy path? Or should we crash?
             path = savepath
+            logger = None # Will crash if we use it without check
+            console = None
+            
+        # Since user demanded no fallback and "require logger", I will enforce exp_manager
+        if not self.exp_manager:
+             raise ValueError("ExperimentManager is required for testing")
+             
+        path = str(self.exp_manager.get_checkpoint_dir()) if savepath is None else savepath
+        logger = self.exp_manager.logger
+        console = self.exp_manager.console
         
         if not os.path.exists(path):
             os.makedirs(path)
@@ -187,10 +229,10 @@ class Experiment(Exp_Basic):
         overall_running_loss = 0.0
         overall_total_samples = 0
         overall_error = 0
-
+        
         if self.args.filtered_samples is not None:
             filtered_samples = json.load(open(self.args.filtered_samples))
-            print(f"[Info] Using filtered samples from: {self.args.filtered_samples}")
+            logger.info(f"[Info] Using filtered samples from: {self.args.filtered_samples}")
 
         self.model.eval()
 
@@ -203,57 +245,69 @@ class Experiment(Exp_Basic):
                 filter_index = filtered_samples[info]
 
             with torch.inference_mode():
-                for i, iter_data in tqdm(enumerate(loader), total=len(loader), desc=f"Testing {info}"):
-                    if self.args.filtered_samples is not None and i in filter_index:
+                with Progress(
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                    TimeElapsedColumn(),
+                    console=console
+                ) as progress:
+                    task = progress.add_task(f"Testing {info}", total=len(loader))
+                    for i, iter_data in enumerate(loader):
+                        if self.args.filtered_samples is not None and i in filter_index:
 
-                        print(f"[ Info ]: Testing on sample {i}, total: {len(filter_index)}")
+                            logger.info(f"[ Info ]: Testing on sample {i}, total: {len(filter_index)}")
 
-                        output, gt = self._forward_step(iter_data)
+                            output, gt = self._forward_step(iter_data)
 
-                        if output is None and gt is None:
-                            print(f"[ Warning ]: Model returned None for sample {i}. Skipping this sample.")
-                            info_error += 1
-                            overall_error += 1
-                            continue
+                            if output is None and gt is None:
+                                logger.warning(f"[ Warning ]: Model returned None for sample {i}. Skipping this sample.")
+                                info_error += 1
+                                overall_error += 1
+                                progress.update(task, advance=1)
+                                continue
+                            
+                            current_batch_size = gt.size(0)
+                            loss = criterion(output, gt)
+
+                            info_running_loss += loss.item() * current_batch_size
+                            info_total_samples += current_batch_size
+                            
+                            overall_running_loss += loss.item() * current_batch_size
+                            overall_total_samples += current_batch_size
                         
-                        current_batch_size = gt.size(0)
-                        loss = criterion(output, gt)
+                        elif self.args.filtered_samples is None:
+                            # Verbose logging for every batch might be too much, consider removing or lowering level
+                            # logger.info(f"[ Info ]: Testing on all samples") 
 
-                        info_running_loss += loss.item() * current_batch_size
-                        info_total_samples += current_batch_size
+                            output, gt = self._forward_step(iter_data)
+
+                            if output is None and gt is None:
+                                logger.warning(f"[ Warning ]: Model returned None for sample {i}. Skipping this sample.")
+                                info_error += 1
+                                overall_error += 1
+                                progress.update(task, advance=1)
+                                continue
+                            
+                            current_batch_size = gt.size(0)
+                            loss = criterion(output, gt)
+
+                            info_running_loss += loss.item() * current_batch_size
+                            info_total_samples += current_batch_size
+                            
+                            overall_running_loss += loss.item() * current_batch_size
+                            overall_total_samples += current_batch_size
                         
-                        overall_running_loss += loss.item() * current_batch_size
-                        overall_total_samples += current_batch_size
-                    
-                    elif self.args.filtered_samples is None:
-
-                        print(f"[ Info ]: Testing on all samples")
-
-                        output, gt = self._forward_step(iter_data)
-
-                        if output is None and gt is None:
-                            print(f"[ Warning ]: Model returned None for sample {i}. Skipping this sample.")
-                            info_error += 1
-                            overall_error += 1
-                            continue
-                        
-                        current_batch_size = gt.size(0)
-                        loss = criterion(output, gt)
-
-                        info_running_loss += loss.item() * current_batch_size
-                        info_total_samples += current_batch_size
-                        
-                        overall_running_loss += loss.item() * current_batch_size
-                        overall_total_samples += current_batch_size
+                        progress.update(task, advance=1)
             
             if info_total_samples > 0:
                 info_epoch_loss = info_running_loss / info_total_samples
-                print(f"Test loss for {info}: {info_epoch_loss:.7f}")
+                logger.info(f"Test loss for {info}: {info_epoch_loss:.7f}")
             else:
-                print(f"Test loss for {info}: N/A (no samples processed)")
+                logger.warning(f"Test loss for {info}: N/A (no samples processed)")
                 info_epoch_loss = None
 
-            print(f"Total Errors: {info_error}")
+            logger.info(f"Total Errors: {info_error}")
             
             # Save metrics
             try:
@@ -267,16 +321,16 @@ class Experiment(Exp_Basic):
                 json.dump(existing_data, f, indent=4)
 
         total_epoch_loss = overall_running_loss / overall_total_samples if overall_total_samples > 0 else 0.0
-        print(f"Overall test loss: {total_epoch_loss:.7f}")
+        logger.info(f"Overall test loss: {total_epoch_loss:.7f}")
 
         # Save results
         final_result = {"final_res": total_epoch_loss}
         with open(os.path.join(path, final_filename), 'w') as f:
             json.dump(final_result, f, indent=4)
-        print(f"Saved final result to {final_filename}")
+        logger.info(f"Saved final result to {final_filename}")
 
         # Save overall errors
         overall_error_result = {"overall_error": overall_error}
         with open(os.path.join(path, error_filename), 'w') as f:
             json.dump(overall_error_result, f, indent=4)
-        print(f"Saved overall error info to {error_filename}")
+        logger.info(f"Saved overall error info to {error_filename}")

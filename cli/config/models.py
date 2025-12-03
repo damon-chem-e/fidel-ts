@@ -96,6 +96,8 @@ class WandBConfig(BaseModel):
     
     project: str = Field(default="fidel-ts", description="WandB project name")
     entity: Optional[str] = Field(default=None, description="WandB entity/team name (optional)")
+    run_name: Optional[str] = Field(default=None, description="WandB run name (defaults to experiment_id if not specified)")
+    run_id: Optional[str] = Field(default=None, description="WandB run ID for resuming/overwriting runs")
     tags: List[str] = Field(default_factory=list, description="Tags for experiment organization")
     notes: Optional[str] = Field(default=None, description="Notes/description for the experiment")
     enabled: bool = Field(default=True, description="Whether to enable wandb logging")

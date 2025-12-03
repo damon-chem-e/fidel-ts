@@ -16,6 +16,7 @@ Note that most of the literature works with static text rather than interleaved 
 - MOIRAI + MOIRAI MoE
 - Chronos 2
 - Ti-Rex
+- tiny-tsm
 - TEMPO
 
 ## Multimodal additions

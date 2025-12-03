@@ -7,7 +7,9 @@ import traceback
 import numpy as np
 import torch
 import torch.nn as nn
-from tqdm import tqdm
+# Rich imports
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TimeElapsedColumn
+from rich.console import Console
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from multiprocessing import Pool
@@ -138,6 +140,13 @@ class Experiment(Exp_Basic):
         data_sets = self.data_provider.get_test(return_type='set')
         error_log_path = os.path.join(savepath, 'error_log.txt')
         
+        # Require exp_manager
+        if not self.exp_manager:
+            raise ValueError("ExperimentManager is required for testing")
+            
+        logger = self.exp_manager.logger
+        console = self.exp_manager.console
+        
         total_errors = 0
         total_shape_mismatch_errors = 0 
         total_processed = 0
@@ -175,7 +184,8 @@ class Experiment(Exp_Basic):
                 model=self.model, 
                 info_savepath=info_savepath,
                 error_log_path=error_log_path,
-                info_name=info
+                info_name=info,
+                logger=logger
             )
             
             def process_and_count(processed_item):
@@ -195,17 +205,41 @@ class Experiment(Exp_Basic):
                     shape_mismatch_count += 1
 
             if self.args.no_parallel:
-                for index in tqdm(indexes, desc=f"Testing {info}"):
-                    processed = my_process_iteration(index)
-                    process_and_count(processed)
+                with Progress(
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                    TimeElapsedColumn(),
+                    console=console
+                ) as progress:
+                    task = progress.add_task(f"Testing {info}", total=len(indexes))
+                    for index in indexes:
+                        processed = my_process_iteration(index)
+                        process_and_count(processed)
+                        progress.update(task, advance=1)
             else:
                 num_gpus = torch.cuda.device_count()
                 max_workers = 1 
-                print(f"Number of GPUs: {num_gpus}, Max Workers: {max_workers}")
+                msg = f"Number of GPUs: {num_gpus}, Max Workers: {max_workers}"
+                logger.info(msg)
+                    
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    results = list(tqdm(executor.map(my_process_iteration, indexes), desc=f"Testing {info}", total=len(indexes)))
-                for processed in results:
-                    process_and_count(processed)
+                    with Progress(
+                        TextColumn("[progress.description]{task.description}"),
+                        BarColumn(),
+                        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                        TimeElapsedColumn(),
+                        console=console
+                    ) as progress:
+                        task = progress.add_task(f"Testing {info}", total=len(indexes))
+                        # Submit all tasks
+                        futures = [executor.submit(my_process_iteration, idx) for idx in indexes]
+                        
+                        # Process results as they complete
+                        for future in futures:
+                            processed = future.result()
+                            process_and_count(processed)
+                            progress.update(task, advance=1)
                 
             if os.path.exists(os.path.join(info_savepath, f'{info}_result.json')):
                 old = json.load(open(os.path.join(info_savepath, f'{info}_result.json')))
@@ -213,29 +247,29 @@ class Experiment(Exp_Basic):
             with open(os.path.join(info_savepath, f'{info}_result.json'), 'w') as f:
                 json.dump(info_result, f, indent=4)
             
-            print(f"\n--- Summary for [{info}] ---")
-            print(f"Successfully processed: {success_count}")
-            print(f"Skipped (already exist): {skipped_count}")
-            print(f"Prediction Shape Mismatch Errors: {shape_mismatch_count}")
-            print(f"Other Errors: {error_count}")
-            print("-" * (25 + len(info)))
+            logger.info(f"\n--- Summary for [{info}] ---")
+            logger.info(f"Successfully processed: {success_count}")
+            logger.info(f"Skipped (already exist): {skipped_count}")
+            logger.info(f"Prediction Shape Mismatch Errors: {shape_mismatch_count}")
+            logger.info(f"Other Errors: {error_count}")
+            logger.info("-" * (25 + len(info)))
             
             total_processed += success_count
             total_skipped += skipped_count
             total_errors += error_count
             total_shape_mismatch_errors += shape_mismatch_count
 
-        print("\n--- Overall Test Summary ---")
-        print(f"Total successfully processed: {total_processed}")
-        print(f"Total skipped: {total_skipped}")
-        print(f"Total Prediction Shape Mismatch Errors: {total_shape_mismatch_errors}")
-        print(f"Total Other Errors: {total_errors}")
-        print(f"Check '{error_log_path}' for detailed error reports.")
-        print("--------------------------\n")
+        logger.info("\n--- Overall Test Summary ---")
+        logger.info(f"Total successfully processed: {total_processed}")
+        logger.info(f"Total skipped: {total_skipped}")
+        logger.info(f"Total Prediction Shape Mismatch Errors: {total_shape_mismatch_errors}")
+        logger.info(f"Total Other Errors: {total_errors}")
+        logger.info(f"Check '{error_log_path}' for detailed error reports.")
+        logger.info("--------------------------\n")
 
         return None
 
-def process_iteration(index, dataset, args, model, info_savepath, error_log_path, info_name):
+def process_iteration(index, dataset, args, model, info_savepath, error_log_path, info_name, logger):
     """Processes a single data sample, handling model inference, error logging, and result saving."""
     try:
         data_instance = dataset[index]
@@ -263,7 +297,7 @@ def process_iteration(index, dataset, args, model, info_savepath, error_log_path
 
         if len(pred) < args.output_len:
             error_message = f"Prediction time-step mismatch. Expected {args.output_len}, got {len(pred)}."
-            print(f"\n[ERROR] Index {index} in {info_name}: {error_message}")
+            logger.error(f"Index {index} in {info_name}: {error_message}")
             log_error_to_file(error_log_path, info_name, index, "Prediction Shape Mismatch", error_message)
             return "error_shape_mismatch", error_message
 
@@ -271,7 +305,7 @@ def process_iteration(index, dataset, args, model, info_savepath, error_log_path
 
         if pred.shape != gt.shape:
             error_message = f"Prediction shape mismatch. Expected {gt.shape}, but got {pred.shape}."
-            print(f"\n[ERROR] Index {index} in {info_name}: {error_message}")
+            logger.error(f"Index {index} in {info_name}: {error_message}")
             log_error_to_file(error_log_path, info_name, index, "Prediction Shape Mismatch", error_message)
             return "error_shape_mismatch", error_message
         
@@ -289,11 +323,9 @@ def process_iteration(index, dataset, args, model, info_savepath, error_log_path
         stack_trace = traceback.format_exc()
         error_message = f"Failed to process index {index}. Reason: {e}"
         
-        print("\n" + "="*50)
-        print(f"Exception occurred at index {index} in {info_name}:")
-        print(e)
-        print(f"See '{error_log_path}' for full stack trace.")
-        print("="*50 + "\n")
+        logger.error(f"Exception occurred at index {index} in {info_name}:")
+        logger.error(str(e))
+        logger.error(f"See '{error_log_path}' for full stack trace.")
 
         log_error_to_file(error_log_path, info_name, index, "General Exception", str(e), stack_trace)
         return "error", str(e)

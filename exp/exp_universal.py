@@ -3,7 +3,6 @@ from models import model_init
 
 from utils.tools import EarlyStopping, adjust_learning_rate, general_move_to_device
 
-import numpy as np
 import torch
 import torch.nn as nn
 
@@ -13,9 +12,10 @@ import warnings
 
 import json
 
-from tqdm import tqdm
-
 warnings.filterwarnings('ignore')
+
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TimeElapsedColumn
+from rich.console import Console
 
 class Experiment(Exp_Basic):
     """
@@ -198,7 +198,31 @@ class Experiment(Exp_Basic):
             self.model.train()
             epoch_time = time.time()
 
-            with tqdm(total=len(train_loader), desc=f"Epoch {epoch + 1}/{self.args.train_epochs}", unit='batch') as pbar:
+            # Define logger at this scope
+            logger = self.exp_manager.logger
+            # Get console from exp_manager
+            console = self.exp_manager.console
+
+            progress_columns = [
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TextColumn("•"),
+                TextColumn("loss: {task.fields[loss]:.7f}"),
+                TextColumn("•"),
+                TextColumn("speed: {task.fields[speed]:.4f}s/iter"),
+                TextColumn("•"),
+                TextColumn("ETA: {task.fields[eta]:.1f}s"),
+                TimeElapsedColumn(),
+            ]
+            with Progress(*progress_columns, console=console) as progress:
+                task = progress.add_task(
+                    f"Epoch {epoch + 1}/{self.args.train_epochs}",
+                    total=len(train_loader),
+                    loss=0.0,
+                    speed=0.0,
+                    eta=0.0
+                )
                 for i, iter in enumerate(train_loader):
                     iter_count += 1
                     model_optim.zero_grad()
@@ -215,21 +239,26 @@ class Experiment(Exp_Basic):
                     epoch_loss += loss.item() * current_batch_size
                     total_samples += current_batch_size
 
-                    # if iter_count % 20 == 0:
                     speed = (time.time() - time_now) / iter_count
                     left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
-                    pbar.set_postfix({'loss': f'{loss.item():.7f}', 'speed': f'{speed:.4f}s/iter', 'left time': f'{left_time:.4f}s'})
-                    # pbar.update(20)
-                    pbar.update(1)
+                    progress.update(
+                        task,
+                        advance=1,
+                        loss=loss.item(),
+                        speed=speed,
+                        eta=left_time
+                    )
                     iter_count = 0
                     time_now = time.time()
-            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+
+            epoch_time_elapsed = time.time() - epoch_time
+            logger.info(f"Epoch: {epoch + 1} cost time: {epoch_time_elapsed:.2f}s")
+            
             train_loss = epoch_loss / total_samples if total_samples > 0 else 0.0
             vali_loss = self.vali(vali_loader, criterion)
             test_loss = self.test(test_loader, criterion)
 
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+            logger.info(f"Epoch: {epoch + 1}, Steps: {train_steps} | Train Loss: {train_loss:.7f} Vali Loss: {vali_loss:.7f} Test Loss: {test_loss:.7f}")
             
             # Log metrics to ExperimentManager (and wandb if enabled)
             if self.exp_manager is not None:
@@ -307,19 +336,33 @@ class Experiment(Exp_Basic):
 
         self.model.eval()
 
+        console = self.exp_manager.get_console() if self.exp_manager else None
+        
         with torch.inference_mode():
             with torch.no_grad():
-                for i, iter_data in tqdm(enumerate(loader), total=len(loader), desc=f"Validating..."):
-                    
-                    output, gt = self._forward_step(iter_data)
-
-                    current_batch_size = gt.size(0)
-
-                    loss = criterion(output, gt)
-
-                    running_loss += loss.item() * current_batch_size
-                    
-                    total_samples += current_batch_size
+                if console:
+                    with Progress(
+                        TextColumn("[progress.description]{task.description}"),
+                        BarColumn(),
+                        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                        TimeElapsedColumn(),
+                        console=console
+                    ) as progress:
+                        task = progress.add_task("Validating...", total=len(loader))
+                        for i, iter_data in enumerate(loader):
+                            output, gt = self._forward_step(iter_data)
+                            current_batch_size = gt.size(0)
+                            loss = criterion(output, gt)
+                            running_loss += loss.item() * current_batch_size
+                            total_samples += current_batch_size
+                            progress.update(task, advance=1)
+                else:
+                    for i, iter_data in enumerate(loader):
+                        output, gt = self._forward_step(iter_data)
+                        current_batch_size = gt.size(0)
+                        loss = criterion(output, gt)
+                        running_loss += loss.item() * current_batch_size
+                        total_samples += current_batch_size
 
         epoch_loss = running_loss / total_samples if total_samples > 0 else 0.0
         
@@ -334,34 +377,44 @@ class Experiment(Exp_Basic):
         overall_total_samples = 0
         self.model.eval()
 
+        # Define logger at this scope
+        logger = self.exp_manager.logger
+
         for info, loader in loaders.items():
             info_running_loss = 0.0
             info_total_samples = 0
             
+            console = self.exp_manager.console
+            
             with torch.inference_mode():
-                for i, iter_data in tqdm(enumerate(loader), total=len(loader), desc=f"Testing {info}"):
-                    
-                    output, gt = self._forward_step(iter_data)
-                    
-                    current_batch_size = gt.size(0)
-                    loss = criterion(output, gt)
-
-                    info_running_loss += loss.item() * current_batch_size
-                    info_total_samples += current_batch_size
-                    
-                    overall_running_loss += loss.item() * current_batch_size
-                    overall_total_samples += current_batch_size
-                    
-                    if valinum != 'full':
-                        # The original logic `i == valinum` processes `valinum` batches (indices 0 to valinum-1).
-                        if i + 1 >= valinum:
-                            break
+                with Progress(
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                    TimeElapsedColumn(),
+                    console=console
+                ) as progress:
+                    task = progress.add_task(f"Testing {info}", total=len(loader))
+                    for i, iter_data in enumerate(loader):
+                        output, gt = self._forward_step(iter_data)
+                        current_batch_size = gt.size(0)
+                        loss = criterion(output, gt)
+                        info_running_loss += loss.item() * current_batch_size
+                        info_total_samples += current_batch_size
+                        overall_running_loss += loss.item() * current_batch_size
+                        overall_total_samples += current_batch_size
+                        progress.update(task, advance=1)
+                
+                if valinum != 'full':
+                    # The original logic `i == valinum` processes `valinum` batches (indices 0 to valinum-1).
+                    if i + 1 >= valinum:
+                        break
             
             if info_total_samples > 0:
                 info_epoch_loss = info_running_loss / info_total_samples
-                print(f"Test loss for {info}: {info_epoch_loss:.7f}")
+                logger.info(f"Test loss for {info}: {info_epoch_loss:.7f}")
             else:
-                print(f"Test loss for {info}: N/A (no samples processed)")
+                logger.warning(f"Test loss for {info}: N/A (no samples processed)")
 
         total_epoch_loss = overall_running_loss / overall_total_samples if overall_total_samples > 0 else 0.0
         
