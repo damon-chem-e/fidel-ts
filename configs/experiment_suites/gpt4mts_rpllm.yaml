@@ -1,0 +1,153 @@
+# Experiment Suite: GPT4MTS/RPLLM Training
+# Description: Training GPT4MTS (GPT4 Multi-modal Time Series) models across datasets
+# Usage: python -m cli.suite run configs/experiment_suites/gpt4mts_rpllm.yaml
+
+suite:
+  name: "gpt4mts_rpllm_training"
+  description: "Train GPT4MTS models across all datasets with heterogeneous data"
+  tags: ["gpt4mts", "rpllm", "pytorch", "heterogeneous"]
+  
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/gpt4mts_rpllm"
+    
+  experiments:
+    # NYC Traffic Speed
+    - name: "gpt4mts_nyc_traffic_speed"
+      description: "GPT4MTS on NYC Traffic Speed dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "GPT4MTS"
+          config_path: "model_configs/general/GPT4MTS.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_RPLLM_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [720]  # Note: scripts often use only 720
+          batch_size: 256
+        device:
+          gpu: 4
+        hf_offline: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/gpt4mts_rpllm"
+    
+    # California ISO
+    - name: "gpt4mts_california_iso"
+      description: "GPT4MTS on California ISO dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "GPT4MTS"
+          config_path: "model_configs/general/GPT4MTS.yaml"
+        data:
+          name: "California_ISO"
+          config_path: "data_configs/California_ISO/fullCAISO_hetero_RPLLM_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [720]
+          batch_size: 256
+        device:
+          gpu: 4
+        hf_offline: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/gpt4mts_rpllm"
+    
+    # Canada Photovoltaics Plants
+    - name: "gpt4mts_canada_photovoltaics_plants"
+      description: "GPT4MTS on Canada Photovoltaics Plants dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "GPT4MTS"
+          config_path: "model_configs/general/GPT4MTS.yaml"
+        data:
+          name: "Canada_photovoltaics_plants"
+          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP_hetero_RPLLM.yaml"
+        training:
+          input_len: 360
+          output_lens: [720]
+          batch_size: 256
+        device:
+          gpu: 4
+        hf_offline: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/gpt4mts_rpllm"
+    
+    # Germany Renewable Power Grid
+    - name: "gpt4mts_germany_renewable_power_grid"
+      description: "GPT4MTS on Germany Renewable Power Grid dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "GPT4MTS"
+          config_path: "model_configs/general/GPT4MTS.yaml"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_hetero_RPLLM_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [720]
+          batch_size: 256
+        device:
+          gpu: 4
+        hf_offline: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/gpt4mts_rpllm"
+    
+    # Jena Atmospheric Physics
+    - name: "gpt4mts_jena_atmospheric_physics"
+      description: "GPT4MTS on Jena Atmospheric Physics dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "GPT4MTS"
+          config_path: "model_configs/general/GPT4MTS.yaml"
+        data:
+          name: "Jena_Atmospheric_Physics"
+          config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_hetero_RPLLM_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [720]
+          batch_size: 256
+        device:
+          gpu: 4
+        hf_offline: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/gpt4mts_rpllm"
+    
+    # Bear Room
+    - name: "gpt4mts_bear_room"
+      description: "GPT4MTS on Bear Room dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "GPT4MTS"
+          config_path: "model_configs/general/GPT4MTS.yaml"
+        data:
+          name: "Bear_room"
+          config_path: "data_configs/Bear_room/fullBear_hetero_RPLLM.yaml"
+        training:
+          input_len: 360
+          output_lens: [720]
+          batch_size: 256
+        device:
+          gpu: 4
+        hf_offline: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/gpt4mts_rpllm"
+

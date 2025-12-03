@@ -1,0 +1,440 @@
+# Experiment Suite: Filtered Sample Testing
+# Description: Test models on filtered sample sets for comparative analysis
+# Usage: python -m cli.suite run configs/experiment_suites/filtered_samples.yaml
+
+suite:
+  name: "filtered_samples_testing"
+  description: "Evaluate models on filtered sample sets across datasets"
+  tags: ["testing", "filtered_samples", "comparison"]
+  
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/filtered_samples"
+    
+  experiments:
+    # DLinear - NYC Traffic Speed Day
+    - name: "dlinear_nyc_traffic_speed_day_samples"
+      description: "DLinear on NYC Traffic Speed day-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "DLinear"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "DLinear"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          device: "2"
+          task: "TSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_day.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+          
+    # DLinear - NYC Traffic Speed Week
+    - name: "dlinear_nyc_traffic_speed_week_samples"
+      description: "DLinear on NYC Traffic Speed week-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "DLinear"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "DLinear"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 168
+          batch_size: 1
+          device: "2"
+          task: "TSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_week.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+    
+    # FITS - NYC Traffic Speed Day
+    - name: "fits_nyc_traffic_speed_day_samples"
+      description: "FITS on NYC Traffic Speed day-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "FITS"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "FITS"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          device: "2"
+          task: "TSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_day.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+          
+    # FITS - NYC Traffic Speed Week
+    - name: "fits_nyc_traffic_speed_week_samples"
+      description: "FITS on NYC Traffic Speed week-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "FITS"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "FITS"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 168
+          batch_size: 1
+          device: "2"
+          task: "TSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_week.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+    
+    # PatchTST - NYC Traffic Speed Day/Week
+    - name: "patchtst_nyc_traffic_speed_day_samples"
+      description: "PatchTST on NYC Traffic Speed day-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "PatchTST"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          device: "2"
+          task: "TSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_day.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+          
+    - name: "patchtst_nyc_traffic_speed_week_samples"
+      description: "PatchTST on NYC Traffic Speed week-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "PatchTST"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 168
+          batch_size: 1
+          device: "2"
+          task: "TSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_week.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+    
+    # iTransformer - NYC Traffic Speed Day/Week
+    - name: "itransformer_nyc_traffic_speed_day_samples"
+      description: "iTransformer on NYC Traffic Speed day-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "iTransformer"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          device: "2"
+          task: "TSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_day.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+          
+    - name: "itransformer_nyc_traffic_speed_week_samples"
+      description: "iTransformer on NYC Traffic Speed week-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "iTransformer"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 168
+          batch_size: 1
+          device: "2"
+          task: "TSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_week.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+    
+    # Foundation Models - NYC Traffic Speed Day/Week
+    - name: "sundial_nyc_traffic_speed_day_samples"
+      description: "Sundial on NYC Traffic Speed day-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "Sundial"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "Sundial"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          device: "3"
+          task: "TSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_day.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+          
+    - name: "sundial_nyc_traffic_speed_week_samples"
+      description: "Sundial on NYC Traffic Speed week-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "Sundial"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "Sundial"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 168
+          batch_size: 1
+          device: "3"
+          task: "TSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_week.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+    
+    - name: "time_moe_nyc_traffic_speed_day_samples"
+      description: "TimeMoE on NYC Traffic Speed day-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "TimeMoE"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "TimeMoE"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          device: "3"
+          task: "TSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_day.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+          
+    - name: "time_moe_nyc_traffic_speed_week_samples"
+      description: "TimeMoE on NYC Traffic Speed week-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "TimeMoE"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "TimeMoE"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 168
+          batch_size: 1
+          device: "3"
+          task: "TSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_week.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+    
+    - name: "chronos_nyc_traffic_speed_day_samples"
+      description: "Chronos on NYC Traffic Speed day-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "Chronos"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "Chronos"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          device: "3"
+          task: "TSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_day.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+          
+    - name: "chronos_nyc_traffic_speed_week_samples"
+      description: "Chronos on NYC Traffic Speed week-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "Chronos"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "Chronos"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 168
+          batch_size: 1
+          device: "3"
+          task: "TSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_week.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+    
+    # GPT4MTS - NYC Traffic Speed Day/Week
+    - name: "gpt4mts_nyc_traffic_speed_day_samples"
+      description: "GPT4MTS on NYC Traffic Speed day-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "GPT4MTS"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "GPT4MTS"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          device: "4"
+          task: "MTSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_day.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+          
+    - name: "gpt4mts_nyc_traffic_speed_week_samples"
+      description: "GPT4MTS on NYC Traffic Speed week-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "GPT4MTS"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "GPT4MTS"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 168
+          batch_size: 1
+          device: "4"
+          task: "MTSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_week.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+    
+    # TGTSF - NYC Traffic Speed Day/Week
+    - name: "tgtsf_nyc_traffic_speed_day_samples"
+      description: "TGTSF on NYC Traffic Speed day-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "TGTSF"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          device: "4"
+          task: "TGTSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_day.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+          
+    - name: "tgtsf_nyc_traffic_speed_week_samples"
+      description: "TGTSF on NYC Traffic Speed week-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "TGTSF"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 168
+          batch_size: 1
+          device: "4"
+          task: "TGTSF"
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_week.json"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/filtered_samples"
+    
+    # Add more filtered sample experiments for other datasets as needed
+

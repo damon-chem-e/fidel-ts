@@ -1,0 +1,252 @@
+# Experiment Suite: Linear Models
+# Description: Comprehensive evaluation of linear models (DLinear, FITS) across all datasets
+# Usage: python -m cli.suite run configs/experiment_suites/linear_models.yaml
+
+suite:
+  name: "linear_models_comprehensive"
+  description: "Evaluate DLinear and FITS models across all datasets with multiple forecast horizons"
+  tags: ["linear", "baseline", "comprehensive"]
+  
+  # Execution settings
+  execution:
+    parallel: false  # Run experiments sequentially
+    max_parallel: 1  # If parallel=true, max concurrent experiments
+    continue_on_error: true  # Continue if one experiment fails
+    log_dir: "./logs/suites/linear_models"
+    
+  # Experiments in this suite
+  experiments:
+    # NYC Traffic Speed
+    - name: "dlinear_nyc_traffic_speed"
+      description: "DLinear on NYC Traffic Speed dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "DLinear"
+          config_path: "model_configs/general/DLinear.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/linear_models"
+          
+    - name: "fits_nyc_traffic_speed"
+      description: "FITS on NYC Traffic Speed dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "FITS"
+          config_path: "model_configs/general/FITS.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/linear_models"
+    
+    # California ISO
+    - name: "dlinear_california_iso"
+      description: "DLinear on California ISO dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "DLinear"
+          config_path: "model_configs/general/DLinear.yaml"
+        data:
+          name: "California_ISO"
+          config_path: "data_configs/California_ISO/fullCAISO_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/linear_models"
+          
+    - name: "fits_california_iso"
+      description: "FITS on California ISO dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "FITS"
+          config_path: "model_configs/general/FITS.yaml"
+        data:
+          name: "California_ISO"
+          config_path: "data_configs/California_ISO/fullCAISO_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/linear_models"
+    
+    # Canada Photovoltaics Plants
+    - name: "dlinear_canada_photovoltaics_plants"
+      description: "DLinear on Canada Photovoltaics Plants dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "DLinear"
+          config_path: "model_configs/general/DLinear.yaml"
+        data:
+          name: "Canada_photovoltaics_plants"
+          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/linear_models"
+          
+    - name: "fits_canada_photovoltaics_plants"
+      description: "FITS on Canada Photovoltaics Plants dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "FITS"
+          config_path: "model_configs/general/FITS.yaml"
+        data:
+          name: "Canada_photovoltaics_plants"
+          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/linear_models"
+    
+    # Germany Renewable Power Grid
+    - name: "dlinear_germany_renewable_power_grid"
+      description: "DLinear on Germany Renewable Power Grid dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "DLinear"
+          config_path: "model_configs/general/DLinear.yaml"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/linear_models"
+          
+    - name: "fits_germany_renewable_power_grid"
+      description: "FITS on Germany Renewable Power Grid dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "FITS"
+          config_path: "model_configs/general/FITS.yaml"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/linear_models"
+    
+    # Jena Atmospheric Physics
+    - name: "dlinear_jena_atmospheric_physics"
+      description: "DLinear on Jena Atmospheric Physics dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "DLinear"
+          config_path: "model_configs/general/DLinear.yaml"
+        data:
+          name: "Jena_Atmospheric_Physics"
+          config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/linear_models"
+          
+    - name: "fits_jena_atmospheric_physics"
+      description: "FITS on Jena Atmospheric Physics dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "FITS"
+          config_path: "model_configs/general/FITS.yaml"
+        data:
+          name: "Jena_Atmospheric_Physics"
+          config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/linear_models"
+    
+    # Bear Room
+    - name: "dlinear_bear_room"
+      description: "DLinear on Bear Room dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "DLinear"
+          config_path: "model_configs/general/DLinear.yaml"
+        data:
+          name: "Bear_room"
+          config_path: "data_configs/Bear_room/fullBear.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/linear_models"
+          
+    - name: "fits_bear_room"
+      description: "FITS on Bear Room dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "FITS"
+          config_path: "model_configs/general/FITS.yaml"
+        data:
+          name: "Bear_room"
+          config_path: "data_configs/Bear_room/fullBear.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/linear_models"
+

@@ -1,0 +1,44 @@
+# Template: LLM Testing
+# Description: Base template for LLM-based model testing/inference
+# This template is used for testing LLM models
+
+experiment:
+  name: "${experiment_name}"
+  type: "llm"
+  
+model:
+  name: "${model_name}"
+  config_path: "${model_config_path}"
+  
+data:
+  name: "${data_name}"
+  config_path: "${data_config_path}"
+  
+training:
+  input_len: 360
+  output_len: 24
+  batch_size: 1
+  scale: true
+  disable_buffer: false
+  preload_hetero: false
+  noise: 0.0
+  filtered_samples: null  # Path to filtered samples JSON (optional)
+  sample_step: 24
+  no_parallel: false
+  valisets: "full"
+  checkpoints: "./checkpoints/"
+  random_seed: 2021
+  
+device:
+  use_gpu: true
+  gpu: 0
+  use_multi_gpu: false
+  devices: "0"
+  
+wandb:
+  project: "fidel-ts"
+  tags: []
+  notes: ""
+  enabled: true
+  mode: "online"
+

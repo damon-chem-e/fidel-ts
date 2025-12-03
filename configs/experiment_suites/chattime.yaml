@@ -1,0 +1,165 @@
+# Experiment Suite: ChatTime Testing
+# Description: ChatTime Foundation Model testing on filtered samples
+# Usage: python -m cli.suite run configs/experiment_suites/chattime.yaml
+
+suite:
+  name: "chattime_testing"
+  description: "ChatTime Foundation Model testing on filtered samples"
+  tags: ["chattime", "fm", "filtered_samples", "tgtsf"]
+  
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/chattime"
+    
+  experiments:
+    # ChatTime - NYC Traffic Speed Day (TGTSF task)
+    - name: "chattime_nyc_traffic_speed_day_tgtsf"
+      description: "ChatTime on NYC Traffic Speed day-ahead filtered samples (TGTSF task)"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "ChatTime"
+          config_path: "model_configs/FM/ChatTime.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_LLM.yaml"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_day.json"
+        device:
+          gpu: 5
+        hf_mirror: true
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/chattime"
+          task: "TGTSF"  # Note: ChatTime uses TGTSF task, not TSF
+    
+    # ChatTime - NYC Traffic Speed Week (TGTSF task)
+    - name: "chattime_nyc_traffic_speed_week_tgtsf"
+      description: "ChatTime on NYC Traffic Speed week-ahead filtered samples (TGTSF task)"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "ChatTime"
+          config_path: "model_configs/FM/ChatTime.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_LLM.yaml"
+        training:
+          input_len: 360
+          output_len: 168
+          batch_size: 1
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_week.json"
+        device:
+          gpu: 5
+        hf_mirror: true
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/chattime"
+          task: "TGTSF"
+    
+    # ChatTime - California ISO Day (TGTSF task)
+    - name: "chattime_california_iso_day_tgtsf"
+      description: "ChatTime on California ISO day-ahead filtered samples (TGTSF task)"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "ChatTime"
+          config_path: "model_configs/FM/ChatTime.yaml"
+        data:
+          name: "California_ISO"
+          config_path: "data_configs/California_ISO/fullCAISO_hetero_LLM.yaml"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          filtered_samples: "sample_indexes/California_ISO_sample_day.json"
+        device:
+          gpu: 5
+        hf_mirror: true
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/chattime"
+          task: "TGTSF"
+    
+    # ChatTime - Canada Photovoltaics Plants Day (TGTSF task)
+    - name: "chattime_canada_photovoltaics_plants_day_tgtsf"
+      description: "ChatTime on Canada Photovoltaics Plants day-ahead filtered samples (TGTSF task)"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "ChatTime"
+          config_path: "model_configs/FM/ChatTime.yaml"
+        data:
+          name: "Canada_photovoltaics_plants"
+          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP_hetero_LLM.yaml"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          filtered_samples: "sample_indexes/Canada_photovoltaics_plants_sample_day.json"
+        device:
+          gpu: 5
+        hf_mirror: true
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/chattime"
+          task: "TGTSF"
+    
+    # ChatTime - Germany Renewable Power Grid Day (TGTSF task)
+    - name: "chattime_germany_renewable_power_grid_day_tgtsf"
+      description: "ChatTime on Germany Renewable Power Grid day-ahead filtered samples (TGTSF task)"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "ChatTime"
+          config_path: "model_configs/FM/ChatTime.yaml"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_hetero_LLM.yaml"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          filtered_samples: "sample_indexes/Germany_Renewable_Power_Grid_sample_day.json"
+        device:
+          gpu: 5
+        hf_mirror: true
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/chattime"
+          task: "TGTSF"
+    
+    # ChatTime - Jena Atmospheric Physics Day (TGTSF task)
+    - name: "chattime_jena_atmospheric_physics_day_tgtsf"
+      description: "ChatTime on Jena Atmospheric Physics day-ahead filtered samples (TGTSF task)"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "ChatTime"
+          config_path: "model_configs/FM/ChatTime.yaml"
+        data:
+          name: "Jena_Atmospheric_Physics"
+          config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_hetero_LLM.yaml"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          filtered_samples: "sample_indexes/Jena_Atmospheric_Physics_sample_day.json"
+        device:
+          gpu: 5
+        hf_mirror: true
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/chattime"
+          task: "TGTSF"
+

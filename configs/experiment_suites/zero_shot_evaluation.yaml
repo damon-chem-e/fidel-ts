@@ -1,0 +1,397 @@
+# Experiment Suite: Zero-Shot Evaluation
+# Description: Zero-shot evaluation of trained models on zero-shot datasets
+# Usage: python -m cli.suite run configs/experiment_suites/zero_shot_evaluation.yaml
+
+suite:
+  name: "zero_shot_evaluation"
+  description: "Evaluate trained models on zero-shot datasets (models trained on one dataset, tested on zero-shot variant)"
+  tags: ["zero-shot", "evaluation", "transfer"]
+  
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/zero_shot"
+    
+  experiments:
+    # DLinear - Zero-shot
+    - name: "dlinear_zero_shot_nyc_traffic_speed"
+      description: "DLinear zero-shot evaluation on NYC Traffic Speed"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "DLinear"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "DLinear"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 128
+          device: "0"
+          task: "TSF"
+          data_config: "data_configs/NYC_traffic_speed/fullNYCTS_zero_shot_H.yaml"
+        experiment:
+          type: "evaluation"
+          
+    - name: "dlinear_zero_shot_bear_room"
+      description: "DLinear zero-shot evaluation on Bear Room"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "DLinear"
+        data:
+          name: "Bear_room"
+        evaluation:
+          model: "DLinear"
+          data: "Bear_room"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 128
+          device: "0"
+          task: "TSF"
+          data_config: "data_configs/Bear_room/fullBear_zero_shot.yaml"
+        experiment:
+          type: "evaluation"
+    
+    # FITS - Zero-shot
+    - name: "fits_zero_shot_nyc_traffic_speed"
+      description: "FITS zero-shot evaluation on NYC Traffic Speed"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "FITS"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "FITS"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 128
+          device: "0"
+          task: "TSF"
+          data_config: "data_configs/NYC_traffic_speed/fullNYCTS_zero_shot_H.yaml"
+        experiment:
+          type: "evaluation"
+          
+    - name: "fits_zero_shot_bear_room"
+      description: "FITS zero-shot evaluation on Bear Room"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "FITS"
+        data:
+          name: "Bear_room"
+        evaluation:
+          model: "FITS"
+          data: "Bear_room"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 128
+          device: "0"
+          task: "TSF"
+          data_config: "data_configs/Bear_room/fullBear_zero_shot.yaml"
+        experiment:
+          type: "evaluation"
+    
+    # PatchTST - Zero-shot (Lightning)
+    - name: "patchtst_zero_shot_nyc_traffic_speed"
+      description: "PatchTST zero-shot evaluation on NYC Traffic Speed"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "PatchTST"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "0"
+          task: "TSF"
+          data_config: "data_configs/NYC_traffic_speed/fullNYCTS_zero_shot_H.yaml"
+        experiment:
+          type: "evaluation"
+          
+    - name: "patchtst_zero_shot_bear_room"
+      description: "PatchTST zero-shot evaluation on Bear Room"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+        data:
+          name: "Bear_room"
+        evaluation:
+          model: "PatchTST"
+          data: "Bear_room"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "0"
+          task: "TSF"
+          data_config: "data_configs/Bear_room/fullBear_zero_shot.yaml"
+        experiment:
+          type: "evaluation"
+    
+    # iTransformer - Zero-shot (Lightning)
+    - name: "itransformer_zero_shot_nyc_traffic_speed"
+      description: "iTransformer zero-shot evaluation on NYC Traffic Speed"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "iTransformer"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "0"
+          task: "TSF"
+          data_config: "data_configs/NYC_traffic_speed/fullNYCTS_zero_shot_H.yaml"
+        experiment:
+          type: "evaluation"
+          
+    - name: "itransformer_zero_shot_bear_room"
+      description: "iTransformer zero-shot evaluation on Bear Room"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+        data:
+          name: "Bear_room"
+        evaluation:
+          model: "iTransformer"
+          data: "Bear_room"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "0"
+          task: "TSF"
+          data_config: "data_configs/Bear_room/fullBear_zero_shot.yaml"
+        experiment:
+          type: "evaluation"
+    
+    # TGTSF - Zero-shot (Lightning)
+    - name: "tgtsf_zero_shot_nyc_traffic_speed"
+      description: "TGTSF zero-shot evaluation on NYC Traffic Speed"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "TGTSF"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 128
+          device: "0"
+          task: "TGTSF"
+          data_config: "data_configs/NYC_traffic_speed/fullNYCTS_zero_shot_hetero_TGTSF_H.yaml"
+        experiment:
+          type: "evaluation"
+          
+    - name: "tgtsf_zero_shot_bear_room"
+      description: "TGTSF zero-shot evaluation on Bear Room"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+        data:
+          name: "Bear_room"
+        evaluation:
+          model: "TGTSF"
+          data: "Bear_room"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 128
+          device: "0"
+          task: "TGTSF"
+          data_config: "data_configs/Bear_room/fullBear_zero_shot_hetero_TGTSF.yaml"
+        experiment:
+          type: "evaluation"
+    
+    # Foundation Models - Zero-shot
+    - name: "sundial_zero_shot_nyc_traffic_speed"
+      description: "Sundial zero-shot evaluation on NYC Traffic Speed"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "Sundial"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "Sundial"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "3"
+          task: "TSF"
+          data_config: "data_configs/NYC_traffic_speed/fullNYCTS_zero_shot_H.yaml"
+        experiment:
+          type: "evaluation"
+          
+    - name: "time_moe_zero_shot_nyc_traffic_speed"
+      description: "TimeMoE zero-shot evaluation on NYC Traffic Speed"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "TimeMoE"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "TimeMoE"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "3"
+          task: "TSF"
+          data_config: "data_configs/NYC_traffic_speed/fullNYCTS_zero_shot_H.yaml"
+        experiment:
+          type: "evaluation"
+          
+    - name: "chronos_zero_shot_nyc_traffic_speed"
+      description: "Chronos zero-shot evaluation on NYC Traffic Speed"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "Chronos"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "Chronos"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "3"
+          task: "TSF"
+          data_config: "data_configs/NYC_traffic_speed/fullNYCTS_zero_shot_H.yaml"
+        experiment:
+          type: "evaluation"
+    
+    # GPT4TS - Zero-shot
+    - name: "gpt4ts_zero_shot_nyc_traffic_speed"
+      description: "GPT4TS zero-shot evaluation on NYC Traffic Speed"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "GPT4TS"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "GPT4TS"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "0"
+          task: "TSF"
+          data_config: "data_configs/NYC_traffic_speed/fullNYCTS_zero_shot_H.yaml"
+        experiment:
+          type: "evaluation"
+          
+    - name: "gpt4ts_zero_shot_bear_room"
+      description: "GPT4TS zero-shot evaluation on Bear Room"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "GPT4TS"
+        data:
+          name: "Bear_room"
+        evaluation:
+          model: "GPT4TS"
+          data: "Bear_room"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "0"
+          task: "TSF"
+          data_config: "data_configs/Bear_room/fullBear_zero_shot.yaml"
+        experiment:
+          type: "evaluation"
+    
+    # GPT4MTS - Zero-shot
+    - name: "gpt4mts_zero_shot_nyc_traffic_speed"
+      description: "GPT4MTS zero-shot evaluation on NYC Traffic Speed"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "GPT4MTS"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "GPT4MTS"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 256
+          device: "4"
+          task: "MTSF"
+          data_config: "data_configs/NYC_traffic_speed/fullNYCTS_zero_shot_hetero_RPLLM_H.yaml"
+        experiment:
+          type: "evaluation"
+          
+    - name: "gpt4mts_zero_shot_bear_room"
+      description: "GPT4MTS zero-shot evaluation on Bear Room"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "GPT4MTS"
+        data:
+          name: "Bear_room"
+        evaluation:
+          model: "GPT4MTS"
+          data: "Bear_room"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 256
+          device: "4"
+          task: "MTSF"
+          data_config: "data_configs/Bear_room/fullBear_zero_shot_hetero_RPLLM.yaml"
+        experiment:
+          type: "evaluation"
+

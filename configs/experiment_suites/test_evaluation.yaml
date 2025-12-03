@@ -1,0 +1,310 @@
+# Experiment Suite: Test/Evaluation (Full Dataset)
+# Description: Full dataset evaluation of trained models (not filtered samples)
+# Usage: python -m cli.suite run configs/experiment_suites/test_evaluation.yaml
+
+suite:
+  name: "test_evaluation_full_dataset"
+  description: "Evaluate trained models on full test datasets"
+  tags: ["testing", "evaluation", "full_dataset"]
+  
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/test_evaluation"
+    
+  experiments:
+    # PatchTST - Full Dataset Evaluation (Lightning)
+    - name: "patchtst_test_nyc_traffic_speed"
+      description: "PatchTST full dataset evaluation on NYC Traffic Speed"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "PatchTST"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "2"
+          task: "TSF"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/test_evaluation"
+    
+    - name: "patchtst_test_california_iso"
+      description: "PatchTST full dataset evaluation on California ISO"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+        data:
+          name: "California_ISO"
+        evaluation:
+          model: "PatchTST"
+          data: "California_ISO"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "2"
+          task: "TSF"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/test_evaluation"
+    
+    - name: "patchtst_test_canada_photovoltaics_plants"
+      description: "PatchTST full dataset evaluation on Canada Photovoltaics Plants"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+        data:
+          name: "Canada_photovoltaics_plants"
+        evaluation:
+          model: "PatchTST"
+          data: "Canada_photovoltaics_plants"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "2"
+          task: "TSF"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/test_evaluation"
+    
+    - name: "patchtst_test_germany_renewable_power_grid"
+      description: "PatchTST full dataset evaluation on Germany Renewable Power Grid"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+        evaluation:
+          model: "PatchTST"
+          data: "Germany_Renewable_Power_Grid"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "2"
+          task: "TSF"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/test_evaluation"
+    
+    - name: "patchtst_test_jena_atmospheric_physics"
+      description: "PatchTST full dataset evaluation on Jena Atmospheric Physics"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+        data:
+          name: "Jena_Atmospheric_Physics"
+        evaluation:
+          model: "PatchTST"
+          data: "Jena_Atmospheric_Physics"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "2"
+          task: "TSF"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/test_evaluation"
+    
+    - name: "patchtst_test_bear_room"
+      description: "PatchTST full dataset evaluation on Bear Room"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+        data:
+          name: "Bear_room"
+        evaluation:
+          model: "PatchTST"
+          data: "Bear_room"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "2"
+          task: "TSF"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/test_evaluation"
+    
+    # iTransformer - Full Dataset Evaluation (Lightning)
+    - name: "itransformer_test_nyc_traffic_speed"
+      description: "iTransformer full dataset evaluation on NYC Traffic Speed"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "iTransformer"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+          device: "2"
+          task: "TSF"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/test_evaluation"
+    
+    # TGTSF - Full Dataset Evaluation (Lightning)
+    - name: "tgtsf_test_nyc_traffic_speed"
+      description: "TGTSF full dataset evaluation on NYC Traffic Speed"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+        data:
+          name: "NYC_traffic_speed"
+        evaluation:
+          model: "TGTSF"
+          data: "NYC_traffic_speed"
+          version: "latest"
+          input_len: 360
+          output_len: 720
+          batch_size: 128
+          device: "4"
+          task: "TGTSF"
+          data_config: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/test_evaluation"
+    
+    - name: "tgtsf_test_california_iso"
+      description: "TGTSF full dataset evaluation on California ISO"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+        data:
+          name: "California_ISO"
+        evaluation:
+          model: "TGTSF"
+          data: "California_ISO"
+          version: "latest"
+          input_len: 360
+          output_len: 720
+          batch_size: 128
+          device: "4"
+          task: "TGTSF"
+          data_config: "data_configs/California_ISO/fullCAISO_hetero_TGTSF_H.yaml"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/test_evaluation"
+    
+    - name: "tgtsf_test_canada_photovoltaics_plants"
+      description: "TGTSF full dataset evaluation on Canada Photovoltaics Plants"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+        data:
+          name: "Canada_photovoltaics_plants"
+        evaluation:
+          model: "TGTSF"
+          data: "Canada_photovoltaics_plants"
+          version: "latest"
+          input_len: 360
+          output_len: 720
+          batch_size: 128
+          device: "4"
+          task: "TGTSF"
+          data_config: "data_configs/Canada_photovoltaics_plants/fullCPP_hetero_TGTSF.yaml"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/test_evaluation"
+    
+    - name: "tgtsf_test_germany_renewable_power_grid"
+      description: "TGTSF full dataset evaluation on Germany Renewable Power Grid"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+        evaluation:
+          model: "TGTSF"
+          data: "Germany_Renewable_Power_Grid"
+          version: "latest"
+          input_len: 360
+          output_len: 720
+          batch_size: 128
+          device: "4"
+          task: "TGTSF"
+          data_config: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_hetero_TGTSF_H.yaml"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/test_evaluation"
+    
+    - name: "tgtsf_test_jena_atmospheric_physics"
+      description: "TGTSF full dataset evaluation on Jena Atmospheric Physics"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+        data:
+          name: "Jena_Atmospheric_Physics"
+        evaluation:
+          model: "TGTSF"
+          data: "Jena_Atmospheric_Physics"
+          version: "latest"
+          input_len: 360
+          output_len: 720
+          batch_size: 128
+          device: "4"
+          task: "TGTSF"
+          data_config: "data_configs/Jena_Atmospheric_Physics/fullJAP_hetero_TGTSF_H.yaml"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/test_evaluation"
+    
+    - name: "tgtsf_test_bear_room"
+      description: "TGTSF full dataset evaluation on Bear Room"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+        data:
+          name: "Bear_room"
+        evaluation:
+          model: "TGTSF"
+          data: "Bear_room"
+          version: "latest"
+          input_len: 360
+          output_len: 720
+          batch_size: 128
+          device: "4"
+          task: "TGTSF"
+          data_config: "data_configs/Bear_room/fullBear_hetero_TGTSF.yaml"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/test_evaluation"
+

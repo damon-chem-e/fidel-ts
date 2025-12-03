@@ -1,0 +1,182 @@
+# Experiment Suite: LLM Qwen3-14B
+# Description: LLM experiments using Qwen3-14B model
+# Usage: python -m cli.suite run configs/experiment_suites/llm_qwen3_14b.yaml
+
+suite:
+  name: "llm_qwen3_14b"
+  description: "LLM experiments with Qwen3-14B model on filtered samples"
+  tags: ["llm", "qwen3-14b", "filtered_samples"]
+  
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/llm_qwen3_14b"
+    
+  experiments:
+    # NYC Traffic Speed - Day
+    - name: "qwen3_14b_nyc_traffic_speed_day"
+      description: "Qwen3-14B on NYC Traffic Speed day-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/llm_testing.yaml"
+      overrides:
+        model:
+          name: "qwen3-14b"
+          config_path: "model_configs/LLM/Qwen3-14B.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_LLM.yaml"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_day.json"
+        experiment:
+          type: "llm"
+          output_dir: "outputs/suites/llm_qwen3_14b"
+    
+    # NYC Traffic Speed - Week
+    - name: "qwen3_14b_nyc_traffic_speed_week"
+      description: "Qwen3-14B on NYC Traffic Speed week-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/llm_testing.yaml"
+      overrides:
+        model:
+          name: "qwen3-14b"
+          config_path: "model_configs/LLM/Qwen3-14B.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_LLM.yaml"
+        training:
+          input_len: 360
+          output_len: 168
+          batch_size: 1
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_week.json"
+        experiment:
+          type: "llm"
+          output_dir: "outputs/suites/llm_qwen3_14b"
+    
+    # Canada Photovoltaics Plants - Day
+    - name: "qwen3_14b_canada_photovoltaics_plants_day"
+      description: "Qwen3-14B on Canada Photovoltaics Plants day-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/llm_testing.yaml"
+      overrides:
+        model:
+          name: "qwen3-14b"
+          config_path: "model_configs/LLM/Qwen3-14B.yaml"
+        data:
+          name: "Canada_photovoltaics_plants"
+          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP_hetero_LLM.yaml"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          filtered_samples: "sample_indexes/Canada_photovoltaics_plants_sample_day.json"
+        experiment:
+          type: "llm"
+          output_dir: "outputs/suites/llm_qwen3_14b"
+    
+    # Canada Photovoltaics Plants - Week
+    - name: "qwen3_14b_canada_photovoltaics_plants_week"
+      description: "Qwen3-14B on Canada Photovoltaics Plants week-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/llm_testing.yaml"
+      overrides:
+        model:
+          name: "qwen3-14b"
+          config_path: "model_configs/LLM/Qwen3-14B.yaml"
+        data:
+          name: "Canada_photovoltaics_plants"
+          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP_hetero_LLM.yaml"
+        training:
+          input_len: 360
+          output_len: 168
+          batch_size: 1
+          filtered_samples: "sample_indexes/Canada_photovoltaics_plants_sample_week.json"
+        experiment:
+          type: "llm"
+          output_dir: "outputs/suites/llm_qwen3_14b"
+    
+    # Germany Renewable Power Grid - Day
+    - name: "qwen3_14b_germany_renewable_power_grid_day"
+      description: "Qwen3-14B on Germany Renewable Power Grid day-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/llm_testing.yaml"
+      overrides:
+        model:
+          name: "qwen3-14b"
+          config_path: "model_configs/LLM/Qwen3-14B.yaml"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_hetero_LLM.yaml"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          filtered_samples: "sample_indexes/Germany_Renewable_Power_Grid_sample_day.json"
+        experiment:
+          type: "llm"
+          output_dir: "outputs/suites/llm_qwen3_14b"
+    
+    # Germany Renewable Power Grid - Week
+    - name: "qwen3_14b_germany_renewable_power_grid_week"
+      description: "Qwen3-14B on Germany Renewable Power Grid week-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/llm_testing.yaml"
+      overrides:
+        model:
+          name: "qwen3-14b"
+          config_path: "model_configs/LLM/Qwen3-14B.yaml"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_hetero_LLM.yaml"
+        training:
+          input_len: 360
+          output_len: 168
+          batch_size: 1
+          filtered_samples: "sample_indexes/Germany_Renewable_Power_Grid_sample_week.json"
+        experiment:
+          type: "llm"
+          output_dir: "outputs/suites/llm_qwen3_14b"
+    
+    # Unimodel variants (same but with Unimodel config)
+    - name: "qwen3_14b_unimodel_nyc_traffic_speed_day"
+      description: "Qwen3-14B Unimodel on NYC Traffic Speed day-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/llm_testing.yaml"
+      overrides:
+        model:
+          name: "qwen3-14b"
+          config_path: "model_configs/LLM/Unimodel/Qwen3-14B.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_LLM.yaml"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 1
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_day.json"
+        experiment:
+          type: "llm"
+          output_dir: "outputs/suites/llm_qwen3_14b"
+    
+    - name: "qwen3_14b_unimodel_nyc_traffic_speed_week"
+      description: "Qwen3-14B Unimodel on NYC Traffic Speed week-ahead filtered samples"
+      enabled: true
+      template: "configs/templates/llm_testing.yaml"
+      overrides:
+        model:
+          name: "qwen3-14b"
+          config_path: "model_configs/LLM/Unimodel/Qwen3-14B.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_LLM.yaml"
+        training:
+          input_len: 360
+          output_len: 168
+          batch_size: 1
+          filtered_samples: "sample_indexes/NYC_traffic_speed_sample_week.json"
+        experiment:
+          type: "llm"
+          output_dir: "outputs/suites/llm_qwen3_14b"
+

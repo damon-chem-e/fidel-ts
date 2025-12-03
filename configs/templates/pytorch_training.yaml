@@ -1,0 +1,48 @@
+# Template: PyTorch Training
+# Description: Base template for PyTorch-based model training
+# This template can be extended by experiment suite configs
+
+experiment:
+  name: "${experiment_name}"  # Placeholder filled by suite
+  type: "pytorch"
+  
+model:
+  name: "${model_name}"  # Placeholder
+  config_path: "${model_config_path}"  # Placeholder
+  
+data:
+  name: "${data_name}"  # Placeholder
+  config_path: "${data_config_path}"  # Placeholder
+  
+training:
+  epochs: 20
+  batch_size: 96
+  learning_rate: 5e-4
+  patience: 3
+  loss: "mse"
+  lradj: "type3"
+  input_len: 360
+  output_len: 24  # Can be overridden with output_lens list
+  scale: true
+  disable_buffer: false
+  preload_hetero: false
+  prefetch_factor: 2
+  num_workers: 0
+  noise: 0.0
+  downsample: null
+  checkpoints: "./checkpoints/"
+  random_seed: 2021
+  
+device:
+  use_gpu: true
+  gpu: 0
+  use_multi_gpu: false
+  devices: "0,1,2,3"
+  
+wandb:
+  project: "fidel-ts"
+  tags: []
+  notes: ""
+  enabled: true
+  mode: "online"
+

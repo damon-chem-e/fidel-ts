@@ -1,0 +1,46 @@
+# Template: Foundation Model Testing
+# Description: Base template for Foundation Model testing/inference
+# This template is used for testing Foundation Models
+
+experiment:
+  name: "${experiment_name}"
+  type: "fm"
+  
+model:
+  name: "${model_name}"
+  config_path: "${model_config_path}"
+  
+data:
+  name: "${data_name}"
+  config_path: "${data_config_path}"
+  
+training:
+  input_len: 360
+  output_len: 24
+  batch_size: 128
+  scale: true
+  disable_buffer: false
+  preload_hetero: false
+  prefetch_factor: 2
+  num_workers: 0
+  noise: 0.0
+  downsample: null
+  filtered_samples: null  # Path to filtered samples JSON (optional)
+  individual: true  # Use individual parameters per channel
+  loss: "mse"
+  checkpoints: "./checkpoints/"
+  random_seed: 2021
+  
+device:
+  use_gpu: true
+  gpu: 0
+  use_multi_gpu: false
+  devices: "0"
+  
+wandb:
+  project: "fidel-ts"
+  tags: []
+  notes: ""
+  enabled: true
+  mode: "online"
+

@@ -1,0 +1,88 @@
+# Experiment Suite: Ablation Studies
+# Description: Ablation study experiments for TGTSF and GPT4MTS
+# Usage: python -m cli.suite run configs/experiment_suites/ablation_studies.yaml
+
+suite:
+  name: "ablation_studies"
+  description: "Ablation study experiments with different configurations"
+  tags: ["ablation", "research", "tgtsf", "gpt4mts"]
+  
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/ablation_studies"
+    
+  experiments:
+    # TGTSF Ablation - Bear Room
+    - name: "tgtsf_ablation_bear_room"
+      description: "TGTSF ablation study on Bear Room dataset"
+      enabled: true
+      template: "configs/templates/lightning_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF/TGTSF-Bear.yaml"
+        data:
+          name: "Bear_room"
+          config_path: "data_configs/Bear_room/fullBear_hetero_ablation_TGTSF.yaml"
+        training:
+          input_len: 288
+          output_lens: [12, 144, 288, 576]
+          batch_size: 128
+          patience: 10
+          epochs: 50
+        device:
+          use_multi_gpu: true
+          devices: "0,3,4"
+        experiment:
+          type: "lightning"
+          output_dir: "outputs/suites/ablation_studies"
+    
+    # GPT4MTS Ablation - Bear Room
+    - name: "gpt4mts_ablation_bear_room"
+      description: "GPT4MTS ablation study on Bear Room dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "GPT4MTS"
+          config_path: "model_configs/general/GPT4MTS.yaml"
+        data:
+          name: "Bear_room"
+          config_path: "data_configs/Bear_room/fullBear_hetero_ablation_RPLLM.yaml"
+        training:
+          input_len: 288
+          output_lens: [576]  # Note: scripts often use only 576
+          batch_size: 128
+        device:
+          gpu: 6
+        hf_offline: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/ablation_studies"
+    
+    # GPT4MTS Ablation Testing - Bear Room (Channel-wise)
+    - name: "gpt4mts_ablation_test_bear_room"
+      description: "GPT4MTS ablation test with channel-wise evaluation on Bear Room"
+      enabled: true
+      template: "configs/templates/evaluation.yaml"
+      overrides:
+        model:
+          name: "GPT4MTS"
+        data:
+          name: "Bear_room"
+        evaluation:
+          model: "GPT4MTS"
+          data: "Bear_room"
+          version: "08-30-1112"  # Specific checkpoint version for ablation
+          input_len: 288
+          output_len: 288
+          batch_size: 512
+          device: "4"
+          task: "MTSF"
+          channel_wise: true
+          data_config: "data_configs/Bear_room/fullBear_hetero_ablation_RPLLM.yaml"
+        experiment:
+          type: "evaluation"
+          output_dir: "outputs/suites/ablation_studies"
+

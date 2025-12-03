@@ -1,0 +1,141 @@
+# Experiment Suite: GPT4TS Training
+# Description: Training GPT4TS models across datasets
+# Usage: python -m cli.suite run configs/experiment_suites/gpt4ts.yaml
+
+suite:
+  name: "gpt4ts_training"
+  description: "Train GPT4TS models across all datasets"
+  tags: ["gpt4ts", "pytorch", "foundation"]
+  
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/gpt4ts"
+    
+  experiments:
+    # NYC Traffic Speed
+    - name: "gpt4ts_nyc_traffic_speed"
+      description: "GPT4TS on NYC Traffic Speed dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "GPT4TS"
+          config_path: "model_configs/general/GPT4TS.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        hf_mirror: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/gpt4ts"
+    
+    # California ISO
+    - name: "gpt4ts_california_iso"
+      description: "GPT4TS on California ISO dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "GPT4TS"
+          config_path: "model_configs/general/GPT4TS.yaml"
+        data:
+          name: "California_ISO"
+          config_path: "data_configs/California_ISO/fullCAISO_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        hf_mirror: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/gpt4ts"
+    
+    # Canada Photovoltaics Plants
+    - name: "gpt4ts_canada_photovoltaics_plants"
+      description: "GPT4TS on Canada Photovoltaics Plants dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "GPT4TS"
+          config_path: "model_configs/general/GPT4TS.yaml"
+        data:
+          name: "Canada_photovoltaics_plants"
+          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        hf_mirror: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/gpt4ts"
+    
+    # Germany Renewable Power Grid
+    - name: "gpt4ts_germany_renewable_power_grid"
+      description: "GPT4TS on Germany Renewable Power Grid dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "GPT4TS"
+          config_path: "model_configs/general/GPT4TS.yaml"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        hf_mirror: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/gpt4ts"
+    
+    # Jena Atmospheric Physics
+    - name: "gpt4ts_jena_atmospheric_physics"
+      description: "GPT4TS on Jena Atmospheric Physics dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "GPT4TS"
+          config_path: "model_configs/general/GPT4TS.yaml"
+        data:
+          name: "Jena_Atmospheric_Physics"
+          config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        hf_mirror: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/gpt4ts"
+    
+    # Bear Room
+    - name: "gpt4ts_bear_room"
+      description: "GPT4TS on Bear Room dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "GPT4TS"
+          config_path: "model_configs/general/GPT4TS.yaml"
+        data:
+          name: "Bear_room"
+          config_path: "data_configs/Bear_room/fullBear.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        hf_mirror: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/gpt4ts"
+

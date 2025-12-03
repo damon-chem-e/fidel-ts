@@ -1,0 +1,28 @@
+# Template: Model Evaluation
+# Description: Base template for model evaluation/testing
+# This template is used for testing trained models
+
+experiment:
+  name: "${experiment_name}"
+  type: "evaluation"
+  
+model:
+  name: "${model_name}"
+  
+data:
+  name: "${data_name}"
+  
+evaluation:
+  model: "${model_name}"  # Model name (required for checkpoint finding)
+  data: "${data_name}"  # Data name (required for checkpoint finding)
+  version: "latest"  # latest, oldest, or specific date (checkpoint version)
+  checkpoint_base: "./checkpoints"
+  input_len: 360
+  output_len: 24
+  batch_size: 128
+  device: "0"
+  task: "TSF"  # TSF, TGTSF, MTSF
+  filtered_samples: null  # Path to filtered samples JSON (optional)
+  channel_wise: false
+  data_config: null  # Optional: override data config path (e.g., for zero-shot evaluation)
+

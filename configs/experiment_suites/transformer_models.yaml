@@ -1,0 +1,251 @@
+# Experiment Suite: Transformer Models
+# Description: Comprehensive evaluation of transformer models (PatchTST, iTransformer) across all datasets
+# Usage: python -m cli.suite run configs/experiment_suites/transformer_models.yaml
+
+suite:
+  name: "transformer_models_comprehensive"
+  description: "Evaluate PatchTST and iTransformer models across all datasets with multiple forecast horizons"
+  tags: ["transformer", "lightning", "comprehensive"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/transformer_models"
+    
+  # Experiments in this suite
+  experiments:
+    # NYC Traffic Speed
+    - name: "patchtst_nyc_traffic_speed"
+      description: "PatchTST on NYC Traffic Speed dataset"
+      enabled: true
+      template: "configs/templates/lightning_training.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+          config_path: "model_configs/general/PatchTST.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "lightning"
+          output_dir: "outputs/suites/transformer_models"
+          
+    - name: "itransformer_nyc_traffic_speed"
+      description: "iTransformer on NYC Traffic Speed dataset"
+      enabled: true
+      template: "configs/templates/lightning_training.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+          config_path: "model_configs/general/iTransformer.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "lightning"
+          output_dir: "outputs/suites/transformer_models"
+    
+    # California ISO
+    - name: "patchtst_california_iso"
+      description: "PatchTST on California ISO dataset"
+      enabled: true
+      template: "configs/templates/lightning_training.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+          config_path: "model_configs/general/PatchTST.yaml"
+        data:
+          name: "California_ISO"
+          config_path: "data_configs/California_ISO/fullCAISO_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "lightning"
+          output_dir: "outputs/suites/transformer_models"
+          
+    - name: "itransformer_california_iso"
+      description: "iTransformer on California ISO dataset"
+      enabled: true
+      template: "configs/templates/lightning_training.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+          config_path: "model_configs/general/iTransformer.yaml"
+        data:
+          name: "California_ISO"
+          config_path: "data_configs/California_ISO/fullCAISO_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "lightning"
+          output_dir: "outputs/suites/transformer_models"
+    
+    # Canada Photovoltaics Plants
+    - name: "patchtst_canada_photovoltaics_plants"
+      description: "PatchTST on Canada Photovoltaics Plants dataset"
+      enabled: true
+      template: "configs/templates/lightning_training.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+          config_path: "model_configs/general/PatchTST.yaml"
+        data:
+          name: "Canada_photovoltaics_plants"
+          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "lightning"
+          output_dir: "outputs/suites/transformer_models"
+          
+    - name: "itransformer_canada_photovoltaics_plants"
+      description: "iTransformer on Canada Photovoltaics Plants dataset"
+      enabled: true
+      template: "configs/templates/lightning_training.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+          config_path: "model_configs/general/iTransformer.yaml"
+        data:
+          name: "Canada_photovoltaics_plants"
+          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "lightning"
+          output_dir: "outputs/suites/transformer_models"
+    
+    # Germany Renewable Power Grid
+    - name: "patchtst_germany_renewable_power_grid"
+      description: "PatchTST on Germany Renewable Power Grid dataset"
+      enabled: true
+      template: "configs/templates/lightning_training.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+          config_path: "model_configs/general/PatchTST.yaml"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "lightning"
+          output_dir: "outputs/suites/transformer_models"
+          
+    - name: "itransformer_germany_renewable_power_grid"
+      description: "iTransformer on Germany Renewable Power Grid dataset"
+      enabled: true
+      template: "configs/templates/lightning_training.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+          config_path: "model_configs/general/iTransformer.yaml"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "lightning"
+          output_dir: "outputs/suites/transformer_models"
+    
+    # Jena Atmospheric Physics
+    - name: "patchtst_jena_atmospheric_physics"
+      description: "PatchTST on Jena Atmospheric Physics dataset"
+      enabled: true
+      template: "configs/templates/lightning_training.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+          config_path: "model_configs/general/PatchTST.yaml"
+        data:
+          name: "Jena_Atmospheric_Physics"
+          config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "lightning"
+          output_dir: "outputs/suites/transformer_models"
+          
+    - name: "itransformer_jena_atmospheric_physics"
+      description: "iTransformer on Jena Atmospheric Physics dataset"
+      enabled: true
+      template: "configs/templates/lightning_training.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+          config_path: "model_configs/general/iTransformer.yaml"
+        data:
+          name: "Jena_Atmospheric_Physics"
+          config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "lightning"
+          output_dir: "outputs/suites/transformer_models"
+    
+    # Bear Room
+    - name: "patchtst_bear_room"
+      description: "PatchTST on Bear Room dataset"
+      enabled: true
+      template: "configs/templates/lightning_training.yaml"
+      overrides:
+        model:
+          name: "PatchTST"
+          config_path: "model_configs/general/PatchTST.yaml"
+        data:
+          name: "Bear_room"
+          config_path: "data_configs/Bear_room/fullBear.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "lightning"
+          output_dir: "outputs/suites/transformer_models"
+          
+    - name: "itransformer_bear_room"
+      description: "iTransformer on Bear Room dataset"
+      enabled: true
+      template: "configs/templates/lightning_training.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+          config_path: "model_configs/general/iTransformer.yaml"
+        data:
+          name: "Bear_room"
+          config_path: "data_configs/Bear_room/fullBear.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 512
+        experiment:
+          type: "lightning"
+          output_dir: "outputs/suites/transformer_models"
+

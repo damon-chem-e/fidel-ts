@@ -1,0 +1,369 @@
+# Experiment Suite: Foundation Models
+# Description: Comprehensive evaluation of foundation models (Sundial, TimeMoE, Chronos) across datasets
+# Usage: python -m cli.suite run configs/experiment_suites/foundation_models.yaml
+
+suite:
+  name: "foundation_models_comprehensive"
+  description: "Evaluate foundation models (Sundial, TimeMoE, Chronos) across datasets"
+  tags: ["foundation_models", "fm", "comprehensive"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/foundation_models"
+    
+  # Experiments in this suite
+  experiments:
+    # Sundial - NYC Traffic Speed
+    - name: "sundial_nyc_traffic_speed"
+      description: "Sundial on NYC Traffic Speed dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "Sundial"
+          config_path: "model_configs/FM/Sundial.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # Sundial - California ISO
+    - name: "sundial_california_iso"
+      description: "Sundial on California ISO dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "Sundial"
+          config_path: "model_configs/FM/Sundial.yaml"
+        data:
+          name: "California_ISO"
+          config_path: "data_configs/California_ISO/fullCAISO_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # Sundial - Canada Photovoltaics Plants
+    - name: "sundial_canada_photovoltaics_plants"
+      description: "Sundial on Canada Photovoltaics Plants dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "Sundial"
+          config_path: "model_configs/FM/Sundial.yaml"
+        data:
+          name: "Canada_photovoltaics_plants"
+          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # Sundial - Germany Renewable Power Grid
+    - name: "sundial_germany_renewable_power_grid"
+      description: "Sundial on Germany Renewable Power Grid dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "Sundial"
+          config_path: "model_configs/FM/Sundial.yaml"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # Sundial - Jena Atmospheric Physics
+    - name: "sundial_jena_atmospheric_physics"
+      description: "Sundial on Jena Atmospheric Physics dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "Sundial"
+          config_path: "model_configs/FM/Sundial.yaml"
+        data:
+          name: "Jena_Atmospheric_Physics"
+          config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # TimeMoE - NYC Traffic Speed
+    - name: "time_moe_nyc_traffic_speed"
+      description: "TimeMoE on NYC Traffic Speed dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "TimeMoE"
+          config_path: "model_configs/FM/TimeMoE.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # TimeMoE - California ISO
+    - name: "time_moe_california_iso"
+      description: "TimeMoE on California ISO dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "TimeMoE"
+          config_path: "model_configs/FM/TimeMoE.yaml"
+        data:
+          name: "California_ISO"
+          config_path: "data_configs/California_ISO/fullCAISO_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # TimeMoE - Canada Photovoltaics Plants
+    - name: "time_moe_canada_photovoltaics_plants"
+      description: "TimeMoE on Canada Photovoltaics Plants dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "TimeMoE"
+          config_path: "model_configs/FM/TimeMoE.yaml"
+        data:
+          name: "Canada_photovoltaics_plants"
+          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # TimeMoE - Germany Renewable Power Grid
+    - name: "time_moe_germany_renewable_power_grid"
+      description: "TimeMoE on Germany Renewable Power Grid dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "TimeMoE"
+          config_path: "model_configs/FM/TimeMoE.yaml"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # TimeMoE - Jena Atmospheric Physics
+    - name: "time_moe_jena_atmospheric_physics"
+      description: "TimeMoE on Jena Atmospheric Physics dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "TimeMoE"
+          config_path: "model_configs/FM/TimeMoE.yaml"
+        data:
+          name: "Jena_Atmospheric_Physics"
+          config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # Chronos - NYC Traffic Speed
+    - name: "chronos_nyc_traffic_speed"
+      description: "Chronos on NYC Traffic Speed dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "Chronos"
+          config_path: "model_configs/FM/Chronos.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # Chronos - California ISO
+    - name: "chronos_california_iso"
+      description: "Chronos on California ISO dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "Chronos"
+          config_path: "model_configs/FM/Chronos.yaml"
+        data:
+          name: "California_ISO"
+          config_path: "data_configs/California_ISO/fullCAISO_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # Chronos - Canada Photovoltaics Plants
+    - name: "chronos_canada_photovoltaics_plants"
+      description: "Chronos on Canada Photovoltaics Plants dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "Chronos"
+          config_path: "model_configs/FM/Chronos.yaml"
+        data:
+          name: "Canada_photovoltaics_plants"
+          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # Chronos - Germany Renewable Power Grid
+    - name: "chronos_germany_renewable_power_grid"
+      description: "Chronos on Germany Renewable Power Grid dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "Chronos"
+          config_path: "model_configs/FM/Chronos.yaml"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # Chronos - Jena Atmospheric Physics
+    - name: "chronos_jena_atmospheric_physics"
+      description: "Chronos on Jena Atmospheric Physics dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "Chronos"
+          config_path: "model_configs/FM/Chronos.yaml"
+        data:
+          name: "Jena_Atmospheric_Physics"
+          config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_H.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+    
+    # Chronos - Bear Room
+    - name: "chronos_bear_room"
+      description: "Chronos on Bear Room dataset"
+      enabled: true
+      template: "configs/templates/fm_testing.yaml"
+      overrides:
+        model:
+          name: "Chronos"
+          config_path: "model_configs/FM/Chronos.yaml"
+        data:
+          name: "Bear_room"
+          config_path: "data_configs/Bear_room/fullBear.yaml"
+        training:
+          input_len: 360
+          output_lens: [24, 168, 336, 720]
+          batch_size: 1024
+        device:
+          gpu: 3
+        experiment:
+          type: "fm"
+          output_dir: "outputs/suites/foundation_models"
+
