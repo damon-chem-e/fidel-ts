@@ -114,7 +114,7 @@ def run(config: ExperimentConfig):
     print(torch.cuda.device_count())
     
     # Initialize experiment manager
-    output_dir = config.training.checkpoints or "./outputs"
+    output_dir = config.training.experiment_output or "./output"
     exp_manager = ExperimentManager(
         config=config,
         output_dir=output_dir,

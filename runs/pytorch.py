@@ -119,7 +119,7 @@ def run(config: ExperimentConfig):
         >>> run(config)
     """
     # Initialize experiment manager
-    output_dir = config.training.checkpoints or "./outputs"
+    output_dir = config.training.experiment_output or "./output"
     exp_manager = ExperimentManager(
         config=config,
         output_dir=output_dir,

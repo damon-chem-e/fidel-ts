@@ -29,8 +29,8 @@ class DataConfig(BaseModel):
 
 class TrainingConfig(BaseModel):
     """Training configuration section."""
-    # Checkpoint and output
-    checkpoints: Optional[str] = Field(default="./checkpoints/", description="Checkpoint directory")
+    # Experiment output directory (base directory for experiment outputs)
+    experiment_output: Optional[str] = Field(default=None, description="Base directory for experiment outputs")
     last_ckpt: Optional[str] = Field(default=None, description="Path to last checkpoint for resuming")
     
     # Training hyperparameters

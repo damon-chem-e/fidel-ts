@@ -516,13 +516,14 @@ class StepMonitor:
         }
 
 
-def _format_gpu_metrics(metrics: Dict[str, Any], window_seconds: Optional[float]) -> list:
+def _format_gpu_metrics(metrics: Dict[str, Any], window_seconds: Optional[float], include_timestamp: bool = False) -> list:
     """
     Format GPU metrics into two lines for better readability.
     
     Args:
         metrics: Dictionary of GPU metrics
         window_seconds: Time window for the metrics (for display). If None, indicates final summary.
+        include_timestamp: Whether to include a timestamp on the second line
     
     Returns:
         List of two formatted strings (one per line)
@@ -553,12 +554,18 @@ def _format_gpu_metrics(metrics: Dict[str, Any], window_seconds: Optional[float]
     if mem_total is not None:
         line1_parts.append(f"Mem Total: {mem_total:.2f} GB")
     
-    # Build second line: Power and Temperature
+    # Build second line: Power, Temperature, and optionally Timestamp
     line2_parts = []
     if avg_power is not None:
         line2_parts.append(f"Avg Power: {avg_power:.0f}W")
     if max_temp is not None:
         line2_parts.append(f"Max Temp: {max_temp}°C")
+    
+    # Add timestamp if requested
+    if include_timestamp:
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        line2_parts.append(f"Time: {timestamp}")
     
     # Format lines with spacing
     line1 = "   ".join(line1_parts) if line1_parts else ""
@@ -568,9 +575,12 @@ def _format_gpu_metrics(metrics: Dict[str, Any], window_seconds: Optional[float]
     if window_seconds is not None:
         header = f"[GPU Monitor (last {int(window_seconds)}s)]"
     else:
-        header = "[GPU Monitor (final summary - entire run)]"
+        header = "[GPU Monitor (final summary)]"
     
-    return [f"{header} {line1}", f"{' ' * len(header)} {line2}"]
+    # Calculate padding to align second line properly
+    header_len = len(header)
+    
+    return [f"{header} {line1}", f"{' ' * (header_len + 1)}{line2}"]
 
 
 # Track previous GPU monitor line count for overwriting
@@ -665,7 +675,8 @@ def gpu_monitoring_context(args, exp_manager, log_interval_s: float = 30.0):
             
             # Format and print GPU metrics in a tqdm-compatible way
             # Window indicator shows the time window for these metrics (last N seconds)
-            formatted_lines = _format_gpu_metrics(metrics, log_interval_s)
+            # Include timestamp to differentiate between prints
+            formatted_lines = _format_gpu_metrics(metrics, log_interval_s, include_timestamp=True)
             _print_gpu_metrics(formatted_lines)
         
         gpu_monitor.enable_periodic_logging(log_gpu_metrics, log_interval_s=log_interval_s)
@@ -702,7 +713,8 @@ def gpu_monitoring_context(args, exp_manager, log_interval_s: float = 30.0):
                     exp_manager.log_metrics(gpu_metrics)
                     
                     # Format and display final summary (over entire run, not a window)
-                    final_lines = _format_gpu_metrics(gpu_metrics, window_seconds=None)
+                    # Don't include timestamp for final summary
+                    final_lines = _format_gpu_metrics(gpu_metrics, window_seconds=None, include_timestamp=False)
                     _print_gpu_metrics(final_lines)
             
             # Clear GPU monitor reference

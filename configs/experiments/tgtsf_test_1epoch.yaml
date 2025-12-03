@@ -10,7 +10,7 @@ data:
   config_path: data_configs/Canada_photovoltaics_plants/fullCPP_hetero_TGTSF.yaml
 
 training:
-  checkpoints: ./checkpoints/
+  experiment_output: ./output  # Base directory for experiment outputs (defaults to ./output if not specified)
   epochs: 1  # Single epoch for testing
   batch_size: 32  # Smaller batch size for testing
   learning_rate: 5e-4

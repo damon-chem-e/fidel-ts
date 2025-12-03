@@ -10,6 +10,7 @@ This module provides the ExperimentManager class that handles:
 """
 
 import os
+import sys
 import json
 import hashlib
 import shutil
@@ -20,6 +21,61 @@ import subprocess
 import yaml
 
 from cli.config.models import ExperimentConfig
+
+
+class Tee:
+    """
+    Tee class that writes to both a file and the original stream (stdout/stderr).
+    
+    This allows capturing all output to log files while still displaying it
+    in the console for real-time monitoring. Uses block buffering for the file
+    to maintain performance with high-frequency updates (e.g., tqdm progress bars).
+    """
+    
+    def __init__(self, file_path: Path, stream, file_buffer_size: int = 65536):
+        """
+        Initialize Tee.
+        
+        Args:
+            file_path: Path to log file
+            stream: Original stream (sys.stdout or sys.stderr)
+            file_buffer_size: Buffer size for file writes in bytes (default 64KB).
+                             Larger buffers improve performance with high-frequency updates.
+        """
+        # Use block buffering (larger buffer) for file to avoid slowdowns with tqdm
+        # The console stream remains fast, and file writes are batched efficiently
+        self.file = open(file_path, 'w', encoding='utf-8', buffering=file_buffer_size)
+        self.stream = stream
+    
+    def write(self, text: str) -> None:
+        """
+        Write to both file and original stream.
+        
+        Note: File is block-buffered, so writes are batched for performance.
+        The console stream writes immediately for real-time display.
+        """
+        self.file.write(text)
+        self.stream.write(text)
+        # Only flush the console stream immediately (for real-time display)
+        # File will flush when buffer is full or on explicit flush() calls
+        self.stream.flush()
+    
+    def flush(self) -> None:
+        """
+        Flush both file and stream.
+        
+        This is called explicitly by print(), tqdm, and other code that needs
+        immediate output, ensuring all data is written to the file.
+        """
+        self.file.flush()
+        self.stream.flush()
+    
+    def close(self) -> None:
+        """Close the file (stream remains open)."""
+        if self.file:
+            # Flush any remaining buffered data before closing
+            self.file.flush()
+            self.file.close()
 
 
 class ExperimentManager:
@@ -36,7 +92,7 @@ class ExperimentManager:
     def __init__(
         self,
         config: ExperimentConfig,
-        output_dir: str = "./outputs",
+        output_dir: str = "./output",
         experiment_name: Optional[str] = None,
         job_id: Optional[str] = None,
         job_name: Optional[str] = None
@@ -63,6 +119,15 @@ class ExperimentManager:
         # Create experiment directory structure
         self.experiment_dir = self.output_dir / self.experiment_id
         self._create_experiment_structure()
+        
+        # Initialize stream references (will be set in _setup_log_capture)
+        self._original_stdout = None
+        self._original_stderr = None
+        self._stdout_tee = None
+        self._stderr_tee = None
+        
+        # Set up stdout/stderr logging to experiment logs folder
+        self._setup_log_capture()
         
         # Capture metadata
         self.metadata = self._capture_metadata()
@@ -117,6 +182,31 @@ class ExperimentManager:
         # Create wandb directory if enabled
         if self.config.wandb.enabled:
             (self.experiment_dir / "wandb").mkdir(exist_ok=True)
+    
+    def _setup_log_capture(self) -> None:
+        """
+        Set up stdout and stderr capture to log files.
+        
+        Creates Tee objects that write to both console and log files,
+        ensuring all output is captured for later analysis.
+        """
+        log_dir = self.experiment_dir / "logs"
+        
+        # Create Tee objects for stdout and stderr
+        stdout_path = log_dir / "stdout.log"
+        stderr_path = log_dir / "stderr.log"
+        
+        # Store original streams before redirecting
+        self._original_stdout = sys.stdout
+        self._original_stderr = sys.stderr
+        
+        # Create Tee objects that write to both file and console
+        self._stdout_tee = Tee(stdout_path, self._original_stdout)
+        self._stderr_tee = Tee(stderr_path, self._original_stderr)
+        
+        # Redirect stdout and stderr
+        sys.stdout = self._stdout_tee
+        sys.stderr = self._stderr_tee
     
     def _capture_metadata(self) -> Dict[str, Any]:
         """
@@ -346,18 +436,29 @@ class ExperimentManager:
                 'experiment_id': self.experiment_id,
             })
             
+            # Determine run name (use fixed name if provided, otherwise use experiment_id)
+            run_name = self.config.wandb.run_name if self.config.wandb.run_name else self.experiment_id
+            
+            # Build wandb.init() arguments
+            init_kwargs = {
+                'project': self.config.wandb.project,
+                'entity': self.config.wandb.entity,
+                'name': run_name,
+                'tags': self.config.wandb.tags,
+                'notes': self.config.wandb.notes,
+                'config': wandb_config,
+                'mode': self.config.wandb.mode,
+                'dir': str(self.experiment_dir / "wandb"),
+                'reinit': False
+            }
+            
+            # Add run_id if specified (for resuming/overwriting runs)
+            if self.config.wandb.run_id:
+                init_kwargs['id'] = self.config.wandb.run_id
+                init_kwargs['resume'] = 'allow'  # Allow resuming/overwriting
+            
             # Initialize wandb run
-            self.wandb_run = wandb.init(
-                project=self.config.wandb.project,
-                entity=self.config.wandb.entity,
-                name=self.experiment_id,
-                tags=self.config.wandb.tags,
-                notes=self.config.wandb.notes,
-                config=wandb_config,
-                mode=self.config.wandb.mode,
-                dir=str(self.experiment_dir / "wandb"),
-                reinit=False
-            )
+            self.wandb_run = wandb.init(**init_kwargs)
             
             # Log config files as artifacts
             self._log_config_artifacts()
@@ -451,12 +552,15 @@ class ExperimentManager:
                 if step is not None:
                     self.wandb_run.log({name: value}, step=step)
                 else:
-                    # Log without step - wandb will use internal counter
-                    # This is fine for metrics that don't need step tracking
-                    self.wandb_run.log({name: value})
+                    # Log without step - use commit=False to avoid step conflicts
+                    # GPU metrics and other non-step metrics should not interfere with training step tracking
+                    self.wandb_run.log({name: value}, commit=False)
             except Exception as e:
-                # Only print warning if it's not about finished run
-                if "finished" not in str(e).lower() and "is finished" not in str(e).lower():
+                # Suppress warnings about step ordering and finished runs
+                error_msg = str(e).lower()
+                if ("step" not in error_msg and 
+                    "finished" not in error_msg and 
+                    "is finished" not in error_msg):
                     print(f"Warning: Failed to log metric to wandb: {e}")
         
         # Save metrics to file
@@ -607,11 +711,32 @@ class ExperimentManager:
             except Exception as e:
                 print(f"Warning: Failed to finish wandb run: {e}")
         
+        # Restore original stdout/stderr and close log files
+        self._restore_log_streams()
+        
         # Save final metadata
         self.metadata["end_timestamp"] = datetime.now().isoformat()
         metadata_path = self.experiment_dir / "metadata.json"
         with open(metadata_path, 'w', encoding='utf-8') as f:
             json.dump(self.metadata, f, indent=2, default=str)
+    
+    def _restore_log_streams(self) -> None:
+        """
+        Restore original stdout/stderr and close log file handles.
+        
+        This should be called when the experiment ends to ensure
+        all log data is flushed and streams are restored.
+        """
+        # Flush and close Tee objects
+        if self._stdout_tee is not None:
+            self._stdout_tee.flush()
+            self._stdout_tee.close()
+            sys.stdout = self._original_stdout
+        
+        if self._stderr_tee is not None:
+            self._stderr_tee.flush()
+            self._stderr_tee.close()
+            sys.stderr = self._original_stderr
     
     def get_experiment_id(self) -> str:
         """Get experiment ID."""
