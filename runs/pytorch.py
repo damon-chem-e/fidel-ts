@@ -153,7 +153,7 @@ def run(config: ExperimentConfig):
     # Initialize and run experiment (pass exp_manager for tracking)
     exp = Experiment(args, exp_manager=exp_manager)
     print(f'>>>>>>>start training : {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>')
-    exp.train(experiment_id)
+    exp.train()
     
     # Final cleanup
     torch.cuda.empty_cache()

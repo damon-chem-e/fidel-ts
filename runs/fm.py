@@ -147,10 +147,10 @@ def run(config: ExperimentConfig):
     # Clear CUDA cache
     torch.cuda.empty_cache()
     
-    # Initialize and run experiment
-    exp = Experiment(args)
+    # Initialize and run experiment (pass exp_manager for tracking)
+    exp = Experiment(args, exp_manager=exp_manager)
     print(f'>>>>>>>start testing: {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>')
-    exp.test(experiment_id)
+    exp.test(savepath=str(exp_manager.get_checkpoint_dir()))
     
     # Final cleanup
     torch.cuda.empty_cache()

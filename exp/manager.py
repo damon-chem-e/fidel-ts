@@ -15,7 +15,7 @@ import hashlib
 import shutil
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional
 import subprocess
 import yaml
 
@@ -204,36 +204,120 @@ class ExperimentManager:
         self._save_config_hierarchy()
     
     def _save_config_hierarchy(self) -> None:
-        """Save complete config hierarchy to experiment directory."""
+        """Save complete config hierarchy to experiment directory with recursive copying."""
         # Save primary config
         primary_config_path = self.experiment_dir / "configs" / "experiment_config.yaml"
         self.config.to_yaml(primary_config_path)
         
-        # Load and save nested configs (model, data, etc.)
-        self._copy_config_file(self.config.model.config_path, "model_config.yaml")
-        self._copy_config_file(self.config.data.config_path, "data_config.yaml")
+        # Track copied configs to avoid duplicates
+        self._copied_configs = set()
+        
+        # Load and save nested configs (model, data, etc.) with recursive copying
+        self._copy_config_file_recursive(self.config.model.config_path, "model_config.yaml")
+        self._copy_config_file_recursive(self.config.data.config_path, "data_config.yaml")
         
         # Save nested configs if they exist
         if self.config.plotting:
-            self._copy_config_file(self.config.plotting, "plotting_config.yaml")
+            self._copy_config_file_recursive(self.config.plotting, "plotting_config.yaml")
         if self.config.evaluation:
-            self._copy_config_file(self.config.evaluation, "evaluation_config.yaml")
+            self._copy_config_file_recursive(self.config.evaluation, "evaluation_config.yaml")
     
-    def _copy_config_file(self, source_path: str, dest_name: str) -> None:
+    def _copy_config_file_recursive(self, source_path: str, dest_name: str, base_dir: Optional[Path] = None) -> None:
         """
-        Copy a config file to experiment directory.
+        Copy a config file to experiment directory and recursively copy any nested configs it references.
+        
+        This method:
+        1. Copies the source config file
+        2. Parses the YAML to find any references to other config files
+        3. Recursively copies those referenced configs
         
         Args:
             source_path: Path to source config file
             dest_name: Destination filename in experiment configs directory
+            base_dir: Base directory for resolving relative paths in nested configs
         """
         source = Path(source_path)
         if not source.is_absolute():
             source = Path.cwd() / source
         
-        if source.exists():
-            dest = self.experiment_dir / "configs" / dest_name
-            shutil.copy2(source, dest)
+        if not source.exists():
+            return
+        
+        # Avoid copying the same file twice
+        if str(source.resolve()) in self._copied_configs:
+            return
+        
+        # Copy the main config file
+        dest = self.experiment_dir / "configs" / dest_name
+        shutil.copy2(source, dest)
+        self._copied_configs.add(str(source.resolve()))
+        
+        # Parse the config file to find nested config references
+        try:
+            with open(source, 'r', encoding='utf-8') as f:
+                config_content = yaml.safe_load(f)
+            
+            if config_content is None:
+                return
+            
+            # Use source file's directory as base for resolving relative paths
+            if base_dir is None:
+                base_dir = source.parent
+            
+            # Recursively search for config file references
+            self._find_and_copy_nested_configs(config_content, base_dir, dest_name)
+            
+        except (yaml.YAMLError, Exception):
+            # If we can't parse the config, just copy it and continue
+            # This handles non-YAML files or corrupted files gracefully
+            pass
+    
+    def _find_and_copy_nested_configs(self, config_dict: Any, base_dir: Path, parent_name: str) -> None:
+        """
+        Recursively find and copy nested config file references in a config dictionary.
+        
+        Args:
+            config_dict: Dictionary or value to search for config references
+            base_dir: Base directory for resolving relative paths
+            parent_name: Name of parent config file (for naming nested configs)
+        """
+        if isinstance(config_dict, dict):
+            for key, value in config_dict.items():
+                if isinstance(value, str) and (value.endswith('.yaml') or value.endswith('.yml')):
+                    # This looks like a config file reference
+                    # Check if it's a valid file path
+                    nested_config_path = Path(value)
+                    if not nested_config_path.is_absolute():
+                        nested_config_path = base_dir / nested_config_path
+                    
+                    if nested_config_path.exists() and nested_config_path.is_file():
+                        # Generate a unique name for the nested config
+                        # Use parent name and key to create a descriptive name
+                        nested_dest_name = f"{parent_name.replace('.yaml', '').replace('.yml', '')}_{key}.yaml"
+                        
+                        # Recursively copy this nested config
+                        self._copy_config_file_recursive(
+                            str(nested_config_path), 
+                            nested_dest_name, 
+                            base_dir=nested_config_path.parent
+                        )
+                elif isinstance(value, (dict, list)):
+                    # Recursively search nested structures
+                    self._find_and_copy_nested_configs(value, base_dir, parent_name)
+        elif isinstance(config_dict, list):
+            for item in config_dict:
+                if isinstance(item, (dict, list)):
+                    self._find_and_copy_nested_configs(item, base_dir, parent_name)
+    
+    def _copy_config_file(self, source_path: str, dest_name: str) -> None:
+        """
+        Copy a config file to experiment directory (legacy method for backward compatibility).
+        
+        Args:
+            source_path: Path to source config file
+            dest_name: Destination filename in experiment configs directory
+        """
+        self._copy_config_file_recursive(source_path, dest_name)
     
     def _init_wandb(self) -> None:
         """

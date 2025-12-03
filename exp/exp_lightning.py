@@ -240,13 +240,13 @@ class TimeSeriesLightningModel(pl.LightningModule):
         return [optimizer], [lr_scheduler]
 
 
-def train_lightning_model(args, setting):
+def train_lightning_model(args, exp_manager=None):
     """
     Train the Lightning model and save it.
     
     Args:
         args: Arguments for the experiment
-        setting: String identifier for the experiment
+        exp_manager: Optional ExperimentManager for experiment tracking
     
     Returns:
         Trained model
@@ -268,14 +268,20 @@ def train_lightning_model(args, setting):
     else:
         # Initialize model
         model = TimeSeriesLightningModel(args)
-        # Create checkpoint directory
-        checkpoint_path = os.path.join(args.checkpoints, setting)
+        # Use experiment_id from exp_manager if available, otherwise fall back to args.checkpoints
+        if exp_manager is not None:
+            checkpoint_path = str(exp_manager.get_checkpoint_dir())
+        else:
+            # Fallback for backward compatibility - use a default name
+            checkpoint_path = os.path.join(args.checkpoints, "lightning_experiment")
+        
         if not os.path.exists(checkpoint_path):
             os.makedirs(checkpoint_path)
     
-        # Save args
-        with open(os.path.join(checkpoint_path, 'args.json'), 'w') as f:
-            json.dump(args.__dict__, f)
+        # Save args.json for backward compatibility (if not using exp_manager)
+        if exp_manager is None:
+            with open(os.path.join(checkpoint_path, 'args.json'), 'w') as f:
+                json.dump(args.__dict__, f)
     
     # Configure callbacks
     early_stopping = EarlyStopping(
@@ -296,9 +302,17 @@ def train_lightning_model(args, setting):
     
     
     # Configure logger
+    # Use experiment_id from exp_manager if available
+    if exp_manager is not None:
+        logger_name = exp_manager.get_experiment_id()
+        logger_save_dir = str(exp_manager.get_experiment_dir() / "tb_logs")
+    else:
+        logger_name = "lightning_experiment"
+        logger_save_dir = os.path.join(args.checkpoints, 'tb_logs')
+    
     logger = TensorBoardLogger(
-        save_dir=os.path.join(args.checkpoints, 'tb_logs'),
-        name=setting
+        save_dir=logger_save_dir,
+        name=logger_name
     )
     
     # Advanced trainer configurations for better performance
@@ -328,7 +342,7 @@ def train_lightning_model(args, setting):
     trainer = pl.Trainer(**trainer_kwargs)
     
     # Train model
-    print(f'>>>>>>>start training : {setting}>>>>>>>>>>>>>>>>>>>>>>>>>>>')
+    print('>>>>>>>start training >>>>>>>>>>>>>>>>>>>>>>>>>>>')
     if not args.test:
         trainer.fit(model, data_module)
     

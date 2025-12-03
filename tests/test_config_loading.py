@@ -2,7 +2,7 @@
 Tests for configuration loading functionality.
 
 These tests verify that the Pydantic-based config loading system works correctly,
-including validation, nested configs, and error handling.
+including validation, nested configs, error handling, and config saving/copying.
 """
 
 import pytest
@@ -10,7 +10,9 @@ import tempfile
 import yaml
 from pathlib import Path
 from cli.config.loader import load_config, load_config_with_nested, resolve_config_path
-from cli.config.models import ExperimentConfig, ModelConfig, DataConfig, TrainingConfig, DeviceConfig
+from cli.config.models import ExperimentConfig, ModelConfig, DataConfig
+from exp.manager import ExperimentManager
+from exp.manager import ExperimentManager
 
 
 def test_resolve_config_path_absolute():

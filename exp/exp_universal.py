@@ -130,17 +130,13 @@ class Experiment(Exp_Basic):
         return output, gt
 
 
-    def train(self, setting):
+    def train(self):
         """
         Executes the complete model training pipeline with comprehensive monitoring.
         
         This method orchestrates the entire training process including data loading,
         model optimization, validation monitoring, early stopping, and checkpointing.
         Supports advanced features like learning rate scheduling and progress tracking.
-        
-        Args:
-            setting (str): Experiment identifier used for checkpoint directory naming
-                          and configuration saving
         
         Returns:
             torch.nn.Module: Trained model loaded from the best checkpoint
@@ -155,8 +151,8 @@ class Experiment(Exp_Basic):
         
         Example:
             ```python
-            exp = Experiment(args)
-            trained_model = exp.train(setting='stock_forecast_v1')
+            exp = Experiment(args, exp_manager=exp_manager)
+            trained_model = exp.train()
             ```
         """
         train_loader = self._get_data(flag='train')
@@ -167,11 +163,20 @@ class Experiment(Exp_Basic):
         # self._get_profile(self.model)
         # print('Trainable parameters: ', sum(p.numel() for p in self.model.parameters() if p.requires_grad))
 
-        path = os.path.join(self.args.checkpoints, setting)
+        # Use experiment_id from exp_manager if available, otherwise fall back to args.checkpoints
+        if self.exp_manager is not None:
+            path = str(self.exp_manager.get_checkpoint_dir())
+        else:
+            # Fallback for backward compatibility
+            path = self.args.checkpoints
+        
         if not os.path.exists(path):
             os.makedirs(path)
-        with open(path + '/' + 'args.json', 'w') as f:
-                        json.dump(self.args.__dict__, f)
+        
+        # Save args.json for backward compatibility (if not using exp_manager)
+        if self.exp_manager is None:
+            with open(os.path.join(path, 'args.json'), 'w') as f:
+                json.dump(self.args.__dict__, f)
         time_now = time.time()
         train_steps = len(train_loader)
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
@@ -236,6 +241,7 @@ class Experiment(Exp_Basic):
                     'learning_rate': current_lr,
                 }, step=epoch + 1)
             
+            # EarlyStopping expects a directory path, ensure it exists
             early_stopping(vali_loss, self.model, path)
             if early_stopping.early_stop:
                 print("Early stopping")
@@ -251,7 +257,7 @@ class Experiment(Exp_Basic):
 
             adjust_learning_rate(model_optim, epoch + 1, self.args)
 
-        best_model_path = path + '/' + 'checkpoint.pth'
+        best_model_path = os.path.join(path, 'checkpoint.pth')
         self.model.load_state_dict(torch.load(best_model_path))
         
         # Save checkpoint to ExperimentManager if available

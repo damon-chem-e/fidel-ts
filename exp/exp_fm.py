@@ -156,11 +156,24 @@ class Experiment(Exp_Basic):
 
         return final_output, gt
 
-    def test(self, savepath):
+    def test(self, savepath=None):
         """
         Validate the model on the validation dataset.
+        
+        Args:
+            savepath: Optional path for saving results. If None and exp_manager is available,
+                     uses exp_manager's checkpoint directory.
         """
-        path = os.path.join(self.args.checkpoints, savepath)
+        # Use experiment_id from exp_manager if available, otherwise use provided savepath
+        if savepath is None:
+            if self.exp_manager is not None:
+                path = str(self.exp_manager.get_checkpoint_dir())
+            else:
+                raise ValueError("savepath must be provided if exp_manager is not available")
+        else:
+            # If savepath is provided, use it (for backward compatibility)
+            path = savepath
+        
         if not os.path.exists(path):
             os.makedirs(path)
         

@@ -152,8 +152,8 @@ def run(config: ExperimentConfig):
     # Clear CUDA cache
     torch.cuda.empty_cache()
     
-    # Train model
-    model = train_lightning_model(args, experiment_id)
+    # Train model (pass exp_manager for tracking)
+    model = train_lightning_model(args, exp_manager=exp_manager)
     print(f'>>>>>>>training completed : {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>>')
     
     # Final cleanup
