@@ -1,5 +1,26 @@
 # Tuna mirror: pip install -i https://pypi.tuna.tsinghua.edu.cn/simple <xxx包>
 
+# ============================================================================
+# INSTALLATION OPTIONS:
+# ============================================================================
+# 
+# This file contains ALL dependencies for a complete installation.
+# For modular installation, see the requirements/ directory:
+#
+# Minimal install (CPU, no LLM, no GPU specific dependencies):
+#   pip install -r requirements/base.txt
+#
+# With LLM support:
+#   pip install -r requirements/base.txt -r requirements/llm.txt
+#
+# With GPU specific dependencies:
+#   pip install -r requirements/base.txt -r requirements/gpu.txt
+#
+# Full install (everything - same as this file):
+#   pip install -r requirements.txt
+#
+# ============================================================================
+
 # Core dependencies - install these first
 numpy==1.26.4
 torch>=1.13.0
@@ -20,19 +41,20 @@ tqdm>=4.66.0
 fastparquet
 pandas
 transformers>=4.41.0,<5.0.0
-openai
 pyyaml>=6.0
 tensorboard>=2.8.0 
 typer>=0.9.0
 rich>=13.0.0
+pydantic>=2.0.0
 
-# LLM-related dependencies
+# LLM-related dependencies (optional - see requirements/llm.txt)
+# Install with: pip install -r requirements/base.txt -r requirements/llm.txt
 vllm==0.7.2  # 0.8.3 provides reasoning compatability but consumes more memory
 fschat[model_worker,webui]
 flashinfer-python
+openai
 
-# Build-heavy dependencies
-# Note: flash-attn removed - not used in codebase (code has pure PyTorch FlashAttention implementation)
-# If vllm or other packages require it, they will install it as a dependency
+# Build-heavy dependencies (optional - see requirements/gpu.txt)
+# Install with: pip install -r requirements/base.txt -r requirements/gpu.txt
 nvitop
 chronos-forecasting

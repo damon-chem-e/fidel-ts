@@ -2,27 +2,28 @@
 Foundation Model testing execution module.
 
 This module provides the execution logic for Foundation Model testing,
-migrated from run_fm.py.
+migrated from run_fm.py. Uses Pydantic configs and ExperimentManager.
 """
 
 import os
 import torch
 import random
 import numpy as np
-import time
 import yaml
 from utils.tools import dotdict
 from utils.task import ahead_task_parser
 from exp.exp_fm import Experiment
-from cli.utils import safe_float, safe_int, safe_bool
+from cli.config.models import ExperimentConfig
+from experiments.manager import ExperimentManager
 
 
-def config_to_args(config):
+def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     """
-    Convert config dotdict to argparse-like args object for FM testing.
+    Convert ExperimentConfig to argparse-like args object for FM testing.
     
     Args:
-        config: dotdict containing experiment configuration
+        config: ExperimentConfig instance containing experiment configuration
+        exp_manager: ExperimentManager instance for experiment tracking
     
     Returns:
         dotdict object compatible with Experiment class
@@ -36,37 +37,37 @@ def config_to_args(config):
     # Data config
     args.data = config.data.name
     args.data_config = config.data.config_path
-    args.checkpoints = config.training.get('checkpoints', './checkpoints/')
-    args.scale = safe_bool(config.training.get('scale', True), True)
-    args.disable_buffer = safe_bool(config.training.get('disable_buffer', False), False)
-    args.preload_hetero = safe_bool(config.training.get('preload_hetero', False), False)
-    args.prefetch_factor = safe_int(config.training.get('prefetch_factor', 2), 2)
-    args.noise = safe_float(config.training.get('noise', 0.0), 0.0)
-    args.downsample = config.training.get('downsample', None)
-    if args.downsample is not None:
-        args.downsample = safe_int(args.downsample, None)
+    args.checkpoints = str(exp_manager.get_checkpoint_dir())
+    args.scale = config.training.scale
+    args.disable_buffer = config.training.disable_buffer
+    args.preload_hetero = config.training.preload_hetero
+    args.prefetch_factor = config.training.prefetch_factor
+    args.noise = config.training.noise
+    args.downsample = config.training.downsample
     
     # Forecasting task
-    args.task = config.training.get('task', 'TSF')
-    args.ahead = config.training.get('ahead', None)
-    args.output_len = safe_int(config.training.get('output_len', 1000), 1000)
-    args.input_len = safe_int(config.training.get('input_len', 1000), 1000)
-    args.filtered_samples = config.training.get('filtered_samples', None)
-    args.individual = safe_bool(config.training.get('individual', True), True)
+    # Note: 'task' is not in TrainingConfig, so we get it from extra fields
+    config_dict = config.model_dump()
+    args.task = config_dict.get('task', 'TSF')  # Default to TSF if not specified
+    args.ahead = config.training.ahead
+    args.output_len = config.training.output_len or 1000
+    args.input_len = config.training.input_len or 1000
+    args.filtered_samples = config.training.filtered_samples
+    args.individual = config.training.individual if config.training.individual is not None else True
     
     # Optimization
-    args.num_workers = safe_int(config.training.get('num_workers', 0), 0)
-    args.batch_size = safe_int(config.training.get('batch_size', 96), 96)
-    args.loss = config.training.get('loss', 'mse')
+    args.num_workers = config.training.num_workers
+    args.batch_size = config.training.batch_size
+    args.loss = config.training.loss
     
     # GPU
-    args.use_gpu = safe_bool(config.device.get('use_gpu', True), True)
-    args.gpu = safe_int(config.device.get('gpu', 0), 0)
-    args.use_multi_gpu = safe_bool(config.device.get('use_multi_gpu', False), False)
-    args.devices = config.device.get('devices', '0,1,2,3')
+    args.use_gpu = config.device.use_gpu
+    args.gpu = config.device.gpu
+    args.use_multi_gpu = config.device.use_multi_gpu
+    args.devices = config.device.devices
     
     # Environment variables
-    args.hf_mirror = config.get('hf_mirror', False)
+    args.hf_mirror = config.hf_mirror
     
     # Load model and data configs
     with open(args.model_config, 'r') as f:
@@ -102,59 +103,54 @@ def config_to_args(config):
     return args
 
 
-def run(config):
+def run(config: ExperimentConfig):
     """
     Run Foundation Model testing experiment.
     
-    This function executes Foundation Model testing based on the provided configuration.
-    Foundation models are pre-trained models that can be tested directly.
+    This function executes Foundation Model testing based on the provided Pydantic
+    configuration, with full experiment tracking.
     
     Args:
-        config: dotdict containing experiment configuration with structure:
-            - model: {name, config_path}
-            - data: {name, config_path}
-            - training: {task, filtered_samples, individual, ...}
-            - device: {use_gpu, gpu, use_multi_gpu, devices}
+        config: ExperimentConfig instance containing experiment configuration
     
     Example:
         >>> from cli.config.loader import load_config
         >>> config = load_config("configs/experiments/fm_solar.yaml")
         >>> run(config)
     """
+    # Initialize experiment manager
+    output_dir = config.training.checkpoints or "./outputs"
+    exp_manager = ExperimentManager(
+        config=config,
+        output_dir=output_dir,
+        experiment_name=config.experiment_name,
+        job_id=config.job_id,
+        job_name=config.job_name
+    )
+    
     # Set environment variables for HuggingFace
-    if config.get('hf_mirror', False):
+    if config.hf_mirror:
         os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
     
     # Convert config to args format
-    args = config_to_args(config)
+    args = config_to_args(config, exp_manager)
     
-    # Generate experiment setting name
-    current_time = time.strftime('%m-%d-%H%M', time.localtime(time.time()))
+    # Use experiment ID instead of setting string
+    experiment_id = exp_manager.get_experiment_id()
     
-    if args.ahead is not None:
-        setting = f'{current_time}_{args.model}_{args.data}_{args.ahead}_ahead'
-    else:
-        if args.filtered_samples is not None:
-            setting = f'filtered_{current_time}_{args.model}_{args.data}_{args.output_len}_{args.input_len}'
-        else:
-            setting = f'{current_time}_{args.model}_{args.data}_{args.output_len}_{args.input_len}'
-    
-    # Set seeds for reproducibility
-    fix_seed = 2021
+    # Set seeds for reproducibility (from config)
+    fix_seed = config.random_seed
     random.seed(fix_seed)
     torch.manual_seed(fix_seed)
     np.random.seed(fix_seed)
-    
-    print('Args in experiment:')
-    print(args)
     
     # Clear CUDA cache
     torch.cuda.empty_cache()
     
     # Initialize and run experiment
     exp = Experiment(args)
-    print('>>>>>>>start testing: {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
-    exp.test(setting)
+    print(f'>>>>>>>start testing: {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>')
+    exp.test(experiment_id)
     
     # Final cleanup
     torch.cuda.empty_cache()

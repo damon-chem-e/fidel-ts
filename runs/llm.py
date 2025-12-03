@@ -2,28 +2,29 @@
 LLM experiment execution module.
 
 This module provides the execution logic for LLM-based time series forecasting,
-migrated from run_llm.py.
+migrated from run_llm.py. Uses Pydantic configs and ExperimentManager.
 """
 
 import os
-import time
 import yaml
 from utils.tools import dotdict
 from utils.task import ahead_task_parser
 from exp.exp_llm import Experiment
-from cli.utils import safe_float, safe_int, safe_bool
+from cli.config.models import ExperimentConfig
+from experiments.manager import ExperimentManager
 
 # SSL certificate setup for OpenAI/API calls
 import certifi
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
 
-def config_to_args(config):
+def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     """
-    Convert config dotdict to argparse-like args object for LLM experiments.
+    Convert ExperimentConfig to argparse-like args object for LLM experiments.
     
     Args:
-        config: dotdict containing experiment configuration
+        config: ExperimentConfig instance containing experiment configuration
+        exp_manager: ExperimentManager instance for experiment tracking
     
     Returns:
         dotdict object compatible with Experiment class
@@ -37,40 +38,40 @@ def config_to_args(config):
     # Data config
     args.data = config.data.name
     args.data_config = config.data.config_path
-    args.checkpoints = config.training.get('checkpoints', './checkpoints/')
-    args.scale = safe_bool(config.training.get('scale', False), False)
-    args.disable_buffer = safe_bool(config.training.get('disable_buffer', False), False)
-    args.filtered_samples = config.training.get('filtered_samples', None)
-    args.preload_hetero = safe_bool(config.training.get('preload_hetero', False), False)
-    args.noise = safe_float(config.training.get('noise', 0.0), 0.0)
+    args.checkpoints = str(exp_manager.get_checkpoint_dir())
+    args.scale = config.training.scale
+    args.disable_buffer = config.training.disable_buffer
+    args.filtered_samples = config.training.filtered_samples
+    args.preload_hetero = config.training.preload_hetero
+    args.noise = config.training.noise
     
     # Forecasting task
-    args.ahead = config.training.get('ahead', None)
-    args.output_len = safe_int(config.training.get('output_len', 1000), 1000)
-    args.input_len = config.training.get('input_len', 1000)
+    args.ahead = config.training.ahead
+    args.output_len = config.training.output_len or 1000
+    args.input_len = config.training.input_len or 1000
     if args.input_len != 'ntp':
-        args.input_len = safe_int(args.input_len, 1000)
-    args.sample_step = safe_int(config.training.get('sample_step', 24), 24)
-    args.no_parallel = safe_bool(config.training.get('no_parallel', False), False)
-    args.valisets = config.training.get('valisets', 'full')
+        args.input_len = int(args.input_len) if isinstance(args.input_len, (int, str)) and str(args.input_len).isdigit() else args.input_len
+    args.sample_step = config.training.sample_step
+    args.no_parallel = config.training.no_parallel
+    args.valisets = config.training.valisets
     
     # Optimization (mostly unused for LLM inference)
-    args.num_workers = safe_int(config.training.get('num_workers', 0), 0)
-    args.train_epochs = safe_int(config.training.get('epochs', 50), 50)
-    args.batch_size = safe_int(config.training.get('batch_size', 96), 96)
-    args.patience = safe_int(config.training.get('patience', 3), 3)
-    args.learning_rate = safe_float(config.training.get('learning_rate', 5e-4), 5e-4)
-    args.loss = config.training.get('loss', 'mse')
-    args.lradj = config.training.get('lradj', 'type3')
+    args.num_workers = config.training.num_workers
+    args.train_epochs = config.training.epochs
+    args.batch_size = config.training.batch_size
+    args.patience = config.training.patience
+    args.learning_rate = config.training.learning_rate
+    args.loss = config.training.loss
+    args.lradj = config.training.lradj
     
     # GPU
-    args.use_gpu = safe_bool(config.device.get('use_gpu', True), True)
-    args.gpu = safe_int(config.device.get('gpu', 0), 0)
-    args.use_multi_gpu = safe_bool(config.device.get('use_multi_gpu', False), False)
-    args.devices = config.device.get('devices', '0,1,2,3')
+    args.use_gpu = config.device.use_gpu
+    args.gpu = config.device.gpu
+    args.use_multi_gpu = config.device.use_multi_gpu
+    args.devices = config.device.devices
     
-    # LLM-specific
-    args.amlt = safe_bool(config.get('amlt', False), False)
+    # LLM-specific (from extra fields)
+    args.amlt = config.model_dump().get('amlt', False)
     
     # Load model and data configs
     with open(args.model_config, 'r', encoding='utf-8') as f:
@@ -92,19 +93,15 @@ def config_to_args(config):
     return args
 
 
-def run(config):
+def run(config: ExperimentConfig):
     """
     Run LLM-based time series forecasting experiment.
     
-    This function executes LLM inference/testing based on the provided configuration.
-    LLM experiments typically focus on inference rather than training.
+    This function executes LLM inference/testing based on the provided Pydantic
+    configuration, with full experiment tracking.
     
     Args:
-        config: dotdict containing experiment configuration with structure:
-            - model: {name, config_path}
-            - data: {name, config_path}
-            - training: {filtered_samples, sample_step, valisets, ...}
-            - device: {use_gpu, gpu, use_multi_gpu, devices}
+        config: ExperimentConfig instance containing experiment configuration
     
     Example:
         >>> from cli.config.loader import load_config
@@ -114,28 +111,26 @@ def run(config):
     import torch
     print(torch.cuda.device_count())
     
+    # Initialize experiment manager
+    output_dir = config.training.checkpoints or "./outputs"
+    exp_manager = ExperimentManager(
+        config=config,
+        output_dir=output_dir,
+        experiment_name=config.experiment_name,
+        job_id=config.job_id,
+        job_name=config.job_name
+    )
+    
     # Convert config to args format
-    args = config_to_args(config)
+    args = config_to_args(config, exp_manager)
     
-    # Generate experiment setting name
-    if args.amlt:
-        current_time = 'amlt'
-    else:
-        current_time = time.strftime('%m-%d-%H%M', time.localtime(time.time()))
+    # Use experiment ID instead of setting string
+    experiment_id = exp_manager.get_experiment_id()
     
-    # Remove the "/" "\" in model name
+    # Remove the "/" "\" in model name for path safety
     _model = args.model.replace('/', '-').replace('\\', '-')
-    
-    if args.ahead is not None:
-        setting = f'{current_time}_{_model}_{args.data}_{args.ahead}_ahead'
-    else:
-        setting = f'{current_time}_{_model}_{args.data}_{args.output_len}_{args.input_len}'
-    
-    # Check if the checkpoint path exists
-    if not os.path.exists(os.path.join(args.checkpoints, setting)):
-        os.makedirs(os.path.join(args.checkpoints, setting))
     
     # Initialize and run experiment
     exp = Experiment(args)
-    exp.test(savepath=os.path.join(args.checkpoints, setting), valiset=args.valisets)
+    exp.test(savepath=str(exp_manager.get_checkpoint_dir()), valiset=args.valisets)
 

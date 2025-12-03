@@ -1,0 +1,12 @@
+# ============================================================================
+# GPU REQUIREMENTS - Build-heavy and GPU specific dependencies
+# ============================================================================
+# Install with: pip install -r requirements/base.txt -r requirements/gpu.txt
+#
+# These dependencies require CUDA, significant build time, and GPU hardware.
+# Omit for CPU-only local development.
+# ============================================================================
+
+nvitop
+chronos-forecasting
+

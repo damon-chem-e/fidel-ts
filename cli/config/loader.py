@@ -1,36 +1,16 @@
 """
-Configuration loader with support for nested subconfigs.
+Configuration loader with support for nested subconfigs using Pydantic.
 
 This module provides functionality to load primary configuration files
 that may reference nested subconfigs (e.g., plotting, evaluation configs).
+All configs are loaded as Pydantic models for type safety and validation.
 """
 
-import os
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
-from utils.tools import dotdict
 
-
-def _recursive_dotdict(obj):
-    """
-    Recursively convert nested dictionaries to dotdict objects.
-    
-    Args:
-        obj: Dictionary or other object to convert
-    
-    Returns:
-        dotdict or original object if not a dict
-    """
-    if isinstance(obj, dict):
-        result = dotdict()
-        for key, value in obj.items():
-            result[key] = _recursive_dotdict(value)
-        return result
-    elif isinstance(obj, list):
-        return [_recursive_dotdict(item) for item in obj]
-    else:
-        return obj
+from cli.config.models import ExperimentConfig
 
 
 def resolve_config_path(config_path: str, base_dir: Optional[Path] = None) -> Path:
@@ -81,19 +61,19 @@ def load_yaml_config(config_path: Union[str, Path]) -> Dict[str, Any]:
     return config
 
 
-def load_config(config_path: str, base_dir: Optional[Path] = None) -> dotdict:
+def load_config(config_path: str, base_dir: Optional[Path] = None) -> ExperimentConfig:
     """
-    Load a primary configuration file and convert to dotdict.
+    Load a primary configuration file as Pydantic model.
     
-    This function loads a single config file without resolving nested subconfigs.
-    For nested config support, use load_config_with_nested().
+    This function loads a single config file and validates it using Pydantic.
+    For nested config support with full hierarchy, use load_config_with_nested().
     
     Args:
         config_path: Path to primary config file
         base_dir: Base directory for resolving relative paths
     
     Returns:
-        dotdict object containing config contents
+        ExperimentConfig instance
     
     Example:
         >>> config = load_config("configs/experiments/dlinear_solar.yaml")
@@ -101,8 +81,7 @@ def load_config(config_path: str, base_dir: Optional[Path] = None) -> dotdict:
         'DLinear'
     """
     resolved_path = resolve_config_path(config_path, base_dir)
-    config = load_yaml_config(resolved_path)
-    return _recursive_dotdict(config)
+    return ExperimentConfig.from_yaml(resolved_path)
 
 
 def load_config_with_nested(config_path: str, base_dir: Optional[Path] = None) -> Dict[str, Any]:
@@ -110,10 +89,10 @@ def load_config_with_nested(config_path: str, base_dir: Optional[Path] = None) -
     Load a primary configuration file and all referenced nested subconfigs.
     
     This function:
-    1. Loads the primary config file
+    1. Loads the primary config file as Pydantic model
     2. Identifies references to subconfigs (keys with string values that end in .yaml/.yml)
-    3. Loads each subconfig recursively
-    4. Returns a hierarchy with primary config and nested configs
+    3. Loads each subconfig as raw dictionaries (for nested configs like plotting, evaluation)
+    4. Returns a hierarchy with primary config (Pydantic) and nested configs (dicts)
     
     Args:
         config_path: Path to primary config file
@@ -122,10 +101,10 @@ def load_config_with_nested(config_path: str, base_dir: Optional[Path] = None) -
     Returns:
         Dictionary with structure:
         {
-            'primary': dotdict(...),  # Primary config as dotdict
+            'primary': ExperimentConfig(...),  # Primary config as Pydantic model
             'nested': {
-                'plotting': dotdict(...),  # If plotting: "configs/plotting/default.yaml" exists
-                'evaluation': dotdict(...),  # If evaluation: "configs/evaluation/default.yaml" exists
+                'plotting': {...},  # If plotting: "configs/plotting/default.yaml" exists
+                'evaluation': {...},  # If evaluation: "configs/evaluation/default.yaml" exists
                 ...
             },
             'config_paths': {
@@ -137,48 +116,54 @@ def load_config_with_nested(config_path: str, base_dir: Optional[Path] = None) -
     
     Example:
         >>> result = load_config_with_nested("configs/experiments/dlinear_solar.yaml")
-        >>> primary_config = result['primary']
-        >>> plotting_config = result['nested'].get('plotting')
+        >>> primary_config = result['primary']  # ExperimentConfig instance
+        >>> plotting_config = result['nested'].get('plotting')  # dict
     """
     if base_dir is None:
         base_dir = Path.cwd()
     
-    # Load primary config
+    # Load primary config as Pydantic model
     primary_path = resolve_config_path(config_path, base_dir)
-    primary_config = load_yaml_config(primary_path)
+    primary_config = ExperimentConfig.from_yaml(primary_path)
     
     # Track all config paths
     config_paths = {'primary': primary_path}
     nested_configs = {}
     
-    # Find and load nested configs
-    # Look for keys that have string values ending in .yaml or .yml
+    # Find and load nested configs (plotting, evaluation, etc.)
+    # These are stored as raw dicts since they're not part of the main ExperimentConfig schema
+    # Note: model.config_path and data.config_path are NOT nested configs, they're just file paths
     def find_subconfigs(config_dict: Dict[str, Any], parent_path: Path) -> None:
         """Recursively find and load subconfig references."""
         for key, value in config_dict.items():
             if isinstance(value, str) and (value.endswith('.yaml') or value.endswith('.yml')):
                 # This looks like a subconfig reference
-                try:
-                    subconfig_path = resolve_config_path(value, parent_path.parent)
-                    if subconfig_path.exists():
-                        subconfig = load_yaml_config(subconfig_path)
-                        nested_configs[key] = _recursive_dotdict(subconfig)
-                        config_paths[key] = subconfig_path
-                        # Recursively check for nested configs within this subconfig
-                        find_subconfigs(subconfig, subconfig_path)
-                except (FileNotFoundError, yaml.YAMLError) as e:
-                    # If subconfig doesn't exist or fails to load, skip it
-                    # This allows optional subconfigs
-                    pass
+                # Only treat top-level keys 'plotting' and 'evaluation' as nested configs
+                # model.config_path and data.config_path are just file paths, not nested configs
+                if key in ['plotting', 'evaluation']:
+                    try:
+                        subconfig_path = resolve_config_path(value, parent_path.parent)
+                        if subconfig_path.exists():
+                            subconfig = load_yaml_config(subconfig_path)
+                            nested_configs[key] = subconfig
+                            config_paths[key] = subconfig_path
+                            # Recursively check for nested configs within this subconfig
+                            find_subconfigs(subconfig, subconfig_path)
+                    except (FileNotFoundError, yaml.YAMLError):
+                        # If subconfig doesn't exist or fails to load, skip it
+                        # This allows optional subconfigs
+                        pass
             elif isinstance(value, dict):
                 # Recursively check nested dictionaries
                 find_subconfigs(value, parent_path)
     
-    find_subconfigs(primary_config, primary_path)
+    # Extract dict from Pydantic model to search for nested configs
+    primary_dict = primary_config.model_dump()
+    find_subconfigs(primary_dict, primary_path)
     
     return {
-        'primary': _recursive_dotdict(primary_config),
-        'nested': {k: v for k, v in nested_configs.items()},
+        'primary': primary_config,
+        'nested': nested_configs,
         'config_paths': config_paths
     }
 
@@ -194,7 +179,16 @@ def get_config_hierarchy(config_path: str) -> Dict[str, Any]:
         config_path: Path to primary config file
     
     Returns:
-        Dictionary with complete config hierarchy
+        Dictionary with complete config hierarchy:
+        {
+            'primary_config': ExperimentConfig(...),
+            'nested_configs': {...},
+            'config_paths': {...},
+            'all_configs': {
+                'primary': ExperimentConfig(...),
+                **nested_configs
+            }
+        }
     """
     result = load_config_with_nested(config_path)
     
@@ -207,4 +201,3 @@ def get_config_hierarchy(config_path: str) -> Dict[str, Any]:
             **result['nested']
         }
     }
-

@@ -2,27 +2,28 @@
 PyTorch Lightning training execution module.
 
 This module provides the execution logic for PyTorch Lightning-based training,
-migrated from run_lightning.py.
+migrated from run_lightning.py. Now uses Pydantic configs and ExperimentManager.
 """
 
 import os
 import torch
 import random
 import numpy as np
-import time
 import yaml
 from utils.tools import dotdict
 from utils.task import ahead_task_parser
 from exp.exp_lightning import train_lightning_model
-from cli.utils import safe_float, safe_int, safe_bool
+from cli.config.models import ExperimentConfig
+from experiments.manager import ExperimentManager
 
 
-def config_to_args(config):
+def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     """
-    Convert config dotdict to argparse-like args object for Lightning training.
+    Convert ExperimentConfig to argparse-like args object for Lightning training.
     
     Args:
-        config: dotdict containing experiment configuration
+        config: ExperimentConfig instance containing experiment configuration
+        exp_manager: ExperimentManager instance for experiment tracking
     
     Returns:
         dotdict object compatible with train_lightning_model function
@@ -32,46 +33,46 @@ def config_to_args(config):
     # Model config
     args.model = config.model.name
     args.model_config = config.model.config_path
-    args.last_ckpt = config.training.get('last_ckpt', None)
+    args.last_ckpt = config.training.last_ckpt
     
     # Data config
     args.data = config.data.name
     args.data_config = config.data.config_path
-    args.checkpoints = config.training.get('checkpoints', './checkpoints/')
-    args.scale = safe_bool(config.training.get('scale', True), True)
-    args.disable_buffer = safe_bool(config.training.get('disable_buffer', False), False)
-    args.preload_hetero = safe_bool(config.training.get('preload_hetero', False), False)
-    args.prefetch_factor = safe_int(config.training.get('prefetch_factor', 2), 2)
-    args.noise = safe_float(config.training.get('noise', 0.0), 0.0)
+    args.checkpoints = str(exp_manager.get_checkpoint_dir())
+    args.scale = config.training.scale
+    args.disable_buffer = config.training.disable_buffer
+    args.preload_hetero = config.training.preload_hetero
+    args.prefetch_factor = config.training.prefetch_factor
+    args.noise = config.training.noise
     
     # Forecasting task
-    args.ahead = config.training.get('ahead', None)
-    args.output_len = safe_int(config.training.get('output_len', 1000), 1000)
-    args.input_len = safe_int(config.training.get('input_len', 1000), 1000)
+    args.ahead = config.training.ahead
+    args.output_len = config.training.output_len or 1000
+    args.input_len = config.training.input_len or 1000
     
     # Optimization
-    args.num_workers = safe_int(config.training.get('num_workers', 4), 4)
-    args.train_epochs = safe_int(config.training.get('epochs', 30), 30)
-    args.batch_size = safe_int(config.training.get('batch_size', 96), 96)
-    args.patience = safe_int(config.training.get('patience', 3), 3)
-    args.learning_rate = safe_float(config.training.get('learning_rate', 5e-4), 5e-4)
-    args.loss = config.training.get('loss', 'mse')
-    args.lradj = config.training.get('lradj', 'type3')
+    args.num_workers = config.training.num_workers
+    args.train_epochs = config.training.epochs
+    args.batch_size = config.training.batch_size
+    args.patience = config.training.patience
+    args.learning_rate = config.training.learning_rate
+    args.loss = config.training.loss
+    args.lradj = config.training.lradj
     
     # GPU
-    args.use_gpu = safe_bool(config.device.get('use_gpu', True), True)
-    args.gpu = safe_int(config.device.get('gpu', 0), 0)
-    args.use_multi_gpu = safe_bool(config.device.get('use_multi_gpu', True), True)
-    args.devices = config.device.get('devices', '3')
+    args.use_gpu = config.device.use_gpu
+    args.gpu = config.device.gpu
+    args.use_multi_gpu = config.device.use_multi_gpu
+    args.devices = config.device.devices
     
     # PyTorch Lightning specific
-    args.precision = config.training.get('precision', '32')
-    args.gradient_clip_val = safe_float(config.training.get('gradient_clip_val', 0.0), 0.0)
-    args.test_after_epoch = safe_bool(config.training.get('test_after_epoch', False), False)
-    args.test = safe_bool(config.training.get('test', False), False)
+    args.precision = config.training.precision or '32'
+    args.gradient_clip_val = config.training.gradient_clip_val or 0.0
+    args.test_after_epoch = config.training.test_after_epoch
+    args.test = False  # Default, can be overridden
     
     # Environment variables
-    args.hf_mirror = config.get('hf_mirror', False)
+    args.hf_mirror = config.hf_mirror
     
     # Load model and data configs
     with open(args.model_config, 'r') as f:
@@ -103,27 +104,33 @@ def config_to_args(config):
     return args
 
 
-def run(config):
+def run(config: ExperimentConfig):
     """
     Run PyTorch Lightning training experiment.
     
     This function executes a complete Lightning training pipeline based on
-    the provided configuration.
+    the provided Pydantic configuration, with full experiment tracking.
     
     Args:
-        config: dotdict containing experiment configuration with structure:
-            - model: {name, config_path}
-            - data: {name, config_path}
-            - training: {epochs, batch_size, learning_rate, precision, ...}
-            - device: {use_gpu, gpu, use_multi_gpu, devices}
+        config: ExperimentConfig instance containing experiment configuration
     
     Example:
         >>> from cli.config.loader import load_config
         >>> config = load_config("configs/experiments/dlinear_solar.yaml")
         >>> run(config)
     """
+    # Initialize experiment manager
+    output_dir = config.training.checkpoints or "./outputs"
+    exp_manager = ExperimentManager(
+        config=config,
+        output_dir=output_dir,
+        experiment_name=config.experiment_name,
+        job_id=config.job_id,
+        job_name=config.job_name
+    )
+    
     # Set environment variables for HuggingFace
-    if config.get('hf_mirror', False):
+    if config.hf_mirror:
         os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
     
     # Make training faster
@@ -131,31 +138,23 @@ def run(config):
     torch.set_float32_matmul_precision('medium')
     
     # Convert config to args format
-    args = config_to_args(config)
+    args = config_to_args(config, exp_manager)
     
-    # Generate experiment setting name
-    current_time = 'lightning_' + time.strftime("%m-%d-%H%M", time.localtime())
+    # Use experiment ID instead of setting string
+    experiment_id = exp_manager.get_experiment_id()
     
-    if args.ahead is not None:
-        setting = f'{current_time}_{args.model}_{args.data}_{args.ahead}_ahead_pl'
-    else:
-        setting = f'{current_time}_{args.model}_{args.data}_{args.output_len}_{args.input_len}_pl'
-    
-    # Set seeds for reproducibility
-    fix_seed = 2021
+    # Set seeds for reproducibility (from config)
+    fix_seed = config.random_seed
     random.seed(fix_seed)
     torch.manual_seed(fix_seed)
     np.random.seed(fix_seed)
-    
-    print('Args in experiment:')
-    print(args)
     
     # Clear CUDA cache
     torch.cuda.empty_cache()
     
     # Train model
-    model = train_lightning_model(args, setting)
-    print(f'>>>>>>>training completed : {setting}>>>>>>>>>>>>>>>>>>>>>>>>>>>')
+    model = train_lightning_model(args, experiment_id)
+    print(f'>>>>>>>training completed : {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>>')
     
     # Final cleanup
     torch.cuda.empty_cache()

@@ -1,0 +1,14 @@
+# ============================================================================
+# LLM REQUIREMENTS - Dependencies for LLM-based forecasting
+# ============================================================================
+# Install with: pip install -r requirements/base.txt -r requirements/llm.txt
+#
+# These dependencies are required for LLM experiments (run_llm.py).
+# They are build-heavy and memory-intensive, so omit for CPU-only setups.
+# ============================================================================
+
+vllm==0.7.2  # 0.8.3 provides reasoning compatability but consumes more memory
+fschat[model_worker,webui]
+flashinfer-python
+openai
+

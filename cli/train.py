@@ -10,7 +10,8 @@ This module provides CLI commands for training models using different frameworks
 
 import typer
 from pathlib import Path
-from cli.config.loader import load_config_with_nested
+from cli.config.loader import load_config
+from cli.config.models import ExperimentConfig
 from cli.utils import handle_error, console, RICH_AVAILABLE
 
 app = typer.Typer(
@@ -35,13 +36,13 @@ def pytorch(
         python -m cli.train pytorch configs/experiments/dlinear_solar.yaml
     """
     try:
-        config_hierarchy = load_config_with_nested(config_path)
-        config = config_hierarchy['primary']
+        config = load_config(config_path)
         
         if dry_run:
             typer.echo(f"✓ Config validated: {config_path}")
             typer.echo(f"  Model: {config.model.name}")
             typer.echo(f"  Data: {config.data.name}")
+            typer.echo(f"  Training epochs: {config.training.epochs}")
             return
         
         # Import here to avoid circular imports
@@ -76,13 +77,13 @@ def lightning(
         python -m cli.train lightning configs/experiments/dlinear_solar.yaml
     """
     try:
-        config_hierarchy = load_config_with_nested(config_path)
-        config = config_hierarchy['primary']
+        config = load_config(config_path)
         
         if dry_run:
             typer.echo(f"✓ Config validated: {config_path}")
             typer.echo(f"  Model: {config.model.name}")
             typer.echo(f"  Data: {config.data.name}")
+            typer.echo(f"  Training epochs: {config.training.epochs}")
             return
         
         # Import here to avoid circular imports
@@ -117,8 +118,7 @@ def llm(
         python -m cli.train llm configs/experiments/llm_solar.yaml
     """
     try:
-        config_hierarchy = load_config_with_nested(config_path)
-        config = config_hierarchy['primary']
+        config = load_config(config_path)
         
         if dry_run:
             typer.echo(f"✓ Config validated: {config_path}")
@@ -158,8 +158,7 @@ def fm(
         python -m cli.train fm configs/experiments/fm_solar.yaml
     """
     try:
-        config_hierarchy = load_config_with_nested(config_path)
-        config = config_hierarchy['primary']
+        config = load_config(config_path)
         
         if dry_run:
             typer.echo(f"✓ Config validated: {config_path}")
