@@ -7,26 +7,24 @@ replacing the previous dotdict-based system.
 
 from typing import Optional, Union, List, Dict, Any
 from pathlib import Path
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 import yaml
 
 
 class ModelConfig(BaseModel):
     """Model configuration section."""
+    model_config = ConfigDict(extra="forbid")  # Don't allow extra fields
+    
     name: str = Field(..., description="Model name (e.g., DLinear, TGTSF)")
     config_path: str = Field(..., description="Path to model-specific config file")
-    
-    class Config:
-        extra = "forbid"  # Don't allow extra fields
 
 
 class DataConfig(BaseModel):
     """Data configuration section."""
+    model_config = ConfigDict(extra="forbid")
+    
     name: str = Field(..., description="Dataset name")
     config_path: str = Field(..., description="Path to data-specific config file")
-    
-    class Config:
-        extra = "forbid"
 
 
 class TrainingConfig(BaseModel):
@@ -71,6 +69,8 @@ class TrainingConfig(BaseModel):
     # FM-specific
     individual: Optional[bool] = Field(default=None, description="Use individual parameters per channel")
     
+    model_config = ConfigDict(extra="allow")  # Allow extra fields for flexibility
+    
     @model_validator(mode='after')
     def validate_task_definition(self):
         """Ensure either ahead or input_len/output_len is specified."""
@@ -78,20 +78,16 @@ class TrainingConfig(BaseModel):
             # This is okay - some models might have defaults
             pass
         return self
-    
-    class Config:
-        extra = "allow"  # Allow extra fields for flexibility
 
 
 class DeviceConfig(BaseModel):
     """Device configuration section."""
+    model_config = ConfigDict(extra="forbid")
+    
     use_gpu: bool = Field(default=True, description="Whether to use GPU")
     gpu: int = Field(default=0, ge=0, description="GPU device ID")
     use_multi_gpu: bool = Field(default=False, description="Whether to use multiple GPUs")
     devices: str = Field(default="0", description="Comma-separated GPU device IDs")
-    
-    class Config:
-        extra = "forbid"
 
 
 class ExperimentConfig(BaseModel):
@@ -115,8 +111,7 @@ class ExperimentConfig(BaseModel):
     job_name: Optional[str] = Field(default=None, description="Job name for cluster/scheduler")
     random_seed: int = Field(default=2021, description="Random seed for reproducibility")
     
-    class Config:
-        extra = "allow"  # Allow extra fields for nested configs
+    model_config = ConfigDict(extra="allow")  # Allow extra fields for nested configs
     
     @classmethod
     def from_yaml(cls, config_path: Union[str, Path]) -> 'ExperimentConfig':
