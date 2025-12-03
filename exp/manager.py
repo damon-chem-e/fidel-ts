@@ -196,7 +196,7 @@ class ExperimentManager:
     def _save_metadata(self) -> None:
         """Save metadata to experiment directory."""
         # Save metadata JSON
-        metadata_path = self.experiment_dir / "metadata" / "metadata.json"
+        metadata_path = self.experiment_dir / "metadata.json"
         with open(metadata_path, 'w', encoding='utf-8') as f:
             json.dump(self.metadata, f, indent=2, default=str)
         
@@ -570,7 +570,7 @@ class ExperimentManager:
         
         # Save final metadata
         self.metadata["end_timestamp"] = datetime.now().isoformat()
-        metadata_path = self.experiment_dir / "metadata" / "metadata.json"
+        metadata_path = self.experiment_dir / "metadata.json"
         with open(metadata_path, 'w', encoding='utf-8') as f:
             json.dump(self.metadata, f, indent=2, default=str)
     
