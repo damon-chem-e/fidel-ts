@@ -44,8 +44,15 @@ class Experiment(Exp_Basic):
         test_results = exp.test(setting='experiment_1')
         ```
     """
-    def __init__(self, args):
-        super(Experiment, self).__init__(args)
+    def __init__(self, args, exp_manager=None):
+        """
+        Initialize Experiment.
+        
+        Args:
+            args: Configuration object (dotdict or argparse-like)
+            exp_manager: Optional ExperimentManager for experiment tracking
+        """
+        super(Experiment, self).__init__(args, exp_manager)
 
     def _build_model(self):
         """
@@ -218,15 +225,59 @@ class Experiment(Exp_Basic):
 
             print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
                 epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+            
+            # Log metrics to ExperimentManager (and wandb if enabled)
+            if self.exp_manager is not None:
+                current_lr = model_optim.param_groups[0]['lr']
+                self.exp_manager.log_metrics({
+                    'train_loss': train_loss,
+                    'val_loss': vali_loss,
+                    'test_loss': test_loss,
+                    'learning_rate': current_lr,
+                }, step=epoch + 1)
+            
             early_stopping(vali_loss, self.model, path)
             if early_stopping.early_stop:
                 print("Early stopping")
+                # Log final metrics if early stopping
+                if self.exp_manager is not None:
+                    self.exp_manager.log_metrics({
+                        'best_epoch': epoch + 1,
+                        'final_train_loss': train_loss,
+                        'final_val_loss': vali_loss,
+                        'final_test_loss': test_loss,
+                    })
                 break
 
             adjust_learning_rate(model_optim, epoch + 1, self.args)
 
         best_model_path = path + '/' + 'checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))
+        
+        # Save checkpoint to ExperimentManager if available
+        if self.exp_manager is not None:
+            checkpoint = {
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': model_optim.state_dict(),
+                'epoch': self.args.train_epochs,
+                'train_loss': train_loss,
+                'val_loss': vali_loss,
+                'test_loss': test_loss,
+            }
+            self.exp_manager.save_checkpoint(
+                checkpoint, 
+                filename="best_checkpoint.pth",
+                is_best=True
+            )
+            
+            # End experiment and finalize wandb
+            final_metrics = {
+                'best_epoch': self.args.train_epochs,
+                'final_train_loss': train_loss,
+                'final_val_loss': vali_loss,
+                'final_test_loss': test_loss,
+            }
+            self.exp_manager.end_experiment(final_metrics)
 
         return self.model
 

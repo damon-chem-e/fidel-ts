@@ -5,6 +5,8 @@ import torch.nn as nn
 from torch import optim
 from data_provider.data_factory import Data_Provider
 from thop import profile
+from typing import Optional
+from exp.manager import ExperimentManager
 
 
 class Exp_Basic(object):
@@ -29,6 +31,7 @@ class Exp_Basic(object):
         device: PyTorch device (CPU or CUDA)
         model: Initialized model moved to appropriate device
         data_provider: Data management object for loading datasets
+        exp_manager: Optional ExperimentManager for experiment tracking and logging
     
     Example:
         ```python
@@ -41,8 +44,16 @@ class Exp_Basic(object):
         exp.train()
         ```
     """
-    def __init__(self, args):
+    def __init__(self, args, exp_manager: Optional[ExperimentManager] = None):
+        """
+        Initialize base experiment class.
+        
+        Args:
+            args: Experiment configuration object (dotdict or argparse-like)
+            exp_manager: Optional ExperimentManager for experiment tracking and wandb logging
+        """
         self.args = args
+        self.exp_manager = exp_manager
         self.device = self._acquire_device()
         self.model = self._build_model().to(self.device)
         self.data_provider = Data_Provider(args, buffer=(not args.disable_buffer))

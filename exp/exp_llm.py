@@ -91,14 +91,16 @@ class Experiment(Exp_Basic):
         ```
     """
     
-    def __init__(self, args):
+    def __init__(self, args, exp_manager=None):
         """
         Initializes the LLM experiment with specialized model building.
         
         Args:
             args: Configuration object with LLM-specific settings
+            exp_manager: Optional ExperimentManager for experiment tracking
         """
         self.args = args
+        self.exp_manager = exp_manager
         self.model = self._build_model()
         self.data_provider = Data_Provider(args, buffer=(not args.disable_buffer))
 

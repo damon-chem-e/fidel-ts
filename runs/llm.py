@@ -11,7 +11,7 @@ from utils.tools import dotdict
 from utils.task import ahead_task_parser
 from exp.exp_llm import Experiment
 from cli.config.models import ExperimentConfig
-from experiments.manager import ExperimentManager
+from exp.manager import ExperimentManager
 
 # SSL certificate setup for OpenAI/API calls
 import certifi

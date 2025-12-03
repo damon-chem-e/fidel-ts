@@ -15,7 +15,7 @@ from utils.tools import dotdict
 from utils.task import ahead_task_parser
 from exp.exp_universal import Experiment
 from cli.config.models import ExperimentConfig
-from experiments.manager import ExperimentManager
+from exp.manager import ExperimentManager
 
 
 def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
@@ -150,8 +150,8 @@ def run(config: ExperimentConfig):
     # Clear CUDA cache
     torch.cuda.empty_cache()
     
-    # Initialize and run experiment
-    exp = Experiment(args)
+    # Initialize and run experiment (pass exp_manager for tracking)
+    exp = Experiment(args, exp_manager=exp_manager)
     print(f'>>>>>>>start training : {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>')
     exp.train(experiment_id)
     

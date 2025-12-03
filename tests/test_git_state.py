@@ -10,7 +10,7 @@ import pytest
 import subprocess
 import tempfile
 from pathlib import Path
-from experiments.manager import ExperimentManager
+from exp.manager import ExperimentManager
 from cli.config.models import ExperimentConfig, ModelConfig, DataConfig
 
 

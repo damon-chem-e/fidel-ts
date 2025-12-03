@@ -46,6 +46,7 @@ tensorboard>=2.8.0
 typer>=0.9.0
 rich>=13.0.0
 pydantic>=2.0.0
+wandb>=0.16.0  # Experiment tracking and logging (optional but recommended)
 
 # LLM-related dependencies (optional - see requirements/llm.txt)
 # Install with: pip install -r requirements/base.txt -r requirements/llm.txt

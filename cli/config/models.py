@@ -90,12 +90,25 @@ class DeviceConfig(BaseModel):
     devices: str = Field(default="0", description="Comma-separated GPU device IDs")
 
 
+class WandBConfig(BaseModel):
+    """Weights & Biases (wandb) configuration section."""
+    model_config = ConfigDict(extra="forbid")
+    
+    project: str = Field(default="fidel-ts", description="WandB project name")
+    entity: Optional[str] = Field(default=None, description="WandB entity/team name (optional)")
+    tags: List[str] = Field(default_factory=list, description="Tags for experiment organization")
+    notes: Optional[str] = Field(default=None, description="Notes/description for the experiment")
+    enabled: bool = Field(default=True, description="Whether to enable wandb logging")
+    mode: str = Field(default="online", description="WandB mode: online, offline, or disabled")
+
+
 class ExperimentConfig(BaseModel):
     """Complete experiment configuration."""
     model: ModelConfig = Field(..., description="Model configuration")
     data: DataConfig = Field(..., description="Data configuration")
     training: TrainingConfig = Field(default_factory=TrainingConfig, description="Training configuration")
     device: DeviceConfig = Field(default_factory=DeviceConfig, description="Device configuration")
+    wandb: WandBConfig = Field(default_factory=WandBConfig, description="WandB configuration")
     
     # Optional fields
     hf_mirror: bool = Field(default=False, description="Use HuggingFace mirror")

@@ -14,7 +14,7 @@ from utils.tools import dotdict
 from utils.task import ahead_task_parser
 from exp.exp_lightning import train_lightning_model
 from cli.config.models import ExperimentConfig
-from experiments.manager import ExperimentManager
+from exp.manager import ExperimentManager
 
 
 def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):

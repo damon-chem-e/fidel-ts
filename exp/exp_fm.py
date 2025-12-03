@@ -47,8 +47,8 @@ class Experiment(Exp_Basic):
         ```
     """
     
-    def __init__(self, args):
-        super(Experiment, self).__init__(args)
+    def __init__(self, args, exp_manager=None):
+        super(Experiment, self).__init__(args, exp_manager)
         
     def _build_model(self):
         """
