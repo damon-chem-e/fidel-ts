@@ -7,6 +7,10 @@
 # Omit for CPU-only local development.
 # ============================================================================
 
+# GPU monitoring utilities (optional but recommended for resource tracking)
+nvidia-ml-py3  # Provides pynvml for NVML-based GPU monitoring (preferred)
+gputil  # Provides GPUtil as fallback for GPU monitoring
+
 nvitop
 chronos-forecasting
 

@@ -57,5 +57,7 @@ openai
 
 # Build-heavy dependencies (optional - see requirements/gpu.txt)
 # Install with: pip install -r requirements/base.txt -r requirements/gpu.txt
+nvidia-ml-py3  # GPU monitoring via NVML (preferred)
+gputil  # GPU monitoring fallback
 nvitop
 chronos-forecasting
