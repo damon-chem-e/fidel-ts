@@ -196,8 +196,21 @@ def test_metrics_logging(tmp_path):
         saved_metrics = json.load(f)
     
     assert "loss" in saved_metrics
-    assert len(saved_metrics["loss"]) == 2  # Two logged values
-    assert saved_metrics["accuracy"] == 0.9
+    assert len(saved_metrics["loss"]) == 2  # Two logged values with steps
+    assert saved_metrics["loss"][0]["value"] == 0.5
+    assert saved_metrics["loss"][0]["step"] == 1
+    assert saved_metrics["loss"][1]["value"] == 0.4
+    assert saved_metrics["loss"][1]["step"] == 2
+    
+    # Metrics logged with step are stored as list of dicts
+    assert "accuracy" in saved_metrics
+    assert isinstance(saved_metrics["accuracy"], list)
+    assert saved_metrics["accuracy"][0]["value"] == 0.9
+    assert saved_metrics["accuracy"][0]["step"] == 3
+    
+    assert "f1" in saved_metrics
+    assert saved_metrics["f1"][0]["value"] == 0.85
+    assert saved_metrics["f1"][0]["step"] == 3
 
 
 def test_experiment_id_deterministic(tmp_path):
