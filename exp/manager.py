@@ -71,6 +71,9 @@ class ExperimentManager:
         # Metrics storage
         self.metrics: Dict[str, Any] = {}
         
+        # GPU monitor reference (set by gpu_monitoring_context)
+        self.gpu_monitor = None
+        
         # Initialize wandb if enabled
         self.wandb_run = None
         if config.wandb.enabled:
@@ -437,15 +440,24 @@ class ExperimentManager:
         else:
             self.metrics[name] = value
         
-        # Log to wandb if enabled
+        # Log to wandb if enabled and run is active
         if self.wandb_run is not None:
             try:
+                # Check if wandb run is still active
+                if hasattr(self.wandb_run, '_wandb') and self.wandb_run._wandb.run is None:
+                    # Run is finished, skip logging
+                    return
+                
                 if step is not None:
                     self.wandb_run.log({name: value}, step=step)
                 else:
+                    # Log without step - wandb will use internal counter
+                    # This is fine for metrics that don't need step tracking
                     self.wandb_run.log({name: value})
             except Exception as e:
-                print(f"Warning: Failed to log metric to wandb: {e}")
+                # Only print warning if it's not about finished run
+                if "finished" not in str(e).lower() and "is finished" not in str(e).lower():
+                    print(f"Warning: Failed to log metric to wandb: {e}")
         
         # Save metrics to file
         self._save_metrics()
@@ -550,14 +562,41 @@ class ExperimentManager:
         Args:
             final_metrics: Optional dictionary of final metrics to log
         """
+        # Get GPU monitor summary before closing wandb (if monitor is active)
+        gpu_metrics = None
+        if self.gpu_monitor is not None:
+            try:
+                # Get summary without stopping the monitor (it will be stopped in context cleanup)
+                summary = self.gpu_monitor.summary()
+                if summary:
+                    gpu_metrics = {
+                        'gpu_avg_util_pct': summary.get('avg_util_gpu_pct'),
+                        'gpu_p95_util_pct': summary.get('p95_util_gpu_pct'),
+                        'gpu_avg_mem_used_mib': summary.get('avg_mem_used_mib'),
+                        'gpu_max_mem_used_mib': summary.get('max_mem_used_mib'),
+                        'gpu_mem_total_mib': summary.get('mem_total_mib'),
+                        'gpu_avg_power_w': summary.get('avg_power_w'),
+                        'gpu_max_temp_c': summary.get('max_temp_c'),
+                        'gpu_num_samples': summary.get('num_samples'),
+                    }
+                    # Filter out None values
+                    gpu_metrics = {k: v for k, v in gpu_metrics.items() if v is not None}
+            except Exception as e:
+                print(f"Warning: Failed to get GPU monitor summary: {e}")
+        
+        # Merge final metrics with GPU metrics
+        all_final_metrics = final_metrics.copy() if final_metrics else {}
+        if gpu_metrics:
+            all_final_metrics.update(gpu_metrics)
+        
         # Log final metrics if provided
-        if final_metrics:
-            self.log_metrics(final_metrics)
+        if all_final_metrics:
+            self.log_metrics(all_final_metrics)
             
-            # Update wandb summary with final metrics
+            # Update wandb summary with final metrics (including GPU metrics)
             if self.wandb_run is not None:
                 try:
-                    self.wandb_run.summary.update(final_metrics)
+                    self.wandb_run.summary.update(all_final_metrics)
                 except Exception as e:
                     print(f"Warning: Failed to update wandb summary: {e}")
         

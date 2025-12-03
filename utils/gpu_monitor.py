@@ -14,8 +14,15 @@ import time
 import threading
 import torch
 from datetime import datetime
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any
 from contextlib import contextmanager
+
+# Import tqdm for progress bar compatible printing
+try:
+    from tqdm import tqdm
+    _TQDM_AVAILABLE = True
+except ImportError:
+    _TQDM_AVAILABLE = False
 
 # Optional NVML import
 try:
@@ -509,6 +516,109 @@ class StepMonitor:
         }
 
 
+def _format_gpu_metrics(metrics: Dict[str, Any], window_seconds: Optional[float]) -> list:
+    """
+    Format GPU metrics into two lines for better readability.
+    
+    Args:
+        metrics: Dictionary of GPU metrics
+        window_seconds: Time window for the metrics (for display). If None, indicates final summary.
+    
+    Returns:
+        List of two formatted strings (one per line)
+    """
+    # Convert MiB to GB for memory metrics
+    def mib_to_gb(mib: Optional[float]) -> Optional[float]:
+        """Convert MiB to GB."""
+        if mib is None:
+            return None
+        return mib / 1024.0
+    
+    # Extract and format metrics
+    avg_util = metrics.get('gpu_avg_util_pct')
+    avg_mem = mib_to_gb(metrics.get('gpu_avg_mem_used_mib'))
+    max_mem = mib_to_gb(metrics.get('gpu_max_mem_used_mib'))
+    mem_total = mib_to_gb(metrics.get('gpu_mem_total_mib'))
+    avg_power = metrics.get('gpu_avg_power_w')
+    max_temp = metrics.get('gpu_max_temp_c')
+    
+    # Build first line: Utilization and Memory
+    line1_parts = []
+    if avg_util is not None:
+        line1_parts.append(f"Avg Util: {avg_util:.1f}%")
+    if avg_mem is not None:
+        line1_parts.append(f"Avg Mem: {avg_mem:.2f} GB")
+    if max_mem is not None:
+        line1_parts.append(f"Max Mem: {max_mem:.2f} GB")
+    if mem_total is not None:
+        line1_parts.append(f"Mem Total: {mem_total:.2f} GB")
+    
+    # Build second line: Power and Temperature
+    line2_parts = []
+    if avg_power is not None:
+        line2_parts.append(f"Avg Power: {avg_power:.0f}W")
+    if max_temp is not None:
+        line2_parts.append(f"Max Temp: {max_temp}°C")
+    
+    # Format lines with spacing
+    line1 = "   ".join(line1_parts) if line1_parts else ""
+    line2 = "   ".join(line2_parts) if line2_parts else ""
+    
+    # Create header with window indicator
+    if window_seconds is not None:
+        header = f"[GPU Monitor (last {int(window_seconds)}s)]"
+    else:
+        header = "[GPU Monitor (final summary - entire run)]"
+    
+    return [f"{header} {line1}", f"{' ' * len(header)} {line2}"]
+
+
+# Track previous GPU monitor line count for overwriting
+_previous_gpu_monitor_lines = 0
+
+
+def _print_gpu_metrics(lines: list):
+    """
+    Print GPU metrics in a tqdm-compatible way with line overwriting.
+    
+    Uses tqdm.write() to avoid interfering with progress bars, and overwrites
+    the previous GPU monitor output to keep the display clean.
+    
+    Args:
+        lines: List of formatted strings to print (typically 2 lines)
+    """
+    global _previous_gpu_monitor_lines
+    
+    if not lines:
+        return
+    
+    # Use tqdm.write() if available, otherwise fall back to regular print
+    if _TQDM_AVAILABLE:
+        # Move cursor up to overwrite previous GPU monitor lines
+        if _previous_gpu_monitor_lines > 0:
+            # ANSI escape: move up N lines
+            tqdm.write(f"\033[{_previous_gpu_monitor_lines}A", end="")
+        
+        # Print new lines (tqdm.write() ensures they appear below progress bar)
+        for line in lines:
+            # Clear line and print new content
+            tqdm.write(f"\033[K{line}")
+        
+        # Update line count for next iteration
+        _previous_gpu_monitor_lines = len(lines)
+    else:
+        # Fallback for when tqdm is not available
+        # Move cursor up to overwrite previous lines
+        if _previous_gpu_monitor_lines > 0:
+            print(f"\033[{_previous_gpu_monitor_lines}A", end="")
+        
+        for line in lines:
+            # Clear line and print new content
+            print(f"\033[K{line}")
+        
+        _previous_gpu_monitor_lines = len(lines)
+
+
 @contextmanager
 def gpu_monitoring_context(args, exp_manager, log_interval_s: float = 30.0):
     """
@@ -547,21 +657,30 @@ def gpu_monitoring_context(args, exp_manager, log_interval_s: float = 30.0):
         gpu_monitor.start()
         
         # Enable periodic logging to wandb and log file
+        # Note: log_interval_s (30 seconds) is currently hardcoded but can be made configurable later
         def log_gpu_metrics(metrics: Dict[str, Any]):
             """Callback to log GPU metrics periodically."""
             # Log to ExperimentManager (which logs to wandb and local files)
             exp_manager.log_metrics(metrics)
-            # Also print to console/log file
-            metric_str = ", ".join([f"{k}={v:.2f}" if isinstance(v, float) else f"{k}={v}" 
-                                   for k, v in metrics.items()])
-            print(f"[GPU Monitor] {metric_str}")
+            
+            # Format and print GPU metrics in a tqdm-compatible way
+            # Window indicator shows the time window for these metrics (last N seconds)
+            formatted_lines = _format_gpu_metrics(metrics, log_interval_s)
+            _print_gpu_metrics(formatted_lines)
         
         gpu_monitor.enable_periodic_logging(log_gpu_metrics, log_interval_s=log_interval_s)
+        
+        # Register GPU monitor with ExperimentManager so end_experiment() can access it
+        exp_manager.gpu_monitor = gpu_monitor
     
     try:
         yield gpu_monitor
     finally:
-        # Stop GPU monitoring and log final summary metrics
+        # Reset GPU monitor line counter for clean exit
+        global _previous_gpu_monitor_lines
+        _previous_gpu_monitor_lines = 0
+        # Stop GPU monitoring and display final summary
+        # Note: GPU metrics were already logged to wandb in end_experiment() before run finished
         if gpu_monitor:
             gpu_monitor.stop()
             summary = gpu_monitor.summary()
@@ -579,8 +698,15 @@ def gpu_monitoring_context(args, exp_manager, log_interval_s: float = 30.0):
                 # Filter out None values
                 gpu_metrics = {k: v for k, v in gpu_metrics.items() if v is not None}
                 if gpu_metrics:
+                    # Log to local files (wandb was already updated in end_experiment())
                     exp_manager.log_metrics(gpu_metrics)
-                    print(f"[GPU Monitor] Final summary: {gpu_metrics}")
+                    
+                    # Format and display final summary (over entire run, not a window)
+                    final_lines = _format_gpu_metrics(gpu_metrics, window_seconds=None)
+                    _print_gpu_metrics(final_lines)
+            
+            # Clear GPU monitor reference
+            exp_manager.gpu_monitor = None
         
         # Final cleanup
         if torch.cuda.is_available():
