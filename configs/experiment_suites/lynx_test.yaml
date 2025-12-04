@@ -1,0 +1,45 @@
+# Experiment Suite: lynx Training Test
+# Description: Test run for lynx training on a single dataset and prediction horizon
+# Usage: 
+#   1. First run: python -m cli.suite run configs/experiment_suites/itransformer_pretraining_test.yaml
+#   2. Then run: python -m cli.suite run configs/experiment_suites/lynx_test.yaml
+# This is a test configuration before running the full lynx_training.yaml suite
+# NOTE: Currently contains 1 experiment. May extend to 2-3 experiments later for more thorough testing.
+
+suite:
+  name: "lynx_test"
+  description: "Test run: Train lynx model using pretrained iTransformer checkpoint on NYC Traffic Speed with 24-step prediction using PyTorch"
+  tags: ["lynx", "residual", "pytorch", "test"]
+  
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/lynx_test"
+  
+  experiments:
+    # NYC Traffic Speed - 24-step prediction (test run)
+    - name: "lynx_nyc_traffic_speed_24"
+      description: "lynx on NYC Traffic Speed with 24-step prediction (TEST)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx"
+          config_path: "model_configs/general/lynx.yaml"
+        model_config:
+          # NOTE: Update this path after running itransformer_pretraining_test
+          # Check the output directory for the actual checkpoint path: output/suites/itransformer_pretraining_test/{experiment_id}/checkpoints/checkpoint.pth
+          pretrained_model_path: "output/suites/itransformer_pretraining_test/itransformer_nyc_traffic_speed_24/checkpoint.pth"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 256
+          patience: 5
+          epochs: 50
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_test"
+

@@ -1,0 +1,39 @@
+# Experiment Suite: iTransformer Pretraining Test
+# Description: Test run for iTransformer pretraining on a single dataset and prediction horizon
+# Usage: python -m cli.suite run configs/experiment_suites/itransformer_pretraining_test.yaml
+# This is a test configuration before running the full itransformer_pretraining.yaml suite
+# NOTE: Currently contains 1 experiment. May extend to 2-3 experiments later for more thorough testing.
+
+suite:
+  name: "itransformer_pretraining_test"
+  description: "Test run: Train iTransformer model on NYC Traffic Speed with 24-step prediction using PyTorch"
+  tags: ["itransformer", "pretraining", "pytorch", "test"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/itransformer_pretraining_test"
+    
+  # Experiments in this suite
+  experiments:
+    # NYC Traffic Speed - 24-step prediction (test run)
+    - name: "itransformer_nyc_traffic_speed_24"
+      description: "iTransformer on NYC Traffic Speed with 24-step prediction (TEST)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+          config_path: "model_configs/general/iTransformer.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_H.yaml"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 512
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/itransformer_pretraining_test"
+

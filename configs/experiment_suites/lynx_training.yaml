@@ -84,29 +84,6 @@ suite:
         experiment:
           type: "lightning"
           output_dir: "outputs/suites/lynx_training"
-          
-    - name: "lynx_nyc_traffic_speed_720"
-      description: "lynx on NYC Traffic Speed with 720-step prediction"
-      enabled: true
-      template: "configs/templates/lightning_training.yaml"
-      overrides:
-        model:
-          name: "lynx"
-          config_path: "model_configs/general/lynx.yaml"
-        model_config:
-          pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_nyc_traffic_speed_720/checkpoint.ckpt"
-        data:
-          name: "NYC_traffic_speed"
-          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
-        training:
-          input_len: 360
-          output_len: 720
-          batch_size: 256
-          patience: 5
-          epochs: 50
-        experiment:
-          type: "lightning"
-          output_dir: "outputs/suites/lynx_training"
     
     # California ISO
     - name: "lynx_california_iso_24"
@@ -171,29 +148,6 @@ suite:
         training:
           input_len: 360
           output_len: 336
-          batch_size: 256
-          patience: 5
-          epochs: 50
-        experiment:
-          type: "lightning"
-          output_dir: "outputs/suites/lynx_training"
-          
-    - name: "lynx_california_iso_720"
-      description: "lynx on California ISO with 720-step prediction"
-      enabled: true
-      template: "configs/templates/lightning_training.yaml"
-      overrides:
-        model:
-          name: "lynx"
-          config_path: "model_configs/general/lynx.yaml"
-        model_config:
-          pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_california_iso_720/checkpoint.ckpt"
-        data:
-          name: "California_ISO"
-          config_path: "data_configs/California_ISO/fullCAISO_hetero_TGTSF_H.yaml"
-        training:
-          input_len: 360
-          output_len: 720
           batch_size: 256
           patience: 5
           epochs: 50
@@ -270,29 +224,6 @@ suite:
         experiment:
           type: "lightning"
           output_dir: "outputs/suites/lynx_training"
-          
-    - name: "lynx_canada_photovoltaics_plants_720"
-      description: "lynx on Canada Photovoltaics Plants with 720-step prediction"
-      enabled: true
-      template: "configs/templates/lightning_training.yaml"
-      overrides:
-        model:
-          name: "lynx"
-          config_path: "model_configs/general/lynx.yaml"
-        model_config:
-          pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_canada_photovoltaics_plants_720/checkpoint.ckpt"
-        data:
-          name: "Canada_photovoltaics_plants"
-          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP_hetero_TGTSF.yaml"
-        training:
-          input_len: 360
-          output_len: 720
-          batch_size: 256
-          patience: 5
-          epochs: 50
-        experiment:
-          type: "lightning"
-          output_dir: "outputs/suites/lynx_training"
     
     # Germany Renewable Power Grid
     - name: "lynx_germany_renewable_power_grid_24"
@@ -357,29 +288,6 @@ suite:
         training:
           input_len: 360
           output_len: 336
-          batch_size: 256
-          patience: 5
-          epochs: 50
-        experiment:
-          type: "lightning"
-          output_dir: "outputs/suites/lynx_training"
-          
-    - name: "lynx_germany_renewable_power_grid_720"
-      description: "lynx on Germany Renewable Power Grid with 720-step prediction"
-      enabled: true
-      template: "configs/templates/lightning_training.yaml"
-      overrides:
-        model:
-          name: "lynx"
-          config_path: "model_configs/general/lynx.yaml"
-        model_config:
-          pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_germany_renewable_power_grid_720/checkpoint.ckpt"
-        data:
-          name: "Germany_Renewable_Power_Grid"
-          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_hetero_TGTSF_H.yaml"
-        training:
-          input_len: 360
-          output_len: 720
           batch_size: 256
           patience: 5
           epochs: 50
@@ -456,29 +364,6 @@ suite:
         experiment:
           type: "lightning"
           output_dir: "outputs/suites/lynx_training"
-          
-    - name: "lynx_jena_atmospheric_physics_720"
-      description: "lynx on Jena Atmospheric Physics with 720-step prediction"
-      enabled: true
-      template: "configs/templates/lightning_training.yaml"
-      overrides:
-        model:
-          name: "lynx"
-          config_path: "model_configs/general/lynx.yaml"
-        model_config:
-          pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_jena_atmospheric_physics_720/checkpoint.ckpt"
-        data:
-          name: "Jena_Atmospheric_Physics"
-          config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_hetero_TGTSF_H.yaml"
-        training:
-          input_len: 360
-          output_len: 720
-          batch_size: 256
-          patience: 5
-          epochs: 50
-        experiment:
-          type: "lightning"
-          output_dir: "outputs/suites/lynx_training"
     
     # Bear Room
     - name: "lynx_bear_room_24"
@@ -543,29 +428,6 @@ suite:
         training:
           input_len: 360
           output_len: 336
-          batch_size: 256
-          patience: 5
-          epochs: 50
-        experiment:
-          type: "lightning"
-          output_dir: "outputs/suites/lynx_training"
-          
-    - name: "lynx_bear_room_720"
-      description: "lynx on Bear Room with 720-step prediction"
-      enabled: true
-      template: "configs/templates/lightning_training.yaml"
-      overrides:
-        model:
-          name: "lynx"
-          config_path: "model_configs/general/lynx.yaml"
-        model_config:
-          pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_bear_room_720/checkpoint.ckpt"
-        data:
-          name: "Bear_room"
-          config_path: "data_configs/Bear_room/fullBear_hetero_TGTSF.yaml"
-        training:
-          input_len: 360
-          output_len: 720
           batch_size: 256
           patience: 5
           epochs: 50
