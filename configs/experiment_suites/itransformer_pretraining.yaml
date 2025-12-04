@@ -72,25 +72,6 @@ suite:
         experiment:
           type: "lightning"
           output_dir: "outputs/suites/itransformer_pretraining"
-          
-    - name: "itransformer_nyc_traffic_speed_720"
-      description: "iTransformer on NYC Traffic Speed with 720-step prediction"
-      enabled: true
-      template: "configs/templates/lightning_training.yaml"
-      overrides:
-        model:
-          name: "iTransformer"
-          config_path: "model_configs/general/iTransformer.yaml"
-        data:
-          name: "NYC_traffic_speed"
-          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_H.yaml"
-        training:
-          input_len: 360
-          output_len: 720
-          batch_size: 512
-        experiment:
-          type: "lightning"
-          output_dir: "outputs/suites/itransformer_pretraining"
     
     # California ISO
     - name: "itransformer_california_iso_24"
@@ -145,25 +126,6 @@ suite:
         training:
           input_len: 360
           output_len: 336
-          batch_size: 512
-        experiment:
-          type: "lightning"
-          output_dir: "outputs/suites/itransformer_pretraining"
-          
-    - name: "itransformer_california_iso_720"
-      description: "iTransformer on California ISO with 720-step prediction"
-      enabled: true
-      template: "configs/templates/lightning_training.yaml"
-      overrides:
-        model:
-          name: "iTransformer"
-          config_path: "model_configs/general/iTransformer.yaml"
-        data:
-          name: "California_ISO"
-          config_path: "data_configs/California_ISO/fullCAISO_H.yaml"
-        training:
-          input_len: 360
-          output_len: 720
           batch_size: 512
         experiment:
           type: "lightning"
@@ -226,25 +188,6 @@ suite:
         experiment:
           type: "lightning"
           output_dir: "outputs/suites/itransformer_pretraining"
-          
-    - name: "itransformer_canada_photovoltaics_plants_720"
-      description: "iTransformer on Canada Photovoltaics Plants with 720-step prediction"
-      enabled: true
-      template: "configs/templates/lightning_training.yaml"
-      overrides:
-        model:
-          name: "iTransformer"
-          config_path: "model_configs/general/iTransformer.yaml"
-        data:
-          name: "Canada_photovoltaics_plants"
-          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP.yaml"
-        training:
-          input_len: 360
-          output_len: 720
-          batch_size: 512
-        experiment:
-          type: "lightning"
-          output_dir: "outputs/suites/itransformer_pretraining"
     
     # Germany Renewable Power Grid
     - name: "itransformer_germany_renewable_power_grid_24"
@@ -299,25 +242,6 @@ suite:
         training:
           input_len: 360
           output_len: 336
-          batch_size: 512
-        experiment:
-          type: "lightning"
-          output_dir: "outputs/suites/itransformer_pretraining"
-          
-    - name: "itransformer_germany_renewable_power_grid_720"
-      description: "iTransformer on Germany Renewable Power Grid with 720-step prediction"
-      enabled: true
-      template: "configs/templates/lightning_training.yaml"
-      overrides:
-        model:
-          name: "iTransformer"
-          config_path: "model_configs/general/iTransformer.yaml"
-        data:
-          name: "Germany_Renewable_Power_Grid"
-          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_H.yaml"
-        training:
-          input_len: 360
-          output_len: 720
           batch_size: 512
         experiment:
           type: "lightning"
@@ -380,25 +304,6 @@ suite:
         experiment:
           type: "lightning"
           output_dir: "outputs/suites/itransformer_pretraining"
-          
-    - name: "itransformer_jena_atmospheric_physics_720"
-      description: "iTransformer on Jena Atmospheric Physics with 720-step prediction"
-      enabled: true
-      template: "configs/templates/lightning_training.yaml"
-      overrides:
-        model:
-          name: "iTransformer"
-          config_path: "model_configs/general/iTransformer.yaml"
-        data:
-          name: "Jena_Atmospheric_Physics"
-          config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_H.yaml"
-        training:
-          input_len: 360
-          output_len: 720
-          batch_size: 512
-        experiment:
-          type: "lightning"
-          output_dir: "outputs/suites/itransformer_pretraining"
     
     # Bear Room
     - name: "itransformer_bear_room_24"
@@ -453,25 +358,6 @@ suite:
         training:
           input_len: 360
           output_len: 336
-          batch_size: 512
-        experiment:
-          type: "lightning"
-          output_dir: "outputs/suites/itransformer_pretraining"
-          
-    - name: "itransformer_bear_room_720"
-      description: "iTransformer on Bear Room with 720-step prediction"
-      enabled: true
-      template: "configs/templates/lightning_training.yaml"
-      overrides:
-        model:
-          name: "iTransformer"
-          config_path: "model_configs/general/iTransformer.yaml"
-        data:
-          name: "Bear_room"
-          config_path: "data_configs/Bear_room/fullBear.yaml"
-        training:
-          input_len: 360
-          output_len: 720
           batch_size: 512
         experiment:
           type: "lightning"

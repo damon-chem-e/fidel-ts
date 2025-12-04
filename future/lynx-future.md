@@ -1,0 +1,1 @@
+I think I'd like to try increasing the input length. currently 360 for tgtsf but I think that's trying to stay closer to standard practice on small datasets, but for me I'm not resource constrained on VRAM and we have longer datasets (at least on the fidel-ts benchmark), probably go shorter input on the amazon one since the strengh there is panel width not panel length.
