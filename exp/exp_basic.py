@@ -56,7 +56,9 @@ class Exp_Basic(object):
         self.exp_manager = exp_manager
         self.device = self._acquire_device()
         self.model = self._build_model().to(self.device)
-        self.data_provider = Data_Provider(args, buffer=(not args.disable_buffer))
+        # Pass console from exp_manager to Data_Provider for Rich progress bars
+        console = exp_manager.get_console() if exp_manager else None
+        self.data_provider = Data_Provider(args, buffer=(not args.disable_buffer), console=console)
 
     def _build_model(self):
         """

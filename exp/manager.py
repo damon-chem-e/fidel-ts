@@ -650,6 +650,15 @@ class ExperimentManager:
             except Exception as e:
                 print(f"Warning: Failed to get GPU monitor summary: {e}")
         
+        # Stop GPU monitor Rich Live display before wandb finishes
+        # This ensures wandb's colored output displays properly
+        try:
+            from utils.gpu_monitor import _stop_gpu_monitor_display
+            _stop_gpu_monitor_display()
+        except Exception:
+            # If GPU monitor is not available, continue silently
+            pass
+        
         # Merge final metrics with GPU metrics
         all_final_metrics = final_metrics.copy() if final_metrics else {}
         if gpu_metrics:

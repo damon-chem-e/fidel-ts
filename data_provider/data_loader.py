@@ -16,8 +16,12 @@ from datetime import datetime
 from functools import partial
 import glob
 import joblib, torch
+import logging
 
 warnings.filterwarnings('ignore')
+
+# Set up logger for dataset operations
+logger = logging.getLogger(__name__)
 
 class Universal_Dataset(Dataset):
     """
@@ -172,7 +176,8 @@ class Universal_Dataset(Dataset):
         elif self.set_type == 'test':
             self.data = test_data
 
-        print(f"[ info ] Length of {self.set_type}: {self.data.shape[0]}")
+        # Use debug level to avoid cluttering output during data loading
+        logger.debug(f"Length of {self.set_type}: {self.data.shape[0]}")
 
         # convert the self.timestamp_col to yyyymmddHHMMSS int
         self.data[self.timestamp_col] = self.data[self.timestamp_col].dt.strftime('%Y%m%d%H%M%S')
@@ -192,7 +197,8 @@ class Universal_Dataset(Dataset):
 
         if self.scale:
             self.scaler.fit(train_data)
-            print(f"[ info ] mean and std (on train) of {self.data_path}: mean {self.scaler.mean_}, std {self.scaler.var_}")
+            # Use debug level to avoid cluttering output during data loading
+            logger.debug(f"mean and std (on train) of {self.data_path}: mean {self.scaler.mean_}, std {self.scaler.var_}")
             self.data = self.scaler.transform(self.data).astype(np.float32).copy()
 
         if self.downsample is not None:

@@ -5,7 +5,8 @@ import json, torch, yaml, os
 from utils.tools import dotdict
 from functools import partial
 from .data_helper import timestamp_spliter, ratio_spliter, data_buffer
-from tqdm import tqdm
+from typing import Optional, Any
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
 
 class Data_Provider(object):
     """
@@ -42,10 +43,19 @@ class Data_Provider(object):
         val_loader = data_provider.get_val(return_type='loader')
         ```
     """
-    def __init__(self, args, buffer=False):
+    def __init__(self, args, buffer=False, console: Optional[Any] = None):
+        """
+        Initialize Data_Provider.
+        
+        Args:
+            args: Configuration object containing all data and model parameters
+            buffer: Whether to enable data buffering for improved performance
+            console: Optional Rich Console instance for progress bar display
+        """
         self.args = args
         self.buffer = buffer
         self.batch_size = args.batch_size
+        self.console = console
 
         self.dataset_config = args.data_config
 
@@ -180,6 +190,8 @@ class Data_Provider(object):
         """
         Creates Universal_Dataset instances for all configured data IDs.
         
+        Uses Rich Progress for clean progress bar display that doesn't interfere with logging.
+        
         Args:
             flag (str): Dataset split identifier ('train', 'val', 'test')
         
@@ -187,22 +199,56 @@ class Data_Provider(object):
             dict: Dictionary mapping data IDs to their corresponding Universal_Dataset instances
         """
         datasets = {}
-        for i in tqdm(self.id_list, desc=f"Loading {flag} datasets"):
-            if self.args.data_config.hetero_info is not None:
-                get_hetero_data = self.hetero_dataset.init_hetero_data(i)
-            else:
-                get_hetero_data = None
+        
+        # Use Rich Progress if console is available, otherwise fall back to simple iteration
+        if self.console is not None:
+            with Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TextColumn("•"),
+                TextColumn("[progress.completed]{task.completed}/{task.total}"),
+                TimeElapsedColumn(),
+                console=self.console,
+                transient=False,
+            ) as progress:
+                task = progress.add_task(f"Loading {flag} datasets", total=len(self.id_list))
+                for i in self.id_list:
+                    if self.args.data_config.hetero_info is not None:
+                        get_hetero_data = self.hetero_dataset.init_hetero_data(i)
+                    else:
+                        get_hetero_data = None
 
-            data_path = self.formatter.format(i=i)
-            dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path, 
-                                        flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len, 
-                                        spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col, 
-                                        target=self.dataset_config.target, scale=self.args.scale, 
-                                        data_buffer=self.data_buffer, hetero_data_getter=get_hetero_data, preload_hetero=self.args.preload_hetero, 
-                                        hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
-                                        task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
-                                        timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample)
-            datasets[i] = dataset
+                    data_path = self.formatter.format(i=i)
+                    dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path, 
+                                                flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len, 
+                                                spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col, 
+                                                target=self.dataset_config.target, scale=self.args.scale, 
+                                                data_buffer=self.data_buffer, hetero_data_getter=get_hetero_data, preload_hetero=self.args.preload_hetero, 
+                                                hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
+                                                task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
+                                                timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample)
+                    datasets[i] = dataset
+                    progress.update(task, advance=1)
+        else:
+            # Fallback: simple iteration without progress bar
+            for i in self.id_list:
+                if self.args.data_config.hetero_info is not None:
+                    get_hetero_data = self.hetero_dataset.init_hetero_data(i)
+                else:
+                    get_hetero_data = None
+
+                data_path = self.formatter.format(i=i)
+                dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path, 
+                                            flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len, 
+                                            spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col, 
+                                            target=self.dataset_config.target, scale=self.args.scale, 
+                                            data_buffer=self.data_buffer, hetero_data_getter=get_hetero_data, preload_hetero=self.args.preload_hetero, 
+                                            hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
+                                            task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
+                                            timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample)
+                datasets[i] = dataset
+        
         return datasets
 
     def get_dataloader(self, datasets, shuffle, drop_last, concat=False):

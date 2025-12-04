@@ -1,7 +1,11 @@
 import pandas as pd
 import os, torch
+import logging
 # import the default collate function
 from torch.utils.data.dataloader import default_collate
+
+# Set up logger for data loading operations
+logger = logging.getLogger(__name__)
 
 class data_buffer():
     """
@@ -40,7 +44,7 @@ class data_buffer():
             NotImplementedError: If file format is not .csv or .parquet
         """
         if force_reload:
-            print(f'Force reloading data from {file_path}')
+            logger.debug(f'Force reloading data from {file_path}')
             if file_path.endswith('.csv'):
                 df_raw = pd.read_csv(file_path)
                 self.buffer[file_path] = df_raw.copy()
@@ -62,7 +66,8 @@ class data_buffer():
                 self.buffer[file_path] = df_raw.copy()
             else:
                 raise NotImplementedError('Only .csv and .parquet data are supported, implement more if needed')
-            print(f'[ info ] Add data {file_path} to buffer')
+            # Use debug level to avoid cluttering output during data loading
+            logger.debug(f'Add data {file_path} to buffer')
             return df_raw
     def clear(self):
         """
