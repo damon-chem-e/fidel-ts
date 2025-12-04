@@ -60,6 +60,7 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     args.num_workers = config.training.num_workers
     args.batch_size = config.training.batch_size
     args.loss = config.training.loss
+    args.track_per_sample = config.training.track_per_sample
     
     # GPU
     args.use_gpu = config.device.use_gpu

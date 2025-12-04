@@ -69,6 +69,9 @@ class TrainingConfig(BaseModel):
     # FM-specific
     individual: Optional[bool] = Field(default=None, description="Use individual parameters per channel")
     
+    # Tracking per sample metrics
+    track_per_sample: bool = Field(default=False, description="Whether to track per-sample metrics (Parquet)")
+    
     model_config = ConfigDict(extra="allow")  # Allow extra fields for flexibility
     
     @model_validator(mode='after')

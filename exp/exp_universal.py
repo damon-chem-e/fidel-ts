@@ -2,6 +2,8 @@ from exp.exp_basic import Exp_Basic
 from models import model_init
 
 from utils.tools import EarlyStopping, adjust_learning_rate, general_move_to_device
+from utils.per_sample_metrics import PerSampleMetricsTracker
+from utils.loss_utils import compute_per_sample_loss
 
 import torch
 import torch.nn as nn
@@ -53,6 +55,14 @@ class Experiment(Exp_Basic):
             exp_manager: Optional ExperimentManager for experiment tracking
         """
         super(Experiment, self).__init__(args, exp_manager)
+        
+        # Initialize per-sample metrics tracker if enabled
+        track_per_sample = getattr(args, 'track_per_sample', False)
+        if track_per_sample:
+            output_dir = str(exp_manager.get_checkpoint_dir()) if exp_manager else args.checkpoints
+            self.metrics_tracker = PerSampleMetricsTracker(output_dir)
+        else:
+            self.metrics_tracker = None
 
     def _build_model(self):
         """
@@ -182,6 +192,9 @@ class Experiment(Exp_Basic):
 
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
+        
+        # Check if per-sample tracking is enabled
+        track_per_sample = getattr(self.args, 'track_per_sample', False)
 
         # self.model.eval()
 
@@ -189,6 +202,7 @@ class Experiment(Exp_Basic):
         # print("Initial test loss: ", vali_loss)
 
         for epoch in range(self.args.train_epochs):
+            self.current_epoch = epoch + 1
             iter_count = 0
 
             epoch_loss = 0.0
@@ -237,6 +251,18 @@ class Experiment(Exp_Basic):
                     current_batch_size = gt.size(0)
                     epoch_loss += loss.item() * current_batch_size
                     total_samples += current_batch_size
+                    
+                    # Track per-sample metrics if enabled
+                    if track_per_sample and self.metrics_tracker:
+                        per_sample_loss = compute_per_sample_loss(output, gt, criterion)
+                        timestamps = iter[2]  # timestamp_x from batch tuple
+                        self.metrics_tracker.add_batch(
+                            epoch=self.current_epoch,
+                            split='train',
+                            entity_id=None,  # Train/val use concatenated loaders
+                            timestamps=timestamps,
+                            losses=per_sample_loss
+                        )
 
                     speed = (time.time() - time_now) / iter_count
                     left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
@@ -254,8 +280,13 @@ class Experiment(Exp_Basic):
             logger.info(f"Epoch: {epoch + 1} cost time: {epoch_time_elapsed:.2f}s")
             
             train_loss = epoch_loss / total_samples if total_samples > 0 else 0.0
-            vali_loss = self.vali(vali_loader, criterion)
-            test_loss = self.test(test_loader, criterion)
+            
+            # Save training metrics after training loop (before vali/test)
+            if track_per_sample and self.metrics_tracker:
+                self.metrics_tracker.save_epoch(self.current_epoch)
+            
+            vali_loss = self.vali(vali_loader, criterion)  # vali() saves its own metrics
+            test_loss = self.test(test_loader, criterion)  # test() saves its own metrics
 
             logger.info(f"Epoch: {epoch + 1}, Steps: {train_steps} | Train Loss: {train_loss:.7f} Vali Loss: {vali_loss:.7f} Test Loss: {test_loss:.7f}")
             
@@ -334,11 +365,17 @@ class Experiment(Exp_Basic):
         total_samples = 0
 
         self.model.eval()
+        
+        # Check if per-sample tracking is enabled
+        track_per_sample = getattr(self.args, 'track_per_sample', False)
 
         console = self.exp_manager.get_console() if self.exp_manager else None
         
         with torch.inference_mode():
             with torch.no_grad():
+                # NOTE: Only handling standard single DataLoader for validation for now.
+                # Per-sample tracking for validation requires handling dict loaders here
+                # similar to test(), but is deferred to avoid complexity.
                 if console:
                     with Progress(
                         TextColumn("[progress.description]{task.description}"),
@@ -354,6 +391,19 @@ class Experiment(Exp_Basic):
                             loss = criterion(output, gt)
                             running_loss += loss.item() * current_batch_size
                             total_samples += current_batch_size
+                            
+                            # Track per-sample metrics if enabled
+                            if track_per_sample and self.metrics_tracker:
+                                per_sample_loss = compute_per_sample_loss(output, gt, criterion)
+                                timestamps = iter_data[2]  # timestamp_x from batch tuple
+                                self.metrics_tracker.add_batch(
+                                    epoch=None,  # Epoch is null for validation/test folds
+                                    split='val',
+                                    entity_id=None,  # Entity is null for train/val folds
+                                    timestamps=timestamps,
+                                    losses=per_sample_loss
+                                )
+                            
                             progress.update(task, advance=1)
                 else:
                     for i, iter_data in enumerate(loader):
@@ -362,8 +412,24 @@ class Experiment(Exp_Basic):
                         loss = criterion(output, gt)
                         running_loss += loss.item() * current_batch_size
                         total_samples += current_batch_size
+                        
+                        # Track per-sample metrics if enabled
+                        if track_per_sample and self.metrics_tracker:
+                            per_sample_loss = compute_per_sample_loss(output, gt, criterion)
+                            timestamps = iter_data[2]  # timestamp_x from batch tuple
+                            self.metrics_tracker.add_batch(
+                                epoch=None,  # Epoch is null for validation/test folds
+                                split='val',
+                                entity_id=None,  # Entity is null for train/val folds
+                                timestamps=timestamps,
+                                losses=per_sample_loss
+                            )
 
         epoch_loss = running_loss / total_samples if total_samples > 0 else 0.0
+        
+        # Save per-sample metrics for validation if enabled
+        if track_per_sample and self.metrics_tracker:
+            self.metrics_tracker.save_split('val')
         
         self.model.train()
         return epoch_loss
@@ -375,6 +441,9 @@ class Experiment(Exp_Basic):
         overall_running_loss = 0.0
         overall_total_samples = 0
         self.model.eval()
+        
+        # Determine tracking mode
+        track_per_sample = getattr(self.args, 'track_per_sample', False)
 
         console = self.exp_manager.console
         
@@ -404,6 +473,20 @@ class Experiment(Exp_Basic):
                         info_total_samples += current_batch_size
                         overall_running_loss += loss.item() * current_batch_size
                         overall_total_samples += current_batch_size
+                        
+                        # Track per-sample metrics if enabled
+                        if track_per_sample and self.metrics_tracker:
+                            per_sample_loss = compute_per_sample_loss(output, gt, criterion)
+                            timestamps = iter_data[2]
+                            
+                            self.metrics_tracker.add_batch(
+                                epoch=None,  # Epoch is null for validation/test folds
+                                split='test',
+                                entity_id=info,
+                                timestamps=timestamps,
+                                losses=per_sample_loss
+                            )
+
                         progress.update(sample_task, advance=1)
                     
                     # Remove the sample task when done with this entity
@@ -423,6 +506,10 @@ class Experiment(Exp_Basic):
                         self.exp_manager.log_file_only(f"Test loss for entity {info}: {info_epoch_loss:.7f}")
                     else:
                         self.exp_manager.log_file_only(f"Test loss for entity {info}: N/A (no samples processed)", level=logging.WARNING)
+        
+        # Save per-sample metrics for test if enabled
+        if track_per_sample and self.metrics_tracker:
+            self.metrics_tracker.save_split('test')
 
         total_epoch_loss = overall_running_loss / overall_total_samples if overall_total_samples > 0 else 0.0
         

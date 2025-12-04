@@ -32,6 +32,9 @@ training:
   downsample: null
   checkpoints: "./checkpoints/"
   random_seed: 2021
+
+  # Tracking
+  track_per_sample: false  # Whether to track per-sample metrics (Parquet)
   
 device:
   use_gpu: true

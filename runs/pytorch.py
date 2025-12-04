@@ -62,6 +62,7 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     args.learning_rate = config.training.learning_rate
     args.loss = config.training.loss
     args.lradj = config.training.lradj
+    args.track_per_sample = config.training.track_per_sample
     
     # GPU
     args.use_gpu = config.device.use_gpu
