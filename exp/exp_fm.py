@@ -237,23 +237,28 @@ class Experiment(Exp_Basic):
 
         self.model.eval()
 
-        for info, loader in loaders.items():
-            info_running_loss = 0.0
-            info_total_samples = 0
-            info_error = 0
-            
-            if self.args.filtered_samples is not None:
-                filter_index = filtered_samples[info]
-
-            with torch.inference_mode():
-                with Progress(
-                    TextColumn("[progress.description]{task.description}"),
-                    BarColumn(),
-                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                    TimeElapsedColumn(),
-                    console=console
-                ) as progress:
-                    task = progress.add_task(f"Testing {info}", total=len(loader))
+        with torch.inference_mode():
+            with Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeElapsedColumn(),
+                console=console
+            ) as progress:
+                # Outer progress bar for entities
+                entity_task = progress.add_task("Testing entities", total=len(loaders))
+                
+                for info, loader in loaders.items():
+                    info_running_loss = 0.0
+                    info_total_samples = 0
+                    info_error = 0
+                    
+                    if self.args.filtered_samples is not None:
+                        filter_index = filtered_samples[info]
+                    
+                    # Inner progress bar for samples within current entity
+                    sample_task = progress.add_task(f"  └─ {info}", total=len(loader))
+                    
                     for i, iter_data in enumerate(loader):
                         if self.args.filtered_samples is not None and i in filter_index:
 
@@ -265,7 +270,7 @@ class Experiment(Exp_Basic):
                                 logger.warning(f"[ Warning ]: Model returned None for sample {i}. Skipping this sample.")
                                 info_error += 1
                                 overall_error += 1
-                                progress.update(task, advance=1)
+                                progress.update(sample_task, advance=1)
                                 continue
                             
                             current_batch_size = gt.size(0)
@@ -287,7 +292,7 @@ class Experiment(Exp_Basic):
                                 logger.warning(f"[ Warning ]: Model returned None for sample {i}. Skipping this sample.")
                                 info_error += 1
                                 overall_error += 1
-                                progress.update(task, advance=1)
+                                progress.update(sample_task, advance=1)
                                 continue
                             
                             current_batch_size = gt.size(0)
@@ -299,18 +304,24 @@ class Experiment(Exp_Basic):
                             overall_running_loss += loss.item() * current_batch_size
                             overall_total_samples += current_batch_size
                         
-                        progress.update(task, advance=1)
-            
-            if info_total_samples > 0:
-                info_epoch_loss = info_running_loss / info_total_samples
-                # Log to file only (not console) to avoid interfering with progress bar display
-                self.exp_manager.log_file_only(f"Test loss for {info}: {info_epoch_loss:.7f}")
-            else:
-                # Log to file only (not console) to avoid interfering with progress bar display
-                self.exp_manager.log_file_only(f"Test loss for {info}: N/A (no samples processed)", level=logging.WARNING)
-                info_epoch_loss = None
+                        progress.update(sample_task, advance=1)
+                    
+                    # Remove the sample task when done with this entity
+                    progress.remove_task(sample_task)
+                    
+                    if info_total_samples > 0:
+                        info_epoch_loss = info_running_loss / info_total_samples
+                        # Log to file only (not console) to avoid interfering with progress bar display
+                        self.exp_manager.log_file_only(f"Test loss for {info}: {info_epoch_loss:.7f}")
+                    else:
+                        # Log to file only (not console) to avoid interfering with progress bar display
+                        self.exp_manager.log_file_only(f"Test loss for {info}: N/A (no samples processed)", level=logging.WARNING)
+                        info_epoch_loss = None
 
-            logger.info(f"Total Errors: {info_error}")
+                    logger.info(f"Total Errors: {info_error}")
+                    
+                    # Update entity progress
+                    progress.update(entity_task, advance=1)
             
             # Save metrics
             try:

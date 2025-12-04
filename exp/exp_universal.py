@@ -376,21 +376,26 @@ class Experiment(Exp_Basic):
         overall_total_samples = 0
         self.model.eval()
 
-        for info, loader in loaders.items():
-            info_running_loss = 0.0
-            info_total_samples = 0
-            
-            console = self.exp_manager.console
-            
-            with torch.inference_mode():
-                with Progress(
-                    TextColumn("[progress.description]{task.description}"),
-                    BarColumn(),
-                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                    TimeElapsedColumn(),
-                    console=console
-                ) as progress:
-                    task = progress.add_task(f"Testing {info}", total=len(loader))
+        console = self.exp_manager.console
+        
+        with torch.inference_mode():
+            with Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeElapsedColumn(),
+                console=console
+            ) as progress:
+                # Outer progress bar for entities
+                entity_task = progress.add_task("Testing entities", total=len(loaders))
+                
+                for info, loader in loaders.items():
+                    info_running_loss = 0.0
+                    info_total_samples = 0
+                    
+                    # Inner progress bar for samples within current entity
+                    sample_task = progress.add_task(f"  └─ {info}", total=len(loader))
+                    
                     for i, iter_data in enumerate(loader):
                         output, gt = self._forward_step(iter_data)
                         current_batch_size = gt.size(0)
@@ -399,20 +404,25 @@ class Experiment(Exp_Basic):
                         info_total_samples += current_batch_size
                         overall_running_loss += loss.item() * current_batch_size
                         overall_total_samples += current_batch_size
-                        progress.update(task, advance=1)
-                
-                if valinum != 'full':
-                    # The original logic `i == valinum` processes `valinum` batches (indices 0 to valinum-1).
-                    if i + 1 >= valinum:
-                        break
-            
-            if info_total_samples > 0:
-                info_epoch_loss = info_running_loss / info_total_samples
-                # Log to file only (not console) to avoid interfering with progress bar display
-                self.exp_manager.log_file_only(f"Test loss for entity {info}: {info_epoch_loss:.7f}")
-            else:
-                # Log to file only (not console) to avoid interfering with progress bar display
-                self.exp_manager.log_file_only(f"Test loss for entity {info}: N/A (no samples processed)", level=logging.WARNING)
+                        progress.update(sample_task, advance=1)
+                    
+                    # Remove the sample task when done with this entity
+                    progress.remove_task(sample_task)
+                    
+                    if valinum != 'full':
+                        # The original logic `i == valinum` processes `valinum` batches (indices 0 to valinum-1).
+                        if i + 1 >= valinum:
+                            break
+                    
+                    # Update entity progress
+                    progress.update(entity_task, advance=1)
+                    
+                    # Log results to file only
+                    if info_total_samples > 0:
+                        info_epoch_loss = info_running_loss / info_total_samples
+                        self.exp_manager.log_file_only(f"Test loss for entity {info}: {info_epoch_loss:.7f}")
+                    else:
+                        self.exp_manager.log_file_only(f"Test loss for entity {info}: N/A (no samples processed)", level=logging.WARNING)
 
         total_epoch_loss = overall_running_loss / overall_total_samples if overall_total_samples > 0 else 0.0
         

@@ -152,19 +152,23 @@ class TimeSeriesLightningModel(pl.LightningModule):
         overall_total_samples = 0
         
         with torch.no_grad():
-            for subset_id, loader in test_loaders.items():
-                subset_total_loss = 0.0
-                subset_total_samples = 0
+            with Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeElapsedColumn(),
+                console=console
+            ) as progress:
+                # Outer progress bar for entities
+                entity_task = progress.add_task("Testing entities", total=len(test_loaders))
                 
-                # Process each batch
-                with Progress(
-                    TextColumn("[progress.description]{task.description}"),
-                    BarColumn(),
-                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                    TimeElapsedColumn(),
-                    console=console
-                ) as progress:
-                    task = progress.add_task(f"Testing {subset_id}", total=len(loader))
+                for subset_id, loader in test_loaders.items():
+                    subset_total_loss = 0.0
+                    subset_total_samples = 0
+                    
+                    # Inner progress bar for samples within current entity
+                    sample_task = progress.add_task(f"  └─ {subset_id}", total=len(loader))
+                    
                     for i, batch in enumerate(loader):
                         output, gt = self.forward(batch)
                         loss = self.criterion(output, gt)
@@ -176,17 +180,23 @@ class TimeSeriesLightningModel(pl.LightningModule):
                         
                         subset_total_loss += total_batch_loss
                         subset_total_samples += num_samples_in_batch
-                        progress.update(task, advance=1)
-                
-                # Calculate average for this subset
-                if subset_total_samples > 0:
-                    avg_loss = subset_total_loss / subset_total_samples
-                    subset_losses[subset_id] = avg_loss
-                    overall_total_loss += subset_total_loss
-                    overall_total_samples += subset_total_samples
+                        progress.update(sample_task, advance=1)
                     
-                    # Log to file only (not console) to avoid interfering with progress bar display
-                    self.exp_manager.log_file_only(f"Test loss for entity {subset_id}: {avg_loss:.7f}")
+                    # Remove the sample task when done with this entity
+                    progress.remove_task(sample_task)
+                    
+                    # Calculate average for this subset
+                    if subset_total_samples > 0:
+                        avg_loss = subset_total_loss / subset_total_samples
+                        subset_losses[subset_id] = avg_loss
+                        overall_total_loss += subset_total_loss
+                        overall_total_samples += subset_total_samples
+                        
+                        # Log to file only (not console) to avoid interfering with progress bar display
+                        self.exp_manager.log_file_only(f"Test loss for entity {subset_id}: {avg_loss:.7f}")
+                    
+                    # Update entity progress
+                    progress.update(entity_task, advance=1)
         
         # Calculate overall average
         if overall_total_samples > 0:
