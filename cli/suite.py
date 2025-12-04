@@ -5,6 +5,7 @@ This module provides commands for running, listing, and validating experiment su
 """
 
 import typer
+import builtins
 from pathlib import Path
 from typing import Optional, List
 from rich.console import Console
@@ -74,14 +75,23 @@ def list(
     Example:
         python -m cli.suite list
     """
-    suites_path = Path(suites_dir)
+    # Ensure suites_dir is a string or Path-like object
+    # Convert to string if it's already a Path object, or handle other path-like objects
+    if isinstance(suites_dir, Path):
+        suites_path = suites_dir
+    elif isinstance(suites_dir, str):
+        suites_path = Path(suites_dir)
+    else:
+        console.print(f"[red]Error: Invalid suites_dir type: {type(suites_dir).__name__}. Expected a string path or Path object.[/red]")
+        raise typer.Exit(code=1)
     
     if not suites_path.exists():
         console.print(f"[red]Error: Suites directory not found: {suites_path}[/red]")
         raise typer.Exit(code=1)
     
     # Find all YAML files in suites directory
-    suite_files = list(suites_path.glob("*.yaml")) + list(suites_path.glob("*.yml"))
+    # Use builtins.list() to avoid shadowing the function name 'list'
+    suite_files = builtins.list(suites_path.glob("*.yaml")) + builtins.list(suites_path.glob("*.yml"))
     
     if not suite_files:
         console.print(f"[yellow]No suite configs found in {suites_path}[/yellow]")
