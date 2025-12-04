@@ -33,6 +33,7 @@ suite:
           input_len: 360
           output_len: 24
           batch_size: 512
+          learning_rate: 1.0e-5
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/itransformer_pretraining_test"
