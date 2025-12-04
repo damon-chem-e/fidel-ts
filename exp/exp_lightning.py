@@ -9,6 +9,7 @@ from models import model_init
 from utils.tools import general_move_to_device, adjust_learning_rate
 import json
 import time
+import logging
 # Rich imports for progress bars
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TimeElapsedColumn
 from rich.console import Console
@@ -184,12 +185,13 @@ class TimeSeriesLightningModel(pl.LightningModule):
                     overall_total_loss += subset_total_loss
                     overall_total_samples += subset_total_samples
                     
-                    logger.info(f"Test loss for {subset_id}: {avg_loss:.7f}")
+                    # Log to file only (not console) to avoid interfering with progress bar display
+                    self.exp_manager.log_file_only(f"Test loss for entity {subset_id}: {avg_loss:.7f}")
         
         # Calculate overall average
         if overall_total_samples > 0:
             overall_avg = overall_total_loss / overall_total_samples
-            logger.info(f"Overall test loss: {overall_avg:.7f}")
+            self.exp_manager.log_file_only(f"Overall test loss: {overall_avg:.7f}")
             
         print("---------------------------------------\n")
         

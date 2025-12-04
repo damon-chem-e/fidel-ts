@@ -8,6 +8,7 @@ import torch.nn as nn
 import os
 import time
 import warnings
+import logging
 
 import json
 # Rich imports
@@ -302,9 +303,11 @@ class Experiment(Exp_Basic):
             
             if info_total_samples > 0:
                 info_epoch_loss = info_running_loss / info_total_samples
-                logger.info(f"Test loss for {info}: {info_epoch_loss:.7f}")
+                # Log to file only (not console) to avoid interfering with progress bar display
+                self.exp_manager.log_file_only(f"Test loss for {info}: {info_epoch_loss:.7f}")
             else:
-                logger.warning(f"Test loss for {info}: N/A (no samples processed)")
+                # Log to file only (not console) to avoid interfering with progress bar display
+                self.exp_manager.log_file_only(f"Test loss for {info}: N/A (no samples processed)", level=logging.WARNING)
                 info_epoch_loss = None
 
             logger.info(f"Total Errors: {info_error}")

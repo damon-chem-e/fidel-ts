@@ -169,6 +169,38 @@ class ExperimentManager:
         
         # Store handlers for cleanup
         self._log_handlers = [file_handler, console_handler]
+        
+        # Store file handler reference for file-only logging
+        self._file_handler = file_handler
+    
+    def log_file_only(self, message: str, level: int = logging.INFO) -> None:
+        """
+        Log a message only to the file handler, bypassing console output.
+        
+        This is useful for logging messages that should be recorded but not displayed
+        on the console, such as during progress bar operations where console output
+        would interfere with the display.
+        
+        Args:
+            message (str): The message to log
+            level (int): Logging level (default: logging.INFO)
+        
+        Example:
+            ```python
+            exp_manager.log_file_only("Test loss for dataset_123: 0.456")
+            ```
+        """
+        record = logging.LogRecord(
+            name=self.logger.name,
+            level=level,
+            pathname="",
+            lineno=0,
+            msg=message,
+            args=(),
+            exc_info=None
+        )
+        record.created = datetime.now().timestamp()
+        self._file_handler.emit(record)
     
     def _capture_metadata(self) -> Dict[str, Any]:
         """
