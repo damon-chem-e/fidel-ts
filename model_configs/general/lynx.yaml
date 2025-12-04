@@ -1,0 +1,28 @@
+# lynx Model Configuration
+# lynx is a modified version of TGTSF that learns the residual to a pretrained frozen unimodal model
+
+model: lynx
+
+# Pretrained model configuration
+pretrained_model_path: ""  # Path to pretrained checkpoint (required, or use pretrained_checkpoint_base for dynamic resolution)
+pretrained_model_type: "iTransformer"  # Type of pretrained model (default: iTransformer)
+pretrained_model_config_path: ""  # Optional: Path to pretrained model config (default: model_configs/general/{pretrained_model_type}.yaml)
+pretrained_checkpoint_base: ""  # Optional: Base directory for dynamic checkpoint resolution (e.g., "outputs/suites/itransformer_pretraining")
+
+# TGTSF parameters (inherited from TGTSF)
+individual: False
+enc_in: 1
+e_layers: 3
+cross_layers: 3
+self_layers: 3
+mixer_self_layers: 3
+n_heads: 4
+d_model: 256
+text_dim: 256
+dropout: 0.3
+patch_len: 6
+stride: 3
+hetero_align_stride: True  # use this to reduce RAM and communication overhead according to patching requirement
+revin: True  # Note: This will be automatically disabled if pretrained model uses use_norm (e.g., iTransformer)
+task: TGTSF
+
