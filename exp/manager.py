@@ -693,4 +693,8 @@ class ExperimentManager:
     def get_experiment_dir(self) -> Path:
         """Get experiment directory path."""
         return self.experiment_dir
+    
+    def get_console(self) -> Console:
+        """Get Rich Console instance for terminal output."""
+        return self.console
 

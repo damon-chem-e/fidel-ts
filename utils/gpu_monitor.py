@@ -17,12 +17,10 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from contextlib import contextmanager
 
-# Import tqdm for progress bar compatible printing
-try:
-    from tqdm import tqdm
-    _TQDM_AVAILABLE = True
-except ImportError:
-    _TQDM_AVAILABLE = False
+from rich.live import Live
+from rich.console import Console
+from rich.text import Text
+
 
 # Optional NVML import
 try:
@@ -543,31 +541,47 @@ def _format_gpu_metrics(metrics: Dict[str, Any], window_seconds: Optional[float]
     avg_power = metrics.get('gpu_avg_power_w')
     max_temp = metrics.get('gpu_max_temp_c')
     
+    # Build formatted strings for each column to calculate widths
+    # Column 1: Avg Util (aligns with Avg Power)
+    col1_line1 = f"Avg Util: {avg_util:.1f}%" if avg_util is not None else None
+    col1_line2 = f"Avg Power: {avg_power:.0f}W" if avg_power is not None else None
+    col1_width = max(len(col1_line1) if col1_line1 else 0, len(col1_line2) if col1_line2 else 0)
+    
+    # Column 2: Avg Mem (aligns with Max Temp)
+    col2_line1 = f"Avg Mem: {avg_mem:.2f} GB" if avg_mem is not None else None
+    col2_line2 = f"Max Temp: {max_temp}°C" if max_temp is not None else None
+    col2_width = max(len(col2_line1) if col2_line1 else 0, len(col2_line2) if col2_line2 else 0)
+    
+    # Column 3: Max Mem (aligns with Time)
+    col3_line1 = f"Max Mem: {max_mem:.2f} GB" if max_mem is not None else None
+    col3_line2 = None
+    if include_timestamp:
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        col3_line2 = f"Time: {timestamp}"
+    col3_width = max(len(col3_line1) if col3_line1 else 0, len(col3_line2) if col3_line2 else 0)
+    
     # Build first line: Utilization and Memory
     line1_parts = []
-    if avg_util is not None:
-        line1_parts.append(f"Avg Util: {avg_util:.1f}%")
-    if avg_mem is not None:
-        line1_parts.append(f"Avg Mem: {avg_mem:.2f} GB")
-    if max_mem is not None:
-        line1_parts.append(f"Max Mem: {max_mem:.2f} GB")
+    if col1_line1:
+        line1_parts.append(col1_line1.ljust(col1_width))
+    if col2_line1:
+        line1_parts.append(col2_line1.ljust(col2_width))
+    if col3_line1:
+        line1_parts.append(col3_line1.ljust(col3_width))
     if mem_total is not None:
         line1_parts.append(f"Mem Total: {mem_total:.2f} GB")
     
     # Build second line: Power, Temperature, and optionally Timestamp
     line2_parts = []
-    if avg_power is not None:
-        line2_parts.append(f"Avg Power: {avg_power:.0f}W")
-    if max_temp is not None:
-        line2_parts.append(f"Max Temp: {max_temp}°C")
+    if col1_line2:
+        line2_parts.append(col1_line2.ljust(col1_width))
+    if col2_line2:
+        line2_parts.append(col2_line2.ljust(col2_width))
+    if col3_line2:
+        line2_parts.append(col3_line2.ljust(col3_width))
     
-    # Add timestamp if requested
-    if include_timestamp:
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        line2_parts.append(f"Time: {timestamp}")
-    
-    # Format lines with spacing
+    # Format lines with spacing (three spaces between columns)
     line1 = "   ".join(line1_parts) if line1_parts else ""
     line2 = "   ".join(line2_parts) if line2_parts else ""
     
@@ -583,50 +597,80 @@ def _format_gpu_metrics(metrics: Dict[str, Any], window_seconds: Optional[float]
     return [f"{header} {line1}", f"{' ' * (header_len + 1)}{line2}"]
 
 
-# Track previous GPU monitor line count for overwriting
-_previous_gpu_monitor_lines = 0
+# Global Rich Live display instance for GPU metrics
+_gpu_monitor_live: Optional[Any] = None  # Live instance when Rich is available
+_gpu_monitor_console: Optional[Any] = None  # Console instance when Rich is available
 
 
-def _print_gpu_metrics(lines: list):
+def _init_gpu_monitor_display(console: Optional[Any] = None):
     """
-    Print GPU metrics in a tqdm-compatible way with line overwriting.
+    Initialize Rich Live display for GPU metrics.
     
-    Uses tqdm.write() to avoid interfering with progress bars, and overwrites
-    the previous GPU monitor output to keep the display clean.
+    Creates a Live instance that will update in place, similar to a progress bar.
+    Uses the provided console if available (e.g., from ExperimentManager), otherwise
+    creates a new console as fallback.
     
     Args:
-        lines: List of formatted strings to print (typically 2 lines)
+        console: Optional Rich Console instance to use. If None, creates a new one.
     """
-    global _previous_gpu_monitor_lines
+    global _gpu_monitor_live, _gpu_monitor_console
+    
+    if _gpu_monitor_live is None:
+        # Use provided console or create a new one as fallback
+        _gpu_monitor_console = console if console is not None else Console()
+        # Create Live display with auto_refresh enabled for smooth updates
+        _gpu_monitor_live = Live(
+            Text("", style="dim"),
+            console=_gpu_monitor_console,
+            refresh_per_second=2,  # Update up to 2 times per second
+            transient=False,  # Keep display after context exits
+        )
+        _gpu_monitor_live.start()
+
+
+def _update_gpu_monitor_display(lines: list):
+    """
+    Update GPU metrics display using Rich Live.
+    
+    Updates the display in place without creating new lines, similar to a progress bar.
+    
+    Args:
+        lines: List of formatted strings to display (typically 2 lines)
+    """
+    global _gpu_monitor_live
     
     if not lines:
         return
     
-    # Use tqdm.write() if available, otherwise fall back to regular print
-    if _TQDM_AVAILABLE:
-        # Move cursor up to overwrite previous GPU monitor lines
-        if _previous_gpu_monitor_lines > 0:
-            # ANSI escape: move up N lines
-            tqdm.write(f"\033[{_previous_gpu_monitor_lines}A", end="")
-        
-        # Print new lines (tqdm.write() ensures they appear below progress bar)
-        for line in lines:
-            # Clear line and print new content
-            tqdm.write(f"\033[K{line}")
-        
-        # Update line count for next iteration
-        _previous_gpu_monitor_lines = len(lines)
-    else:
-        # Fallback for when tqdm is not available
-        # Move cursor up to overwrite previous lines
-        if _previous_gpu_monitor_lines > 0:
-            print(f"\033[{_previous_gpu_monitor_lines}A", end="")
-        
-        for line in lines:
-            # Clear line and print new content
-            print(f"\033[K{line}")
-        
-        _previous_gpu_monitor_lines = len(lines)
+    if  _gpu_monitor_live is not None:
+        # Join lines with newline and update the Live display
+        content = "\n".join(lines)
+        _gpu_monitor_live.update(Text(content))
+
+
+def _stop_gpu_monitor_display():
+    """
+    Stop and clean up Rich Live display for GPU metrics.
+    """
+    global _gpu_monitor_live, _gpu_monitor_console
+    
+    if _gpu_monitor_live is not None:
+        _gpu_monitor_live.stop()
+        _gpu_monitor_live = None
+        _gpu_monitor_console = None
+
+
+def _print_gpu_metrics(lines: list):
+    """
+    Print GPU metrics using Rich Live display for in-place updates.
+    
+    Uses Rich's Live display to update metrics in a static location on the command line,
+    similar to a progress bar. Falls back to tqdm or regular print if Rich is unavailable.
+    
+    Args:
+        lines: List of formatted strings to display (typically 2 lines)
+    """
+    _update_gpu_monitor_display(lines)
 
 
 @contextmanager
@@ -666,6 +710,10 @@ def gpu_monitoring_context(args, exp_manager, log_interval_s: float = 30.0):
         gpu_monitor = GpuMonitor(device_index=gpu_id, out_csv=gpu_csv_path)
         gpu_monitor.start()
         
+        # Initialize Rich Live display for GPU metrics using ExperimentManager's console
+        # This ensures consistent output formatting and avoids creating duplicate console instances
+        _init_gpu_monitor_display(console=exp_manager.console)
+        
         # Enable periodic logging to wandb and log file
         # Note: log_interval_s (30 seconds) is currently hardcoded but can be made configurable later
         def log_gpu_metrics(metrics: Dict[str, Any]):
@@ -673,9 +721,9 @@ def gpu_monitoring_context(args, exp_manager, log_interval_s: float = 30.0):
             # Log to ExperimentManager (which logs to wandb and local files)
             exp_manager.log_metrics(metrics)
             
-            # Format and print GPU metrics in a tqdm-compatible way
+            # Format and update GPU metrics display using Rich Live
             # Window indicator shows the time window for these metrics (last N seconds)
-            # Include timestamp to differentiate between prints
+            # Include timestamp to differentiate between updates
             formatted_lines = _format_gpu_metrics(metrics, log_interval_s, include_timestamp=True)
             _print_gpu_metrics(formatted_lines)
         
@@ -687,9 +735,6 @@ def gpu_monitoring_context(args, exp_manager, log_interval_s: float = 30.0):
     try:
         yield gpu_monitor
     finally:
-        # Reset GPU monitor line counter for clean exit
-        global _previous_gpu_monitor_lines
-        _previous_gpu_monitor_lines = 0
         # Stop GPU monitoring and display final summary
         # Note: GPU metrics were already logged to wandb in end_experiment() before run finished
         if gpu_monitor:
@@ -719,6 +764,9 @@ def gpu_monitoring_context(args, exp_manager, log_interval_s: float = 30.0):
             
             # Clear GPU monitor reference
             exp_manager.gpu_monitor = None
+        
+        # Stop Rich Live display
+        _stop_gpu_monitor_display()
         
         # Final cleanup
         if torch.cuda.is_available():
