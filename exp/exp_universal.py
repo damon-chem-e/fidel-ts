@@ -158,7 +158,6 @@ class Experiment(Exp_Basic):
         train_loader = self._get_data(flag='train')
         vali_loader = self._get_data(flag='val')
         test_loader = self._get_data(flag='test')
-        print(self.model)
         self.data_provider.data_buffer.clear() # release the raw file in buffer
         # self._get_profile(self.model)
         # print('Trainable parameters: ', sum(p.numel() for p in self.model.parameters() if p.requires_grad))
