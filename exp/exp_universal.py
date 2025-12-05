@@ -59,7 +59,12 @@ class Experiment(Exp_Basic):
         # Initialize per-sample metrics tracker if enabled
         track_per_sample = getattr(args, 'track_per_sample', False)
         if track_per_sample:
-            output_dir = str(exp_manager.get_checkpoint_dir()) if exp_manager else args.checkpoints
+            if exp_manager:
+                output_dir = str(exp_manager.get_experiment_dir() / "metrics")
+            else:
+                # Fallback for backward compatibility
+                output_dir = os.path.join(args.checkpoints, "..", "metrics")
+                output_dir = os.path.abspath(output_dir)
             self.metrics_tracker = PerSampleMetricsTracker(output_dir)
         else:
             self.metrics_tracker = None
@@ -407,13 +412,13 @@ class Experiment(Exp_Basic):
         """
         logger = self.exp_manager.logger
         
-        # Save training metrics after training loop (before vali/test)
+        # Run validation and testing (metrics accumulate with training metrics)
+        vali_loss = self.vali(vali_loader, criterion)
+        test_loss = self.test(test_loader, criterion)
+        
+        # Save all accumulated metrics (train + val + test) for this epoch together
         if track_per_sample and self.metrics_tracker:
             self.metrics_tracker.save_epoch(self.current_epoch)
-        
-        # Run validation and testing
-        vali_loss = self.vali(vali_loader, criterion)  # vali() saves its own metrics
-        test_loss = self.test(test_loader, criterion)  # test() saves its own metrics
         
         # Log epoch results to console
         logger.info(f"Epoch: {epoch + 1}, Steps: {train_steps} | Train Loss: {train_loss:.7f} Vali Loss: {vali_loss:.7f} Test Loss: {test_loss:.7f}")
@@ -599,7 +604,7 @@ class Experiment(Exp_Basic):
                                 channel_names = self._get_channel_names(num_channels)
                                 
                                 self.metrics_tracker.add_batch(
-                                    epoch=None,  # Epoch is null for validation/test folds
+                                    epoch=self.current_epoch,  # Associate validation metrics with current epoch
                                     split='val',
                                     entity_id=None,  # Will extract from sample_ids
                                     sample_ids=sample_ids,
@@ -627,7 +632,7 @@ class Experiment(Exp_Basic):
                             channel_names = self._get_channel_names(num_channels)
                             
                             self.metrics_tracker.add_batch(
-                                epoch=None,  # Epoch is null for validation/test folds
+                                epoch=self.current_epoch,  # Associate validation metrics with current epoch
                                 split='val',
                                 entity_id=None,  # Will extract from sample_ids
                                 sample_ids=sample_ids,
@@ -638,10 +643,6 @@ class Experiment(Exp_Basic):
                             )
 
         epoch_loss = running_loss / total_samples if total_samples > 0 else 0.0
-        
-        # Save per-sample metrics for validation if enabled
-        if track_per_sample and self.metrics_tracker:
-            self.metrics_tracker.save_split('val')
         
         self.model.train()
         return epoch_loss
@@ -695,7 +696,7 @@ class Experiment(Exp_Basic):
                             channel_names = self._get_channel_names(num_channels)
                             
                             self.metrics_tracker.add_batch(
-                                epoch=None,  # Epoch is null for validation/test folds
+                                epoch=self.current_epoch,  # Associate test metrics with current epoch
                                 split='test',
                                 entity_id=info,  # Entity ID known for test
                                 sample_ids=sample_ids,
@@ -724,10 +725,6 @@ class Experiment(Exp_Basic):
                         self.exp_manager.log_file_only(f"Test loss for entity {info}: {info_epoch_loss:.7f}")
                     else:
                         self.exp_manager.log_file_only(f"Test loss for entity {info}: N/A (no samples processed)", level=logging.WARNING)
-        
-        # Save per-sample metrics for test if enabled
-        if track_per_sample and self.metrics_tracker:
-            self.metrics_tracker.save_split('test')
 
         total_epoch_loss = overall_running_loss / overall_total_samples if overall_total_samples > 0 else 0.0
         
