@@ -96,74 +96,95 @@ def ensure_sample_id(df: pl.DataFrame) -> pl.DataFrame:
 # Data Loading
 # ============================================================================
 
-def _load_train_split(per_sample_dir: Path, epoch: Optional[int]) -> Optional[pl.DataFrame]:
-    """Load training data from epoch files."""
+def _load_epoch_file(per_sample_dir: Path, epoch: Optional[int], split_filter: Optional[str] = None) -> Optional[pl.DataFrame]:
+    """
+    Load data from epoch files, optionally filtering by split.
+    
+    Args:
+        per_sample_dir: Directory containing per-sample metrics
+        epoch: Specific epoch to load. If None, loads the latest available epoch.
+        split_filter: Optional split name to filter ('train', 'val', 'test'). If None, returns all splits.
+    
+    Returns:
+        DataFrame with metrics, optionally filtered by split
+    """
     files = sorted(per_sample_dir.glob("epoch_*.parquet"))
     if not files:
         return None
     
     if epoch is None:
         target_file = files[-1]
-        print(f"Loading train metrics from latest epoch: {target_file.name}")
+        print(f"Loading metrics from latest epoch: {target_file.name}")
     else:
         target_file = per_sample_dir / f"epoch_{epoch:03d}.parquet"
         if not target_file.exists():
             raise ValueError(f"Metrics for epoch {epoch} not found")
+        print(f"Loading metrics from epoch: {target_file.name}")
     
-    return pl.read_parquet(target_file)
+    df = pl.read_parquet(target_file)
+    
+    # Filter by split if requested
+    if split_filter is not None:
+        if "split" not in df.columns:
+            raise ValueError(f"Split column not found in metrics file. Cannot filter by split '{split_filter}'")
+        df = df.filter(pl.col("split") == split_filter)
+        if df.height == 0:
+            print(f"Warning: No {split_filter} data found in {target_file.name}")
+            return None
+    
+    return df
 
-def _load_split_file(per_sample_dir: Path, split_name: str) -> Optional[pl.DataFrame]:
-    """Load a single split file (val or test)."""
-    split_file = per_sample_dir / f"{split_name}.parquet"
-    if not split_file.exists():
-        return None
+def _load_split_file(per_sample_dir: Path, split_name: str, epoch: Optional[int] = None) -> Optional[pl.DataFrame]:
+    """
+    Load a single split from epoch files (backward compatibility function).
     
-    print(f"Loading {split_name} metrics from {split_file.name}")
-    return pl.read_parquet(split_file)
+    In the new format, val and test splits are stored in epoch files, not separate files.
+    This function loads from epoch files and filters by split.
+    """
+    return _load_epoch_file(per_sample_dir, epoch, split_filter=split_name)
 
 def load_metrics(
     experiment_dir: str, 
     split: Optional[str] = None,  # 'train', 'val', 'test', or None for all
-    epoch: Optional[int] = None   # Only used for 'train' split
+    epoch: Optional[int] = None   # Epoch to load (applies to all splits in new format)
 ) -> pl.DataFrame:
     """
     Load per-sample metrics from an experiment directory.
     
+    In the new format, all splits (train/val/test) are stored together in epoch files.
+    Each epoch file contains rows with a 'split' column indicating the dataset split.
+    
     Args:
         experiment_dir: Path to experiment output directory.
-        split: Dataset split to load ('train', 'val', 'test'). If None, loads all available.
-        epoch: Specific epoch to load for train split. If None, loads the last available epoch.
+        split: Dataset split to load ('train', 'val', 'test'). If None, loads all available splits.
+        epoch: Specific epoch to load. If None, loads the last available epoch.
     
     Returns:
-        DataFrame with per-sample metrics
+        DataFrame with per-sample metrics, optionally filtered by split
     """
-    per_sample_dir = Path(experiment_dir) / "per_sample"
+    # New location: experiment_dir/metrics/per_sample/
+    per_sample_dir = Path(experiment_dir) / "metrics" / "per_sample"
+    
+    # Fallback to old location for backward compatibility
     if not per_sample_dir.exists():
-        raise ValueError(f"No per-sample metrics found in {experiment_dir}")
+        old_per_sample_dir = Path(experiment_dir) / "checkpoints" / "per_sample"
+        if old_per_sample_dir.exists():
+            print(f"Warning: Using legacy location {old_per_sample_dir}. New location is {per_sample_dir}")
+            per_sample_dir = old_per_sample_dir
+        else:
+            # Try even older location
+            old_per_sample_dir = Path(experiment_dir) / "per_sample"
+            if old_per_sample_dir.exists():
+                print(f"Warning: Using legacy location {old_per_sample_dir}. New location is {per_sample_dir}")
+                per_sample_dir = old_per_sample_dir
+            else:
+                raise ValueError(f"No per-sample metrics found in {experiment_dir}. Expected location: {per_sample_dir}")
     
-    dfs = []
+    # Load from epoch files (new format: all splits in epoch files)
+    df = _load_epoch_file(per_sample_dir, epoch, split_filter=split)
     
-    # Load requested splits
-    if split is None or split == "train":
-        train_df = _load_train_split(per_sample_dir, epoch)
-        if train_df is not None:
-            dfs.append(train_df)
-    
-    if split is None or split == "val":
-        val_df = _load_split_file(per_sample_dir, "val")
-        if val_df is not None:
-            dfs.append(val_df)
-    
-    if split is None or split == "test":
-        test_df = _load_split_file(per_sample_dir, "test")
-        if test_df is not None:
-            dfs.append(test_df)
-    
-    if not dfs:
-        raise ValueError(f"No parquet files found in {per_sample_dir} for split={split}")
-    
-    # Concatenate all dataframes
-    df = pl.concat(dfs) if len(dfs) > 1 else dfs[0]
+    if df is None or df.height == 0:
+        raise ValueError(f"No metrics found in {per_sample_dir} for split={split}, epoch={epoch}")
     
     # Ensure sample_id exists (backward compatibility)
     df = ensure_sample_id(df)
@@ -660,7 +681,7 @@ def compare(
     candidate: str = typer.Option(..., help="Path to candidate experiment output directory"),
     output: str = typer.Option(..., help="Directory to save analysis results"),
     split: Optional[str] = typer.Option(None, help="Split to compare: 'train', 'val', 'test' (default: 'test')"),
-    epoch: Optional[int] = typer.Option(None, help="Epoch for train split (default: latest)"),
+    epoch: Optional[int] = typer.Option(None, help="Epoch to load (applies to all splits in new format, default: latest)"),
     level: str = typer.Option("auto", help="Analysis level: 'sample', 'channel', 'both', or 'auto'"),
     channels: Optional[str] = typer.Option(None, help="Comma-separated channel IDs to filter"),
 ):
