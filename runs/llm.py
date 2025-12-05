@@ -8,6 +8,7 @@ migrated from run_llm.py. Uses Pydantic configs and ExperimentManager.
 import os
 import yaml
 import torch
+from typing import Optional, Dict, Any
 from utils.tools import dotdict
 from utils.task import ahead_task_parser
 from utils.gpu_monitor import gpu_monitoring_context
@@ -96,7 +97,7 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     return args
 
 
-def run(config: ExperimentConfig):
+def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: Optional[Dict[str, Any]] = None, output_dir: Optional[str] = None):
     """
     Run LLM-based time series forecasting experiment.
     
@@ -105,6 +106,9 @@ def run(config: ExperimentConfig):
     
     Args:
         config: ExperimentConfig instance containing experiment configuration
+        suite_name: Optional suite name if experiment is part of a suite
+        suite_info: Optional suite information dictionary
+        output_dir: Optional base output directory (overrides config setting)
     
     Example:
         >>> from cli.config.loader import load_config
@@ -115,13 +119,15 @@ def run(config: ExperimentConfig):
     print(torch.cuda.device_count())
     
     # Initialize experiment manager
-    output_dir = config.training.experiment_output or "./output"
+    base_output_dir = output_dir or config.training.experiment_output or "./output"
     exp_manager = ExperimentManager(
         config=config,
-        output_dir=output_dir,
+        output_dir=base_output_dir,
         experiment_name=config.experiment_name,
         job_id=config.job_id,
-        job_name=config.job_name
+        job_name=config.job_name,
+        suite_name=suite_name,
+        suite_info=suite_info
     )
     
     # Convert config to args format

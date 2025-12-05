@@ -44,7 +44,9 @@ class ExperimentManager:
         output_dir: str = "./output",
         experiment_name: Optional[str] = None,
         job_id: Optional[str] = None,
-        job_name: Optional[str] = None
+        job_name: Optional[str] = None,
+        suite_name: Optional[str] = None,
+        suite_info: Optional[Dict[str, Any]] = None
     ):
         """
         Initialize ExperimentManager.
@@ -55,18 +57,28 @@ class ExperimentManager:
             experiment_name: Optional experiment name (overrides config)
             job_id: Optional job ID from cluster/scheduler
             job_name: Optional job name from cluster/scheduler
+            suite_name: Optional suite name if experiment is part of a suite
+            suite_info: Optional suite information dictionary (name, description, tags, etc.)
         """
         self.config = config
         self.output_dir = Path(output_dir)
         self.experiment_name = experiment_name or config.experiment_name
         self.job_id = job_id or config.job_id
         self.job_name = job_name or config.job_name
+        self.suite_name = suite_name
+        self.suite_info = suite_info or {}
         
         # Generate experiment ID from config hash
         self.experiment_id = self._generate_experiment_id()
         
         # Create experiment directory structure
-        self.experiment_dir = self.output_dir / self.experiment_id
+        # If part of a suite, create directory under suite folder
+        if self.suite_name:
+            suite_dir = self.output_dir / self.suite_name
+            suite_dir.mkdir(parents=True, exist_ok=True)
+            self.experiment_dir = suite_dir / self.experiment_id
+        else:
+            self.experiment_dir = self.output_dir / self.experiment_id
         self._create_experiment_structure()
         
         # Set up proper logging (doesn't interfere with tqdm/rich progress bars)
@@ -217,6 +229,13 @@ class ExperimentManager:
             "job_name": self.job_name,
             "random_seed": self.config.random_seed,
         }
+        
+        # Suite information (if experiment is part of a suite)
+        if self.suite_name:
+            metadata["suite"] = {
+                "suite_name": self.suite_name,
+                **self.suite_info
+            }
         
         # Git information
         git_info = self._get_git_info()

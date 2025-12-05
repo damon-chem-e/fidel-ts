@@ -6,6 +6,7 @@ defined in suite configuration files, replacing the need for bash scripts.
 """
 
 import yaml
+import json
 import logging
 import torch
 from pathlib import Path
@@ -127,31 +128,75 @@ def substitute_placeholders(config: Dict[str, Any], experiment_name: str,
 class SuiteExecutor:
     """Execute experiment suites defined in YAML configs."""
     
-    def __init__(self, suite_config: Dict[str, Any], log_dir: Optional[str] = None):
+    def __init__(self, suite_config: Dict[str, Any], log_dir: Optional[str] = None, output_dir: Optional[str] = None):
         """
         Initialize suite executor.
         
         Args:
             suite_config: Suite configuration dictionary
             log_dir: Directory for suite execution logs (optional)
+            output_dir: Base directory for experiment outputs (optional, defaults to ./output)
         """
         self.suite_config = suite_config
         self.suite_info = suite_config.get('suite', {})
         self.execution_config = self.suite_info.get('execution', {})
         self.log_dir = log_dir or self.execution_config.get('log_dir', './logs/suites')
+        self.output_dir = Path(output_dir or self.execution_config.get('output_dir', './output'))
         
         # Create log directory
         Path(self.log_dir).mkdir(parents=True, exist_ok=True)
         
         # Set up suite-specific logging
         suite_name = self.suite_info.get('name', 'unknown')
-        log_file = Path(self.log_dir) / f"{suite_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        suite_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_file = Path(self.log_dir) / f"{suite_name}_{suite_timestamp}.log"
         file_handler = logging.FileHandler(log_file)
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(file_handler)
         
-        logger.info(f"Initialized suite executor for: {suite_name}")
+        # Create suite directory in output directory with timestamp for uniqueness
+        self.suite_name_base = suite_name
+        self.suite_timestamp = suite_timestamp
+        self.suite_name = f"{suite_name}_{suite_timestamp}"
+        self.suite_dir = self.output_dir / self.suite_name
+        self.suite_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save suite-level metadata
+        self._save_suite_metadata()
+        
+        logger.info(f"Initialized suite executor for: {self.suite_name}")
+    
+    def _save_suite_metadata(self) -> None:
+        """Save suite-level metadata to suite directory."""
+        suite_metadata = {
+            "suite_name": self.suite_name_base,
+            "suite_name_with_timestamp": self.suite_name,
+            "timestamp": datetime.now().isoformat(),
+            "suite_timestamp": self.suite_timestamp,
+            "description": self.suite_info.get('description', ''),
+            "tags": self.suite_info.get('tags', []),
+            "execution": self.execution_config,
+            "experiments": [
+                {
+                    "name": exp.get('name', 'unknown'),
+                    "description": exp.get('description', ''),
+                    "enabled": exp.get('enabled', True),
+                    "template": exp.get('template', '')
+                }
+                for exp in self.suite_info.get('experiments', [])
+            ]
+        }
+        
+        # Save suite metadata JSON
+        metadata_path = self.suite_dir / "suite_metadata.json"
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(suite_metadata, f, indent=2, default=str)
+        
+        # Save suite config file
+        config_path = self.suite_dir / "suite_config.yaml"
+        with open(config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(self.suite_config, f, default_flow_style=False, sort_keys=False)
     
     def execute(self) -> None:
         """Execute all experiments in the suite."""
@@ -268,6 +313,16 @@ class SuiteExecutor:
         
         logger.info(f"Running experiment '{experiment_name}' with type '{exp_type}'")
         
+        # Prepare suite information to pass to experiments
+        # Use the timestamped suite name so experiments are saved in the correct directory
+        suite_info = {
+            "name": self.suite_name_base,
+            "name_with_timestamp": self.suite_name,
+            "timestamp": self.suite_timestamp,
+            "description": self.suite_info.get('description', ''),
+            "tags": self.suite_info.get('tags', [])
+        }
+        
         # Execute based on experiment type
         if exp_type == 'evaluation':
             # Evaluation uses a different config structure (dotdict with evaluation section)
@@ -298,12 +353,13 @@ class SuiteExecutor:
             experiment_config.experiment_name = experiment_name
             
             # Execute based on experiment type
+            # Pass the timestamped suite name so experiments are saved in the correct directory
             if exp_type == 'pytorch':
-                run_pytorch(experiment_config)
+                run_pytorch(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir))
             elif exp_type == 'lightning':
-                run_lightning(experiment_config)
+                run_lightning(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir))
             elif exp_type == 'llm':
-                run_llm(experiment_config)
+                run_llm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir))
             elif exp_type == 'fm':
                 # FM experiments may have task specified at experiment level
                 if 'task' in config.get('experiment', {}):
@@ -312,7 +368,7 @@ class SuiteExecutor:
                     # Recreate ExperimentConfig with task field
                     experiment_config = ExperimentConfig(**config)
                     experiment_config.experiment_name = experiment_name
-                run_fm(experiment_config)
+                run_fm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir))
             else:
                 raise ValueError(f"Unknown experiment type: {exp_type}")
 
