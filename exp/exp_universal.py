@@ -73,19 +73,36 @@ class Experiment(Exp_Basic):
         """
         Get channel names from data config if available, otherwise use integer indices.
         
+        Uses the 'target' list from data config as channel names, since target specifies
+        which columns are used as channels. Falls back to explicit 'channel_names' if
+        provided, then to integer indices.
+        
         Args:
             num_channels: Number of channels/features
             
         Returns:
             List of channel identifiers (names or indices as strings)
         """
-        # Try to get channel names from data config
+        # First try to get channel names from explicit channel_names field
         if hasattr(self.args, 'data_config') and hasattr(self.args.data_config, 'channel_names'):
             channel_names = self.args.data_config.channel_names
             if isinstance(channel_names, list) and len(channel_names) == num_channels:
                 return [str(name) for name in channel_names]
         
-        # Fallback: use integer indices
+        # Fallback: use 'target' list from data config as channel names
+        # The target list specifies which columns are used, so they should be the channel names
+        if hasattr(self.args, 'data_config') and hasattr(self.args.data_config, 'target'):
+            target = self.args.data_config.target
+            # Handle both list and single string cases
+            if isinstance(target, list):
+                if len(target) == num_channels:
+                    return [str(name) for name in target]
+            elif isinstance(target, str) and target != 'all':
+                # Single target column
+                if num_channels == 1:
+                    return [str(target)]
+        
+        # Final fallback: use integer indices
         return [str(i) for i in range(num_channels)]
 
     def _build_model(self):
