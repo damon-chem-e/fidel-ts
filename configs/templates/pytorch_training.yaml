@@ -34,7 +34,7 @@ training:
   random_seed: 2021
 
   # Tracking
-  track_per_sample: false  # Whether to track per-sample metrics (Parquet)
+  track_per_sample: true  # Whether to track per-sample metrics (Parquet) - enables per-sample and per-channel loss tracking
   
 device:
   use_gpu: true
