@@ -273,7 +273,9 @@ def process_iteration(index, dataset, args, model, info_savepath, error_log_path
     """Processes a single data sample, handling model inference, error logging, and result saving."""
     try:
         data_instance = dataset[index]
-        date_ = data_instance[3][0]
+        # Batch structure: sample_ids, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel
+        # For LLM, we use y_time[0] for the date (timestamp of first prediction step)
+        date_ = data_instance[4][0] if len(data_instance) > 4 else data_instance[3][0]  # y_time[0], fallback for backward compat
     
         if os.path.exists(os.path.join(info_savepath, f'{date_}_result.json')):
             return "skipped", None
@@ -284,7 +286,8 @@ def process_iteration(index, dataset, args, model, info_savepath, error_log_path
             raise ValueError("Model call returned None, indicating a potential API or parsing failure.")
 
         result = result_dict
-        gt = data_instance[1][-args.output_len:, :]
+        # seq_y is now at index 2 (after sample_ids and seq_x)
+        gt = data_instance[2][-args.output_len:, :] if len(data_instance) > 2 else data_instance[1][-args.output_len:, :]
 
         if not isinstance(result, dict) or 'pred' not in result:
             raise ValueError(f"Model output must be a dictionary with a 'pred' key. Got: {result}")

@@ -73,7 +73,7 @@ class Universal_Dataset(Dataset):
     """
     def __init__(self, root_path, flag='train', data_path='ETTh1.csv',
                  seq_len=24, pred_len=24, spliter=ratio_spliter, timestamp_col='date',
-                 target='OT', scale=True, data_buffer=None, hetero_data_getter=None, preload_hetero=False, hetero_stride=1, task=None, custom_input=None, timezone=None, downsample=None):
+                 target='OT', scale=True, data_buffer=None, hetero_data_getter=None, preload_hetero=False, hetero_stride=1, task=None, custom_input=None, timezone=None, downsample=None, entity_id=None):
         # size [seq_len, label_len, pred_len]
         # info
         self.seq_len = seq_len
@@ -90,6 +90,9 @@ class Universal_Dataset(Dataset):
 
         self.root_path = root_path
         self.data_path = data_path
+        
+        # Store entity_id for sample_id generation
+        self.entity_id = str(entity_id) if entity_id is not None else None
 
         self.hetero_data_getter = (lambda x: x) if hetero_data_getter is None else hetero_data_getter # return the timestamp
         self.timezone = timezone
@@ -251,6 +254,21 @@ class Universal_Dataset(Dataset):
         seq_y = self.data[r_begin:r_end]
         x_time = self.timestamp[s_begin:s_end]
         y_time = self.timestamp[r_begin:r_end]
+        
+        # Generate deterministic sample_id: entity_id|timestamp_start|sequence_index
+        # timestamp_start is the first timestamp in the input sequence
+        timestamp_start = x_time[0] if len(x_time) > 0 else 0
+        sequence_index = index
+        
+        # Format timestamp as string (it's already an int64 from __read_data__)
+        timestamp_str = str(timestamp_start)
+        
+        # Generate sample_id with format: entity_id|timestamp|sequence_index
+        if self.entity_id is not None:
+            sample_id = f"{self.entity_id}|{timestamp_str}|{sequence_index}"
+        else:
+            # Fallback if entity_id not provided (backward compatibility)
+            sample_id = f"unknown|{timestamp_str}|{sequence_index}"
 
         x_hetero = np.zeros((1), dtype=np.float32)
         y_hetero = np.zeros((1), dtype=np.float32)
@@ -286,8 +304,9 @@ class Universal_Dataset(Dataset):
                 hetero_general = y_hetero[1]
                 hetero_channel = y_hetero[2]
                 y_hetero = y_hetero[3]
+        # Return sample_id as first element for consistent sample tracking across models
         # still return everything for compatibility, but unwanted set as 0 for efficiency
-        return seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel
+        return sample_id, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel
 
     def __len__(self):
         """

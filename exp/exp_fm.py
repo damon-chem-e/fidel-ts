@@ -97,14 +97,20 @@ class Experiment(Exp_Basic):
         compared to standard models.
         
         Args:
-            iter: Data batch containing time series and cross-modal information
+            iter: Data batch containing:
+                - sample_ids: Sample identifiers (first element)
+                - batch_x, batch_y: Time series sequences
+                - timestamp_x, timestamp_y: Timestamps
+                - batch_x_hetero, batch_y_hetero: Heterogeneous data
+                - hetero_x_time, hetero_y_time: Heterogeneous timestamps
+                - hetero_general, hetero_channel: General and channel info
         
         Returns:
-            tuple: (predictions, ground_truth) for foundation model evaluation
+            tuple: (predictions, ground_truth, sample_ids) for foundation model evaluation
         """
-        # iteration: seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel
+        # iteration: sample_ids, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel
 
-        batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel = iter
+        sample_ids, batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel = iter
 
         if hasattr(self.model, 'move_to_device'):
             # move only the ones needed to device according to model's definition to save VRAM
@@ -136,14 +142,14 @@ class Experiment(Exp_Basic):
                         logger.warning(msg)
                     else:
                         print(msg)
-                    return None, None
+                    return None, None, sample_ids
                 elif torch.isnan(channel_output).any():
                     msg = f"[ Warning ]: NaN detected in channel {c} output"
                     if logger:
                         logger.warning(msg)
                     else:
                         print(msg)
-                    return None, None
+                    return None, None, sample_ids
                 else:
                     channel_output = channel_output.unsqueeze(-1)
                     # print(f"Channel {c} output shape: {channel_output}") # Commented out verbose print
@@ -166,18 +172,18 @@ class Experiment(Exp_Basic):
                     logger.warning(msg)
                 else:
                     print(msg)
-                return None, None
+                return None, None, sample_ids
             elif torch.isnan(final_output).any(): # Fixed variable name from channel_output to final_output
                 msg = "[ Warning ]: NaN detected in model output"
                 if logger:
                     logger.warning(msg)
                 else:
                     print(msg)
-                return None, None
+                return None, None, sample_ids
 
         gt = batch_y  # batch_y: [batch_size, output_len, num_channels]
 
-        return final_output, gt
+        return final_output, gt, sample_ids
 
     def test(self, savepath=None):
         """
@@ -264,7 +270,7 @@ class Experiment(Exp_Basic):
 
                             logger.info(f"[ Info ]: Testing on sample {i}, total: {len(filter_index)}")
 
-                            output, gt = self._forward_step(iter_data)
+                            output, gt, sample_ids = self._forward_step(iter_data)
 
                             if output is None and gt is None:
                                 logger.warning(f"[ Warning ]: Model returned None for sample {i}. Skipping this sample.")
@@ -286,7 +292,7 @@ class Experiment(Exp_Basic):
                             # Verbose logging for every batch might be too much, consider removing or lowering level
                             # logger.info(f"[ Info ]: Testing on all samples") 
 
-                            output, gt = self._forward_step(iter_data)
+                            output, gt, sample_ids = self._forward_step(iter_data)
 
                             if output is None and gt is None:
                                 logger.warning(f"[ Warning ]: Model returned None for sample {i}. Skipping this sample.")

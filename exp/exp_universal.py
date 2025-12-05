@@ -3,7 +3,7 @@ from models import model_init
 
 from utils.tools import EarlyStopping, adjust_learning_rate, general_move_to_device
 from utils.per_sample_metrics import PerSampleMetricsTracker
-from utils.loss_utils import compute_per_sample_loss
+from utils.loss_utils import compute_per_sample_loss, compute_per_sample_per_channel_loss
 
 import torch
 import torch.nn as nn
@@ -63,6 +63,25 @@ class Experiment(Exp_Basic):
             self.metrics_tracker = PerSampleMetricsTracker(output_dir)
         else:
             self.metrics_tracker = None
+    
+    def _get_channel_names(self, num_channels):
+        """
+        Get channel names from data config if available, otherwise use integer indices.
+        
+        Args:
+            num_channels: Number of channels/features
+            
+        Returns:
+            List of channel identifiers (names or indices as strings)
+        """
+        # Try to get channel names from data config
+        if hasattr(self.args, 'data_config') and hasattr(self.args.data_config, 'channel_names'):
+            channel_names = self.args.data_config.channel_names
+            if isinstance(channel_names, list) and len(channel_names) == num_channels:
+                return [str(name) for name in channel_names]
+        
+        # Fallback: use integer indices
+        return [str(i) for i in range(num_channels)]
 
     def _build_model(self):
         """
@@ -109,6 +128,7 @@ class Experiment(Exp_Basic):
         
         Args:
             iter: Data batch tuple containing:
+                - sample_ids: Sample identifiers for consistent tracking across models
                 - batch_x: Input time series sequences
                 - batch_y: Target time series sequences  
                 - timestamp_x, timestamp_y: Corresponding timestamps
@@ -118,13 +138,14 @@ class Experiment(Exp_Basic):
                 - hetero_channel: Channel-specific heterogeneous information
         
         Returns:
-            tuple: (predictions, ground_truth) both as torch tensors
+            tuple: (predictions, ground_truth, sample_ids) all as torch tensors/arrays
                   - predictions: Model output for the prediction horizon
                   - ground_truth: True target values for comparison
+                  - sample_ids: Sample identifiers for metrics tracking
         """
-        # iteration: seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel
+        # iteration: sample_ids, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel
 
-        batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel = iter
+        sample_ids, batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel = iter
 
         if hasattr(self.model, 'move_to_device'):
             batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel = self.model.move_to_device(batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel, self.device) # move only the ones needed to device according to model's definition to save VRAM
@@ -137,7 +158,7 @@ class Experiment(Exp_Basic):
         output = output[:, -self.args.output_len:, :]
         gt = batch_y
 
-        return output, gt
+        return output, gt, sample_ids
 
 
     def train(self):
@@ -240,7 +261,7 @@ class Experiment(Exp_Basic):
                     iter_count += 1
                     model_optim.zero_grad()
                         
-                    output, gt = self._forward_step(iter)
+                    output, gt, sample_ids = self._forward_step(iter)
 
                     loss = criterion(output, gt)
 
@@ -255,13 +276,20 @@ class Experiment(Exp_Basic):
                     # Track per-sample metrics if enabled
                     if track_per_sample and self.metrics_tracker:
                         per_sample_loss = compute_per_sample_loss(output, gt, criterion)
-                        timestamps = iter[2]  # timestamp_x from batch tuple
+                        per_sample_per_channel_loss = compute_per_sample_per_channel_loss(output, gt, criterion)
+                        timestamps = iter[3]  # timestamp_x from batch tuple (index 3 after sample_ids)
+                        num_channels = per_sample_per_channel_loss.shape[1]
+                        channel_names = self._get_channel_names(num_channels)
+                        
                         self.metrics_tracker.add_batch(
                             epoch=self.current_epoch,
                             split='train',
-                            entity_id=None,  # Train/val use concatenated loaders
-                            timestamps=timestamps,
-                            losses=per_sample_loss
+                            entity_id=None,  # Will extract from sample_ids
+                            sample_ids=sample_ids,
+                            timestamps=timestamps[:, 0] if timestamps is not None else None,  # First timestamp of each sequence
+                            losses=per_sample_loss,
+                            channel_ids=channel_names,
+                            per_channel_losses=per_sample_per_channel_loss
                         )
 
                     speed = (time.time() - time_now) / iter_count
@@ -386,7 +414,7 @@ class Experiment(Exp_Basic):
                     ) as progress:
                         task = progress.add_task("Validating...", total=len(loader))
                         for i, iter_data in enumerate(loader):
-                            output, gt = self._forward_step(iter_data)
+                            output, gt, sample_ids = self._forward_step(iter_data)
                             current_batch_size = gt.size(0)
                             loss = criterion(output, gt)
                             running_loss += loss.item() * current_batch_size
@@ -395,19 +423,26 @@ class Experiment(Exp_Basic):
                             # Track per-sample metrics if enabled
                             if track_per_sample and self.metrics_tracker:
                                 per_sample_loss = compute_per_sample_loss(output, gt, criterion)
-                                timestamps = iter_data[2]  # timestamp_x from batch tuple
+                                per_sample_per_channel_loss = compute_per_sample_per_channel_loss(output, gt, criterion)
+                                timestamps = iter_data[3]  # timestamp_x from batch tuple (index 3 after sample_ids)
+                                num_channels = per_sample_per_channel_loss.shape[1]
+                                channel_names = self._get_channel_names(num_channels)
+                                
                                 self.metrics_tracker.add_batch(
                                     epoch=None,  # Epoch is null for validation/test folds
                                     split='val',
-                                    entity_id=None,  # Entity is null for train/val folds
-                                    timestamps=timestamps,
-                                    losses=per_sample_loss
+                                    entity_id=None,  # Will extract from sample_ids
+                                    sample_ids=sample_ids,
+                                    timestamps=timestamps[:, 0] if timestamps is not None else None,  # First timestamp of each sequence
+                                    losses=per_sample_loss,
+                                    channel_ids=channel_names,
+                                    per_channel_losses=per_sample_per_channel_loss
                                 )
                             
                             progress.update(task, advance=1)
                 else:
                     for i, iter_data in enumerate(loader):
-                        output, gt = self._forward_step(iter_data)
+                        output, gt, sample_ids = self._forward_step(iter_data)
                         current_batch_size = gt.size(0)
                         loss = criterion(output, gt)
                         running_loss += loss.item() * current_batch_size
@@ -416,13 +451,20 @@ class Experiment(Exp_Basic):
                         # Track per-sample metrics if enabled
                         if track_per_sample and self.metrics_tracker:
                             per_sample_loss = compute_per_sample_loss(output, gt, criterion)
-                            timestamps = iter_data[2]  # timestamp_x from batch tuple
+                            per_sample_per_channel_loss = compute_per_sample_per_channel_loss(output, gt, criterion)
+                            timestamps = iter_data[3]  # timestamp_x from batch tuple (index 3 after sample_ids)
+                            num_channels = per_sample_per_channel_loss.shape[1]
+                            channel_names = self._get_channel_names(num_channels)
+                            
                             self.metrics_tracker.add_batch(
                                 epoch=None,  # Epoch is null for validation/test folds
                                 split='val',
-                                entity_id=None,  # Entity is null for train/val folds
-                                timestamps=timestamps,
-                                losses=per_sample_loss
+                                entity_id=None,  # Will extract from sample_ids
+                                sample_ids=sample_ids,
+                                timestamps=timestamps[:, 0] if timestamps is not None else None,  # First timestamp of each sequence
+                                losses=per_sample_loss,
+                                channel_ids=channel_names,
+                                per_channel_losses=per_sample_per_channel_loss
                             )
 
         epoch_loss = running_loss / total_samples if total_samples > 0 else 0.0
@@ -466,7 +508,7 @@ class Experiment(Exp_Basic):
                     sample_task = progress.add_task(f"  └─ {info}", total=len(loader))
                     
                     for i, iter_data in enumerate(loader):
-                        output, gt = self._forward_step(iter_data)
+                        output, gt, sample_ids = self._forward_step(iter_data)
                         current_batch_size = gt.size(0)
                         loss = criterion(output, gt)
                         info_running_loss += loss.item() * current_batch_size
@@ -477,14 +519,20 @@ class Experiment(Exp_Basic):
                         # Track per-sample metrics if enabled
                         if track_per_sample and self.metrics_tracker:
                             per_sample_loss = compute_per_sample_loss(output, gt, criterion)
-                            timestamps = iter_data[2]
+                            per_sample_per_channel_loss = compute_per_sample_per_channel_loss(output, gt, criterion)
+                            timestamps = iter_data[3]  # timestamp_x from batch tuple (index 3 after sample_ids)
+                            num_channels = per_sample_per_channel_loss.shape[1]
+                            channel_names = self._get_channel_names(num_channels)
                             
                             self.metrics_tracker.add_batch(
                                 epoch=None,  # Epoch is null for validation/test folds
                                 split='test',
-                                entity_id=info,
-                                timestamps=timestamps,
-                                losses=per_sample_loss
+                                entity_id=info,  # Entity ID known for test
+                                sample_ids=sample_ids,
+                                timestamps=timestamps[:, 0] if timestamps is not None else None,  # First timestamp of each sequence
+                                losses=per_sample_loss,
+                                channel_ids=channel_names,
+                                per_channel_losses=per_sample_per_channel_loss
                             )
 
                         progress.update(sample_task, advance=1)
