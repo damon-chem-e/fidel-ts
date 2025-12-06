@@ -1,0 +1,37 @@
+# lynx-film Model Configuration
+# lynx-film uses FiLM to modulate a residual iTransformer based on text embeddings
+
+model: lynx_film
+
+# Pretrained model configuration
+pretrained_model_path: ""  # Path to pretrained checkpoint
+pretrained_model_type: "iTransformer"
+pretrained_model_config_path: ""
+pretrained_checkpoint_base: ""
+
+# Residual Model (iTransformerFilm) Parameters
+# (These override or augment defaults)
+individual: False
+enc_in: 1
+e_layers: 3       # Layers in residual iTransformer
+n_heads: 4
+d_model: 256
+d_ff: 1024        # Feed forward dimension (typically 4*d_model)
+dropout: 0.3
+activation: "gelu"
+output_attention: False
+use_norm: True    # Default for iTransformer structure (disabled dynamically for residual learning)
+factor: 1         # Attention factor
+
+# Text Encoder Parameters (used to generate text embeddings)
+cross_layers: 3
+self_layers: 3
+text_dim: 256     # Dimension of text embeddings (input to FiLM)
+
+# Other
+patch_len: 6
+stride: 3
+hetero_align_stride: True
+revin: True       # Typically disabled if pretrained model uses internal norm
+task: TGTSF
+
