@@ -134,17 +134,22 @@ class Model(nn.Module):
         # For 1D treated as 2D: we use height=1, so kernel_size = (1, patch_len)
         x_reshaped = x.reshape(B * C, N, L).permute(0, 2, 1).contiguous()  # [B*C, L, N]
         
+        # Calculate the exact length covered by the N patches
+        # This is critical because F.fold expects the output size to match the number of patches exactly
+        # If we use self.total_length, it might imply a different number of patches than N, causing RuntimeError
+        covered_length = (N - 1) * self.stride + self.patch_len
+        
         # Use fold to sum overlapping patches
         # fold input format: [B, C*kernel_size, num_patches]
         # For 2D: kernel_size = kernel_h * kernel_w
         # For our 1D case: kernel_size = 1 * patch_len = patch_len
         output_sum = F.fold(
             x_reshaped,  # [B*C, L, N] = [B*C, patch_len, N]
-            output_size=(1, self.total_length),  # Output: [B*C, 1, 1, total_length]
+            output_size=(1, covered_length),  # Output: [B*C, 1, 1, covered_length]
             kernel_size=(1, self.patch_len),     # Patch: height=1, width=patch_len
             stride=(1, self.stride),              # Stride: height=1, width=stride
             padding=(0, 0)                          # No padding
-        )  # [B*C, 1, 1, total_length]
+        )  # [B*C, 1, 1, covered_length]
         
         # Create a tensor of ones with the same shape as patches to count overlaps
         # This will be folded to count how many patches contribute to each position
@@ -153,24 +158,31 @@ class Model(nn.Module):
         # Use fold to count overlapping patches (sum of ones = count)
         output_count = F.fold(
             ones_reshaped,  # [B*C, L, N]
-            output_size=(1, self.total_length),  # Output: [B*C, 1, 1, total_length]
+            output_size=(1, covered_length),  # Output: [B*C, 1, 1, covered_length]
             kernel_size=(1, self.patch_len),     # Patch: height=1, width=patch_len
             stride=(1, self.stride),              # Stride: height=1, width=stride
             padding=(0, 0)                        # No padding
-        )  # [B*C, 1, 1, total_length]
+        )  # [B*C, 1, 1, covered_length]
         
-        # Reshape: [B*C, 1, 1, total_length] -> [B*C, total_length]
-        output_sum = output_sum.squeeze(1).squeeze(1)  # [B*C, total_length]
-        output_count = output_count.squeeze(1).squeeze(1)  # [B*C, total_length]
+        # Reshape: [B*C, 1, 1, covered_length] -> [B*C, covered_length]
+        output_sum = output_sum.squeeze(1).squeeze(1)  # [B*C, covered_length]
+        output_count = output_count.squeeze(1).squeeze(1)  # [B*C, covered_length]
         
         # Average by dividing sum by count
-        output = output_sum / output_count  # [B*C, total_length]
+        output = output_sum / output_count  # [B*C, covered_length]
         
-        # Reshape to separate batch and channels: [B*C, total_length] -> [B, C, total_length]
-        output = output.reshape(B, C, self.total_length)  # [B, C, total_length]
+        # Reshape to separate batch and channels: [B*C, covered_length] -> [B, C, covered_length]
+        output = output.reshape(B, C, covered_length)  # [B, C, covered_length]
         
-        # Trim to pred_len
-        output = output[:, :, :self.pred_len]  # [B, C, pred_len]
+        # Ensure output matches self.pred_len
+        if covered_length < self.pred_len:
+            # Pad with zeros if patches don't cover the full pred_len
+            # This matches original behavior where buffer was initialized to zeros
+            padding = torch.zeros(B, C, self.pred_len - covered_length, device=x.device)
+            output = torch.cat([output, padding], dim=2)
+        else:
+            # Slice if patches cover more than pred_len
+            output = output[:, :, :self.pred_len]
         
         return output
     
