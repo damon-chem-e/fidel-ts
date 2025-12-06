@@ -415,13 +415,13 @@ suite:
     - name: "lynx_bear_room_336"
       description: "lynx on Bear Room with 336-step prediction"
       enabled: true
-      template: "configs/templates/lightning_training.yaml"
+      template: "configs/templates/pytorch_training.yaml"
       overrides:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
         model_config:
-          pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_bear_room_336/checkpoint.ckpt"
+          pretrained_model_path: "output/experiment_suites/itransformer_pretraining_test_20251205_163130/20251205-163130_5ef325ab0162/checkpoints/best_checkpoint.pth"
         data:
           name: "Bear_room"
           config_path: "data_configs/Bear_room/fullBear_hetero_TGTSF.yaml"
@@ -432,6 +432,6 @@ suite:
           patience: 5
           epochs: 50
         experiment:
-          type: "lightning"
+          type: "pytorch"
           output_dir: "outputs/suites/lynx_training"
 

@@ -317,11 +317,9 @@ class Experiment(Exp_Basic):
                     
                     if info_total_samples > 0:
                         info_epoch_loss = info_running_loss / info_total_samples
-                        # Log to file only (not console) to avoid interfering with progress bar display
-                        self.exp_manager.log_file_only(f"Test loss for {info}: {info_epoch_loss:.7f}")
+                        # Note: Per-entity test loss is tracked in per-sample metrics (parquet files)
+                        # No need to log individual entity losses here
                     else:
-                        # Log to file only (not console) to avoid interfering with progress bar display
-                        self.exp_manager.log_file_only(f"Test loss for {info}: N/A (no samples processed)", level=logging.WARNING)
                         info_epoch_loss = None
 
                     logger.info(f"Total Errors: {info_error}")

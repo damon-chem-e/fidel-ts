@@ -10,6 +10,7 @@ from utils.tools import general_move_to_device, adjust_learning_rate
 import json
 import time
 import logging
+from typing import Optional
 # Rich imports for progress bars
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TimeElapsedColumn
 from rich.console import Console
@@ -51,6 +52,9 @@ class TimeSeriesLightningModel(pl.LightningModule):
         self.test_total_loss = []
         self.test_total_samples = []
         # --- MODIFICATION END ---
+        
+        # Track epoch timing for logging
+        self._epoch_start_time: Optional[float] = None
         
     def _select_criterion(self):
         """Select the loss function."""
@@ -120,6 +124,34 @@ class TimeSeriesLightningModel(pl.LightningModule):
         
         return loss
 
+    def on_train_epoch_start(self):
+        """Called at the start of each training epoch."""
+        # Mark epoch start in GPU monitor for epoch-level GPU utilization tracking
+        if self.exp_manager and hasattr(self.exp_manager, 'gpu_monitor') and self.exp_manager.gpu_monitor:
+            self.exp_manager.gpu_monitor.mark_epoch_start()
+        
+        # Record epoch start time for timing
+        self._epoch_start_time = time.time()
+    
+    def on_train_epoch_end(self):
+        """Called at the end of each training epoch."""
+        if self.trainer.sanity_checking:
+            return
+        
+        # Get current epoch number (0-indexed in Lightning, so add 1 for display)
+        current_epoch = self.trainer.current_epoch + 1
+        
+        # Calculate and log epoch time to file only (not console)
+        if self._epoch_start_time is not None and self.exp_manager:
+            epoch_time_elapsed = time.time() - self._epoch_start_time
+            self.exp_manager.log_file_only(f"Epoch {current_epoch} completed in {epoch_time_elapsed:.2f}s")
+        
+        # Get and log full epoch GPU summary to file only (not console) using GpuMonitor's formatting method
+        if self.exp_manager and hasattr(self.exp_manager, 'gpu_monitor') and self.exp_manager.gpu_monitor:
+            gpu_summary_str = self.exp_manager.gpu_monitor.format_epoch_summary_for_log()
+            if gpu_summary_str:
+                self.exp_manager.log_file_only(f"Epoch {current_epoch}: {gpu_summary_str}")
+    
     def on_validation_epoch_end(self):
         """After validation completes, run test on all subsets."""
         # Only run test during training, not during sanity check
@@ -193,8 +225,8 @@ class TimeSeriesLightningModel(pl.LightningModule):
                         overall_total_loss += subset_total_loss
                         overall_total_samples += subset_total_samples
                         
-                        # Log to file only (not console) to avoid interfering with progress bar display
-                        self.exp_manager.log_file_only(f"Test loss for entity {subset_id}: {avg_loss:.7f}")
+                        # Note: Per-entity test loss is tracked in per-sample metrics (parquet files)
+                        # No need to log individual entity losses here
                     
                     # Update entity progress
                     progress.update(entity_task, advance=1)

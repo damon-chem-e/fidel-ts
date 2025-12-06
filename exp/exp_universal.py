@@ -11,7 +11,6 @@ import torch.nn as nn
 import os
 import time
 import warnings
-import logging
 
 import json
 
@@ -381,6 +380,10 @@ class Experiment(Exp_Basic):
         epoch_loss, total_samples, iter_count = 0.0, 0, 0
         epoch_time = time_now = time.time()
         
+        # Mark epoch start in GPU monitor for epoch-level GPU utilization tracking
+        if self.exp_manager and hasattr(self.exp_manager, 'gpu_monitor') and self.exp_manager.gpu_monitor:
+            self.exp_manager.gpu_monitor.mark_epoch_start()
+        
         # Create progress bar for this epoch (includes logger)
         progress, task, logger, console = self._create_training_progress_bar(epoch, train_loader)
         
@@ -407,7 +410,7 @@ class Experiment(Exp_Basic):
 
     def _evaluate_epoch(self, epoch, train_loss, total_samples, vali_loader, 
                        test_loader, criterion, early_stopping, path, 
-                       model_optim, track_per_sample, train_steps):
+                       model_optim, track_per_sample, train_steps, epoch_time_elapsed=None):
         """
         Evaluate model on validation and test sets, log metrics, check early stopping.
         
@@ -423,6 +426,7 @@ class Experiment(Exp_Basic):
             model_optim: Optimizer (for learning rate logging)
             track_per_sample: Whether per-sample tracking is enabled
             train_steps: Total number of training steps per epoch
+            epoch_time_elapsed: Time taken for the epoch in seconds (optional)
             
         Returns:
             tuple: (vali_loss, test_loss, should_stop) where should_stop is boolean
@@ -436,6 +440,16 @@ class Experiment(Exp_Basic):
         # Save all accumulated metrics (train + val + test) for this epoch together
         if track_per_sample and self.metrics_tracker:
             self.metrics_tracker.save_epoch(self.current_epoch)
+        
+        # Log epoch time to file only (not console)
+        if epoch_time_elapsed is not None:
+            self.exp_manager.log_file_only(f"Epoch {epoch + 1} completed in {epoch_time_elapsed:.2f}s")
+        
+        # Get and log full epoch GPU summary to file only (not console) using GpuMonitor's formatting method
+        if self.exp_manager and hasattr(self.exp_manager, 'gpu_monitor') and self.exp_manager.gpu_monitor:
+            gpu_summary_str = self.exp_manager.gpu_monitor.format_epoch_summary_for_log()
+            if gpu_summary_str:
+                self.exp_manager.log_file_only(f"Epoch {epoch + 1}: {gpu_summary_str}")
         
         # Log epoch results to console
         logger.info(f"Epoch: {epoch + 1}, Steps: {train_steps} | Train Loss: {train_loss:.7f} Vali Loss: {vali_loss:.7f} Test Loss: {test_loss:.7f}")
@@ -554,7 +568,7 @@ class Experiment(Exp_Basic):
             # Evaluate epoch: validation, testing, logging, early stopping check
             vali_loss, test_loss, should_stop = self._evaluate_epoch(
                 epoch, train_loss, total_samples, vali_loader, test_loader,
-                criterion, early_stopping, path, model_optim, track_per_sample, train_steps
+                criterion, early_stopping, path, model_optim, track_per_sample, train_steps, epoch_time
             )
             
             # Break if early stopping triggered
@@ -736,12 +750,8 @@ class Experiment(Exp_Basic):
                     # Update entity progress
                     progress.update(entity_task, advance=1)
                     
-                    # Log results to file only
-                    if info_total_samples > 0:
-                        info_epoch_loss = info_running_loss / info_total_samples
-                        self.exp_manager.log_file_only(f"Test loss for entity {info}: {info_epoch_loss:.7f}")
-                    else:
-                        self.exp_manager.log_file_only(f"Test loss for entity {info}: N/A (no samples processed)", level=logging.WARNING)
+                    # Note: Per-entity test loss is tracked in per-sample metrics (parquet files)
+                    # No need to log individual entity losses here
 
         total_epoch_loss = overall_running_loss / overall_total_samples if overall_total_samples > 0 else 0.0
         

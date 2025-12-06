@@ -79,6 +79,7 @@ class GpuMonitor:
         self._log_thread: Optional[threading.Thread] = None
         self._last_log_time = 0.0
         self._last_log_index = 0
+        self._epoch_start_index: Optional[int] = None  # Track epoch start for epoch-level summaries
 
     def start(self):
         """
@@ -389,6 +390,98 @@ class GpuMonitor:
             'avg_power_w': _avg(power),
             'max_temp_c': max(temp) if temp else None,
         }
+    
+    def mark_epoch_start(self) -> None:
+        """
+        Mark the start of a new epoch by recording the current sample index.
+        
+        This allows get_epoch_summary() to compute epoch-averaged GPU metrics.
+        Should be called at the beginning of each training epoch.
+        """
+        if self._started:
+            self._epoch_start_index = len(self._rows)
+    
+    def get_epoch_summary(self) -> Dict[str, Any]:
+        """
+        Get aggregate GPU statistics for the current epoch.
+        
+        Computes averaged metrics from samples collected since the last
+        mark_epoch_start() call. Returns empty dict if no epoch start was marked
+        or if no samples were collected during the epoch.
+        
+        Returns:
+            Dictionary with epoch-averaged GPU metrics, or empty dict if unavailable
+        """
+        if self._epoch_start_index is None:
+            return {}
+        
+        return self.summarize_since(self._epoch_start_index)
+    
+    def format_epoch_summary_for_log(self) -> Optional[str]:
+        """
+        Format epoch GPU summary as a string suitable for file logging.
+        
+        Uses the same formatting approach as periodic logging but formats
+        as a single-line string for log file output. Returns None if no
+        epoch data is available.
+        
+        Returns:
+            Formatted string with epoch GPU metrics, or None if unavailable
+        """
+        summary = self.get_epoch_summary()
+        if not summary or summary.get('num_samples', 0) == 0:
+            return None
+        
+        # Prepare metrics in the same format as periodic logging
+        metrics = {
+            'gpu_avg_util_pct': summary.get('avg_util_gpu_pct'),
+            'gpu_avg_mem_used_mib': summary.get('avg_mem_used_mib'),
+            'gpu_max_mem_used_mib': summary.get('max_mem_used_mib'),
+            'gpu_mem_total_mib': summary.get('mem_total_mib'),
+            'gpu_avg_power_w': summary.get('avg_power_w'),
+            'gpu_max_temp_c': summary.get('max_temp_c'),
+        }
+        # Filter out None values
+        metrics = {k: v for k, v in metrics.items() if v is not None}
+        
+        if not metrics:
+            return None
+        
+        # Format as a readable string for log file
+        # Convert MiB to GB for memory metrics (matching console format)
+        def mib_to_gb(mib: float) -> float:
+            return mib / 1024.0
+        
+        parts = []
+        
+        if 'gpu_avg_util_pct' in metrics:
+            parts.append(f"Avg Util: {metrics['gpu_avg_util_pct']:.1f}%")
+        
+        if 'gpu_avg_mem_used_mib' in metrics:
+            avg_mem_gb = mib_to_gb(metrics['gpu_avg_mem_used_mib'])
+            parts.append(f"Avg Mem: {avg_mem_gb:.2f} GB")
+        
+        if 'gpu_max_mem_used_mib' in metrics:
+            max_mem_gb = mib_to_gb(metrics['gpu_max_mem_used_mib'])
+            parts.append(f"Max Mem: {max_mem_gb:.2f} GB")
+        
+        if 'gpu_mem_total_mib' in metrics:
+            mem_total_gb = mib_to_gb(metrics['gpu_mem_total_mib'])
+            parts.append(f"Mem Total: {mem_total_gb:.2f} GB")
+        
+        if 'gpu_avg_power_w' in metrics:
+            parts.append(f"Avg Power: {metrics['gpu_avg_power_w']:.0f}W")
+        
+        if 'gpu_max_temp_c' in metrics:
+            parts.append(f"Max Temp: {metrics['gpu_max_temp_c']}°C")
+        
+        if summary.get('num_samples') is not None:
+            parts.append(f"Samples: {summary['num_samples']}")
+        
+        # Add timestamp
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        return f"[GPU Epoch Summary (timestamp: {timestamp})] {' | '.join(parts)}"
 
 
 class StepMonitor:
