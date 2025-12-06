@@ -21,15 +21,6 @@ class iTransformerFilm(nn.Module):
         self.use_norm = configs.use_norm
         
         # Calculate text sequence length based on TGTSF text_encoder logic
-        # L = ceil(pred_len / stride)
-        # However, text_encoder might pad or behave differently.
-        # Ideally, we should receive this from configs or compute it identically.
-        # Assuming the text_encoder output matches the logic in text_encoder class:
-        # self.W_pos = positional_encoding('zeros', True, int(np.ceil(pred_len/stride)), embedding_dim)
-        # Let's rely on the assumption that text_emb passed in has L = ceil(pred_len/stride).
-        # We can also handle dynamic L in FiLMGenerator if we didn't use Linear flattening, 
-        # but for Linear we need fixed input size. 
-        # For this implementation, we calculate L.
         self.text_seq_len = int(np.ceil(configs.pred_len / configs.stride))
         
         # Embedding
