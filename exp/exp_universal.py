@@ -229,6 +229,24 @@ class Experiment(Exp_Basic):
         return train_loader, vali_loader, test_loader, path, early_stopping, \
                model_optim, criterion, track_per_sample
 
+    def _format_eta(self, seconds):
+        """
+        Format ETA time in a human-readable format.
+        
+        Shows minutes when above 60 seconds, otherwise shows seconds.
+        
+        Args:
+            seconds: Time in seconds
+            
+        Returns:
+            str: Formatted time string (e.g., "2.5m" or "45.2s")
+        """
+        if seconds >= 60:
+            minutes = seconds / 60.0
+            return f"{minutes:.1f}m"
+        else:
+            return f"{seconds:.1f}s"
+    
     def _create_training_progress_bar(self, epoch, train_loader):
         """
         Create and configure progress bar for training epoch.
@@ -245,6 +263,7 @@ class Experiment(Exp_Basic):
         console = self.exp_manager.console
         
         # Define progress bar columns with metrics
+        # Use a custom TextColumn that formats ETA dynamically
         progress_columns = [
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -254,7 +273,7 @@ class Experiment(Exp_Basic):
             TextColumn("•"),
             TextColumn("speed: {task.fields[speed]:.4f}s/iter"),
             TextColumn("•"),
-            TextColumn("ETA: {task.fields[eta]:.1f}s"),
+            TextColumn("ETA: {task.fields[eta_formatted]}"),
             TimeElapsedColumn(),
         ]
         
@@ -265,7 +284,8 @@ class Experiment(Exp_Basic):
             total=len(train_loader),
             loss=0.0,
             speed=0.0,
-            eta=0.0
+            eta=0.0,
+            eta_formatted="0.0s"
         )
         
         return progress, task, logger, console
@@ -347,13 +367,17 @@ class Experiment(Exp_Basic):
         # Calculate estimated time remaining
         left_time = speed * ((self.args.train_epochs - epoch) * train_steps - current_iter)
         
+        # Format ETA for display (minutes if >= 60 seconds, otherwise seconds)
+        eta_formatted = self._format_eta(left_time)
+        
         # Update progress bar with current metrics
         progress.update(
             task,
             advance=1,
             loss=loss_value,
             speed=speed,
-            eta=left_time
+            eta=left_time,
+            eta_formatted=eta_formatted
         )
         
         # Reset iteration counter and update time for next iteration
