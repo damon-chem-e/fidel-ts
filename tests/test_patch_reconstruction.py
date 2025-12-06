@@ -19,7 +19,6 @@ import pytest
 import torch
 import torch.nn.functional as F
 import time
-from typing import Tuple
 
 
 def calculate_total_length(pred_len: int, patch_len: int, stride: int) -> int:
@@ -38,6 +37,29 @@ def calculate_total_length(pred_len: int, patch_len: int, stride: int) -> int:
         Total length of the output buffer before trimming to pred_len
     """
     return patch_len * 2 + (int((pred_len - patch_len) / stride + 1) - 1) * stride
+
+
+def calculate_patch_num_from_total_length(total_length: int, patch_len: int, stride: int) -> int:
+    """
+    Calculate the number of patches that fit within total_length.
+    
+    This ensures consistency with F.fold expectations and the original
+    reconstruction loop. The number of patches that can be placed is:
+    num_patches = ((total_length - patch_len) / stride + 1)
+    
+    This ensures that:
+    - All patches fit within total_length: (N-1) * stride + patch_len <= total_length
+    - F.fold receives the expected number of patches
+    
+    Args:
+        total_length: Total buffer length
+        patch_len: Length of each patch
+        stride: Stride between patches
+        
+    Returns:
+        Number of patches that fit within total_length
+    """
+    return int((total_length - patch_len) / stride + 1)
 
 
 def patch_reconstruction_original(
@@ -97,8 +119,8 @@ def patch_reconstruction_vectorized(
     Vectorized patch reconstruction using torch.nn.functional.fold.
     
     This is the optimized version that replaces the sequential loop with
-    a fully vectorized operation. fold is the inverse of unfold and
-    automatically handles overlapping patches with averaging.
+    a fully vectorized operation. fold is the inverse of unfold and sums
+    overlapping patches. We compute both the sum and count, then average.
     
     Implementation note: fold expects input of shape [B, C*kernel_size, num_patches]
     where patches are arranged as columns. We reshape our [B, C, N, L] tensor
@@ -126,14 +148,11 @@ def patch_reconstruction_vectorized(
     # For 1D treated as 2D: we use height=1, so kernel_size = (1, patch_len)
     x_reshaped = x.reshape(B * C, N, L).permute(0, 2, 1).contiguous()  # [B*C, L, N]
     
+    # Use fold to sum overlapping patches
     # fold input format: [B, C*kernel_size, num_patches]
     # For 2D: kernel_size = kernel_h * kernel_w
     # For our 1D case: kernel_size = 1 * patch_len = patch_len
-    # So we have [B*C, L, N] which is [B*C, patch_len, N]
-    # This matches [B, C*kernel_size, num_patches] if C=1, kernel_size=patch_len
-    
-    # Use fold: treats input as [B*C, 1*patch_len, N]
-    output_folded = F.fold(
+    output_sum = F.fold(
         x_reshaped,  # [B*C, L, N] = [B*C, patch_len, N]
         output_size=(1, total_length),  # Output: [B*C, 1, 1, total_length]
         kernel_size=(1, patch_len),     # Patch: height=1, width=patch_len
@@ -141,11 +160,28 @@ def patch_reconstruction_vectorized(
         padding=(0, 0)                    # No padding
     )  # [B*C, 1, 1, total_length]
     
+    # Create a tensor of ones with the same shape as patches to count overlaps
+    # This will be folded to count how many patches contribute to each position
+    ones_reshaped = torch.ones_like(x_reshaped)  # [B*C, L, N]
+    
+    # Use fold to count overlapping patches (sum of ones = count)
+    output_count = F.fold(
+        ones_reshaped,  # [B*C, L, N]
+        output_size=(1, total_length),  # Output: [B*C, 1, 1, total_length]
+        kernel_size=(1, patch_len),     # Patch: height=1, width=patch_len
+        stride=(1, stride),              # Stride: height=1, width=stride
+        padding=(0, 0)                    # No padding
+    )  # [B*C, 1, 1, total_length]
+    
     # Reshape: [B*C, 1, 1, total_length] -> [B*C, total_length]
-    output_folded = output_folded.squeeze(1).squeeze(1)  # [B*C, total_length]
+    output_sum = output_sum.squeeze(1).squeeze(1)  # [B*C, total_length]
+    output_count = output_count.squeeze(1).squeeze(1)  # [B*C, total_length]
+    
+    # Average by dividing sum by count
+    output = output_sum / output_count  # [B*C, total_length]
     
     # Reshape to separate batch and channels: [B*C, total_length] -> [B, C, total_length]
-    output = output_folded.reshape(B, C, total_length)  # [B, C, total_length]
+    output = output.reshape(B, C, total_length)  # [B, C, total_length]
     
     # Trim to pred_len
     output = output[:, :, :pred_len]  # [B, C, pred_len]
@@ -163,65 +199,90 @@ def device():
 @pytest.fixture
 def small_config():
     """Small configuration for quick tests."""
+    patch_len = 8
+    stride = 4
+    pred_len = 24
+    total_length = calculate_total_length(pred_len, patch_len, stride)
+    patch_num = calculate_patch_num_from_total_length(total_length, patch_len, stride)
     return {
         'batch_size': 4,
         'channels': 2,
-        'patch_num': 5,
-        'patch_len': 8,
-        'stride': 4,
-        'pred_len': 24
+        'patch_num': patch_num,
+        'patch_len': patch_len,
+        'stride': stride,
+        'pred_len': pred_len
     }
 
 
 @pytest.fixture
 def medium_config():
     """Medium configuration for moderate tests."""
+    patch_len = 16
+    stride = 8
+    pred_len = 96
+    total_length = calculate_total_length(pred_len, patch_len, stride)
+    patch_num = calculate_patch_num_from_total_length(total_length, patch_len, stride)
     return {
         'batch_size': 32,
         'channels': 8,
-        'patch_num': 20,
-        'patch_len': 16,
-        'stride': 8,
-        'pred_len': 96
+        'patch_num': patch_num,
+        'patch_len': patch_len,
+        'stride': stride,
+        'pred_len': pred_len
     }
 
 
 @pytest.fixture
 def large_config():
     """Large configuration for performance tests."""
+    patch_len = 24
+    stride = 12
+    pred_len = 240
+    total_length = calculate_total_length(pred_len, patch_len, stride)
+    patch_num = calculate_patch_num_from_total_length(total_length, patch_len, stride)
     return {
         'batch_size': 128,
         'channels': 16,
-        'patch_num': 50,
-        'patch_len': 24,
-        'stride': 12,
-        'pred_len': 240
+        'patch_num': patch_num,
+        'patch_len': patch_len,
+        'stride': stride,
+        'pred_len': pred_len
     }
 
 
 @pytest.fixture
 def xlarge_config():
     """Extra large configuration for scale tests."""
+    patch_len = 32
+    stride = 16
+    pred_len = 480
+    total_length = calculate_total_length(pred_len, patch_len, stride)
+    patch_num = calculate_patch_num_from_total_length(total_length, patch_len, stride)
     return {
         'batch_size': 512,
         'channels': 32,
-        'patch_num': 100,
-        'patch_len': 32,
-        'stride': 16,
-        'pred_len': 480
+        'patch_num': patch_num,
+        'patch_len': patch_len,
+        'stride': stride,
+        'pred_len': pred_len
     }
 
 
 @pytest.fixture
 def tgtsf_like_config():
     """Configuration matching typical TGTSF usage (NYC Traffic Speed)."""
+    patch_len = 8
+    stride = 8
+    pred_len = 24
+    total_length = calculate_total_length(pred_len, patch_len, stride)
+    patch_num = calculate_patch_num_from_total_length(total_length, patch_len, stride)
     return {
         'batch_size': 768,  # Current batch size
         'channels': 1,      # Single channel 
-        'patch_num': 45,    # Approximate for input_len=360, patch_len=8, stride=8
-        'patch_len': 8,
-        'stride': 8,
-        'pred_len': 24
+        'patch_num': patch_num,
+        'patch_len': patch_len,
+        'stride': stride,
+        'pred_len': pred_len
     }
 
 
@@ -364,17 +425,22 @@ def test_various_stride_patch_combinations(device):
     ]
     
     for config in configs:
+        # Calculate total_length and patch_num to ensure consistency
+        total_length = calculate_total_length(
+            config['pred_len'], config['patch_len'], config['stride']
+        )
+        patch_num = calculate_patch_num_from_total_length(
+            total_length, config['patch_len'], config['stride']
+        )
+        
         test_config = {
             'batch_size': 16,
             'channels': 4,
-            'patch_num': 10,
+            'patch_num': patch_num,
             **config
         }
         
         x = create_test_tensor(test_config, device)
-        total_length = calculate_total_length(
-            config['pred_len'], config['patch_len'], config['stride']
-        )
         
         output_original = patch_reconstruction_original(
             x, config['patch_len'], config['stride'], config['pred_len'], total_length
@@ -515,12 +581,19 @@ def test_performance_scales_with_batch_size(device):
     if device.type == 'cpu':
         pytest.skip("Performance tests require CUDA")
     
+    patch_len = 16
+    stride = 8
+    pred_len = 96
+    
+    total_length = calculate_total_length(pred_len, patch_len, stride)
+    patch_num = calculate_patch_num_from_total_length(total_length, patch_len, stride)
+    
     base_config = {
         'channels': 8,
-        'patch_num': 20,
-        'patch_len': 16,
-        'stride': 8,
-        'pred_len': 96
+        'patch_num': patch_num,
+        'patch_len': patch_len,
+        'stride': stride,
+        'pred_len': pred_len
     }
     
     batch_sizes = [32, 128, 512]
@@ -529,19 +602,14 @@ def test_performance_scales_with_batch_size(device):
     for batch_size in batch_sizes:
         config = {**base_config, 'batch_size': batch_size}
         x = create_test_tensor(config, device)
-        total_length = calculate_total_length(
-            config['pred_len'], config['patch_len'], config['stride']
-        )
         
         time_original = benchmark_reconstruction(
             patch_reconstruction_original,
-            x, config['patch_len'], config['stride'],
-            config['pred_len'], total_length
+            x, patch_len, stride, pred_len, total_length
         )
         time_vectorized = benchmark_reconstruction(
             patch_reconstruction_vectorized,
-            x, config['patch_len'], config['stride'],
-            config['pred_len'], total_length
+            x, patch_len, stride, pred_len, total_length
         )
         
         speedup = time_original / time_vectorized
@@ -556,25 +624,29 @@ def test_performance_scales_with_batch_size(device):
 
 def test_edge_case_no_overlap(device):
     """Test case where stride == patch_len (no overlap)."""
+    patch_len = 8
+    stride = 8  # No overlap
+    pred_len = 80
+    
+    total_length = calculate_total_length(pred_len, patch_len, stride)
+    patch_num = calculate_patch_num_from_total_length(total_length, patch_len, stride)
+    
     config = {
         'batch_size': 16,
         'channels': 4,
-        'patch_num': 10,
-        'patch_len': 8,
-        'stride': 8,  # No overlap
-        'pred_len': 80
+        'patch_num': patch_num,
+        'patch_len': patch_len,
+        'stride': stride,
+        'pred_len': pred_len
     }
     
     x = create_test_tensor(config, device)
-    total_length = calculate_total_length(
-        config['pred_len'], config['patch_len'], config['stride']
-    )
     
     output_original = patch_reconstruction_original(
-        x, config['patch_len'], config['stride'], config['pred_len'], total_length
+        x, patch_len, stride, pred_len, total_length
     )
     output_vectorized = patch_reconstruction_vectorized(
-        x, config['patch_len'], config['stride'], config['pred_len'], total_length
+        x, patch_len, stride, pred_len, total_length
     )
     
     assert torch.allclose(
@@ -584,25 +656,29 @@ def test_edge_case_no_overlap(device):
 
 def test_edge_case_high_overlap(device):
     """Test case with high overlap (stride < patch_len/2)."""
+    patch_len = 16
+    stride = 4  # 75% overlap
+    pred_len = 80
+    
+    total_length = calculate_total_length(pred_len, patch_len, stride)
+    patch_num = calculate_patch_num_from_total_length(total_length, patch_len, stride)
+    
     config = {
         'batch_size': 16,
         'channels': 4,
-        'patch_num': 20,
-        'patch_len': 16,
-        'stride': 4,  # 75% overlap
-        'pred_len': 80
+        'patch_num': patch_num,
+        'patch_len': patch_len,
+        'stride': stride,
+        'pred_len': pred_len
     }
     
     x = create_test_tensor(config, device)
-    total_length = calculate_total_length(
-        config['pred_len'], config['patch_len'], config['stride']
-    )
     
     output_original = patch_reconstruction_original(
-        x, config['patch_len'], config['stride'], config['pred_len'], total_length
+        x, patch_len, stride, pred_len, total_length
     )
     output_vectorized = patch_reconstruction_vectorized(
-        x, config['patch_len'], config['stride'], config['pred_len'], total_length
+        x, patch_len, stride, pred_len, total_length
     )
     
     assert torch.allclose(
