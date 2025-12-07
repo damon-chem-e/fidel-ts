@@ -9,6 +9,7 @@ pretrained models in residual learning architectures.
 import os
 import torch
 import yaml
+from pathlib import Path
 from utils.tools import dotdict
 
 
@@ -132,13 +133,24 @@ class UnimodalModelWrapper:
         pretrained_config_path = getattr(configs, 'pretrained_model_config_path', None)
         
         # Load pretrained model config
-        if pretrained_config_path is None:
+        if pretrained_config_path is None or pretrained_config_path == "":
             # Use default config path based on model type
-            pretrained_config_path = f"model_configs/general/{pretrained_type}.yaml"
+            # Resolve relative to current working directory (project root)
+            pretrained_config_path = Path.cwd() / f"model_configs/general/{pretrained_type}.yaml"
+        else:
+            # Convert to Path and resolve relative to current working directory if not absolute
+            pretrained_config_path = Path(pretrained_config_path)
+            if not pretrained_config_path.is_absolute():
+                pretrained_config_path = Path.cwd() / pretrained_config_path
         
-        if not os.path.exists(pretrained_config_path):
+        # Resolve to absolute path for clearer error messages
+        pretrained_config_path = pretrained_config_path.resolve()
+        
+        if not pretrained_config_path.exists():
             raise FileNotFoundError(
-                f"Pretrained model config not found at: {pretrained_config_path}"
+                f"Pretrained model config not found at: {pretrained_config_path}\n"
+                f"Current working directory: {Path.cwd()}\n"
+                f"Please ensure the config file exists or provide an explicit path via 'pretrained_model_config_path'."
             )
         
         # Load config
@@ -204,7 +216,7 @@ class UnimodalModelWrapper:
             configs: Configuration dictionary
             
         Returns:
-            str: Validated checkpoint path
+            str: Validated checkpoint path (as string for compatibility)
             
         Raises:
             ValueError: If pretrained_model_path not provided
@@ -217,15 +229,24 @@ class UnimodalModelWrapper:
                 "Please provide explicit path to pretrained checkpoint."
             )
         
-        pretrained_path = configs.pretrained_model_path
+        pretrained_path = Path(configs.pretrained_model_path)
         
-        if not os.path.exists(pretrained_path):
+        # Resolve relative to current working directory if not absolute
+        if not pretrained_path.is_absolute():
+            pretrained_path = Path.cwd() / pretrained_path
+        
+        # Resolve to absolute path for clearer error messages
+        pretrained_path = pretrained_path.resolve()
+        
+        if not pretrained_path.exists():
             raise FileNotFoundError(
                 f"Pretrained model checkpoint not found at: {pretrained_path}\n"
+                f"Current working directory: {Path.cwd()}\n"
                 f"Please provide a valid pretrained_model_path in config."
             )
         
-        return pretrained_path
+        # Return as string for compatibility with torch.load
+        return str(pretrained_path)
     
     @staticmethod
     def _load_checkpoint_state_dict(checkpoint_path):
