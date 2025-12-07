@@ -106,18 +106,31 @@ class ExperimentManager:
         # GPU monitor reference (set by gpu_monitoring_context)
         self.gpu_monitor = None
         
-        # Initialize wandb if enabled
-        self.wandb_run = None
-        if config.wandb.enabled:
-            self._init_wandb()
-        
         # Load job history if experiment already exists (for resume)
+        # This must happen before wandb init so we can resume the same wandb run
         self.job_history = self._load_job_history()
         
         # Detect if we're resuming and register new job
         self.resume_info = self._detect_resume()
         if self.resume_info:
             self._register_job_start()
+        
+        # Initialize wandb if enabled
+        # If resuming, use the stored wandb_run_id to resume the same run
+        self.wandb_run = None
+        if config.wandb.enabled:
+            # Check if we have a stored wandb run_id from previous jobs
+            wandb_run_id = self.job_history.get("wandb_run_id")
+            if wandb_run_id and not config.wandb.run_id:
+                # Resume existing wandb run - temporarily set run_id in config
+                original_run_id = config.wandb.run_id
+                config.wandb.run_id = wandb_run_id
+                self._init_wandb()
+                # Restore original run_id (don't modify user's config permanently)
+                config.wandb.run_id = original_run_id
+            else:
+                # New experiment or user explicitly provided run_id
+                self._init_wandb()
     
     def _generate_config_hash(self) -> str:
         """
@@ -504,10 +517,28 @@ class ExperimentManager:
             # Add run_id if specified (for resuming/overwriting runs)
             if self.config.wandb.run_id:
                 init_kwargs['id'] = self.config.wandb.run_id
-                init_kwargs['resume'] = 'allow'  # Allow resuming/overwriting
+                # Use 'must' if resuming (run must exist), 'allow' if user explicitly provided
+                if self.job_history.get("wandb_run_id") == self.config.wandb.run_id:
+                    init_kwargs['resume'] = 'must'  # Must resume existing run
+                else:
+                    init_kwargs['resume'] = 'allow'  # Allow resuming/overwriting
             
             # Initialize wandb run
             self.wandb_run = wandb.init(**init_kwargs)
+            
+            # Store wandb run_id in job_history for resume capability
+            if self.wandb_run and hasattr(self.wandb_run, 'id'):
+                wandb_run_id = self.wandb_run.id
+                if not self.job_history.get("wandb_run_id"):
+                    # First job - store the run_id
+                    self.job_history["wandb_run_id"] = wandb_run_id
+                    self._save_job_history()
+                elif self.job_history.get("wandb_run_id") != wandb_run_id:
+                    # Run ID mismatch - log warning but continue
+                    self.logger.warning(
+                        f"Wandb run_id mismatch: job_history has {self.job_history.get('wandb_run_id')}, "
+                        f"but resumed with {wandb_run_id}. This may indicate a configuration issue."
+                    )
             
             # Log config files as artifacts
             self._log_config_artifacts()
@@ -824,7 +855,8 @@ class ExperimentManager:
                 "jobs": [],
                 "current_epoch": 0,
                 "last_checkpoint": None,
-                "best_checkpoint": None
+                "best_checkpoint": None,
+                "wandb_run_id": None  # Will be set when wandb is initialized
             }
         
         try:
@@ -847,7 +879,8 @@ class ExperimentManager:
                         "jobs": [],
                         "current_epoch": 0,
                         "last_checkpoint": None,
-                        "best_checkpoint": None
+                        "best_checkpoint": None,
+                        "wandb_run_id": None
                     }
             
             return history
@@ -864,7 +897,8 @@ class ExperimentManager:
                 "jobs": [],
                 "current_epoch": 0,
                 "last_checkpoint": None,
-                "best_checkpoint": None
+                "best_checkpoint": None,
+                "wandb_run_id": None
             }
     
     def _save_job_history(self) -> None:
