@@ -29,7 +29,7 @@ suite:
         model_config:
           # NOTE: Update this path after running itransformer_pretraining_test
           # Check the output directory for the actual checkpoint path: output/suites/itransformer_pretraining_test/{experiment_id}/checkpoints/checkpoint.pth
-          pretrained_model_path: "output/experiment_suites/itransformer_pretraining_test_20251205_163130/20251205-163130_5ef325ab0162/checkpoints/best_checkpoint.pth"
+          pretrained_model_path: "output/itransformer_pretraining_test_20251205_163130/20251205-163130_5ef325ab0162/checkpoints/best_checkpoint.pth"
         data:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
