@@ -457,11 +457,19 @@ class Experiment(Exp_Basic):
         """
         logger = self.exp_manager.logger
         
-        # Run validation and testing (metrics accumulate with training metrics)
-        vali_loss = self.vali(vali_loader, criterion)
-        test_loss = self.test(test_loader, criterion)
+        # Check if test evaluation is enabled during training
+        evaluate_test = getattr(self.args, 'evaluate_test_during_training', False)
         
-        # Save all accumulated metrics (train + val + test) for this epoch together
+        # Run validation (always)
+        vali_loss = self.vali(vali_loader, criterion)
+        
+        # Conditionally run test evaluation
+        if evaluate_test:
+            test_loss = self.test(test_loader, criterion)
+        else:
+            test_loss = None  # Test held out until final evaluation
+        
+        # Save all accumulated metrics (train + val + test if enabled) for this epoch together
         if track_per_sample and self.metrics_tracker:
             self.metrics_tracker.save_epoch(self.current_epoch)
         
@@ -476,19 +484,25 @@ class Experiment(Exp_Basic):
                 self.exp_manager.log_file_only(f"Epoch {epoch + 1}: {gpu_summary_str}")
         
         # Log epoch results to console
-        logger.info(f"Epoch: {epoch + 1}, Steps: {train_steps} | Train Loss: {train_loss:.7f} Vali Loss: {vali_loss:.7f} Test Loss: {test_loss:.7f}")
+        if test_loss is not None:
+            logger.info(f"Epoch: {epoch + 1}, Steps: {train_steps} | Train Loss: {train_loss:.7f} Vali Loss: {vali_loss:.7f} Test Loss: {test_loss:.7f}")
+        else:
+            logger.info(f"Epoch: {epoch + 1}, Steps: {train_steps} | Train Loss: {train_loss:.7f} Vali Loss: {vali_loss:.7f}")
         
         # Log metrics to ExperimentManager (and wandb if enabled)
         if self.exp_manager is not None:
             current_lr = model_optim.param_groups[0]['lr']
-            self.exp_manager.log_metrics({
+            metrics_dict = {
                 'train_loss': train_loss,
                 'val_loss': vali_loss,
-                'test_loss': test_loss,
                 'learning_rate': current_lr,
-            }, step=epoch + 1)
+            }
+            # Only log test loss if it was computed
+            if test_loss is not None:
+                metrics_dict['test_loss'] = test_loss
+            self.exp_manager.log_metrics(metrics_dict, step=epoch + 1)
         
-        # Check early stopping condition
+        # Check early stopping condition (only uses validation loss, not test)
         early_stopping(vali_loss, self.model, path)
         should_stop = early_stopping.early_stop
         
@@ -496,12 +510,15 @@ class Experiment(Exp_Basic):
             print("Early stopping")
             # Log final metrics if early stopping
             if self.exp_manager is not None:
-                self.exp_manager.log_metrics({
+                final_metrics = {
                     'best_epoch': epoch + 1,
                     'final_train_loss': train_loss,
                     'final_val_loss': vali_loss,
-                    'final_test_loss': test_loss,
-                })
+                }
+                # Only log test loss if it was computed
+                if test_loss is not None:
+                    final_metrics['final_test_loss'] = test_loss
+                self.exp_manager.log_metrics(final_metrics)
         else:
             # Adjust learning rate if not stopping
             adjust_learning_rate(model_optim, epoch + 1, self.args)

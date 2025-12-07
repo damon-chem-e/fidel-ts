@@ -72,6 +72,9 @@ class TrainingConfig(BaseModel):
     # Tracking per sample metrics
     track_per_sample: bool = Field(default=False, description="Whether to track per-sample metrics (Parquet)")
     
+    # Evaluation during training
+    evaluate_test_during_training: bool = Field(default=False, description="Whether to evaluate on test set during training epochs (default: False to hold out test)")
+    
     model_config = ConfigDict(extra="allow")  # Allow extra fields for flexibility
     
     @model_validator(mode='after')

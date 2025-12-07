@@ -39,6 +39,9 @@ training:
   # Tracking
   track_per_sample: true  # Whether to track per-sample metrics (Parquet) - enables per-sample and per-channel loss tracking
   
+  # Evaluation during training
+  evaluate_test_during_training: false  # Whether to evaluate on test set during training epochs (default: false to hold out test until final evaluation)
+  
 device:
   use_gpu: true
   gpu: 0
