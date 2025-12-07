@@ -40,6 +40,8 @@ suite:
           learning_rate: 8.66e-4
           patience: 5
           epochs: 50
+          track_per_sample: false  # Disable per-sample tracking for initial training
+          evaluate_test_during_training: false  # Only evaluate test at final epoch
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_test"
