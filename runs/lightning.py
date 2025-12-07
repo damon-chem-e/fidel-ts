@@ -137,14 +137,18 @@ def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: 
         >>> config = load_config("configs/experiments/dlinear_solar.yaml")
         >>> run(config)
     """
+    # Detect SLURM job ID from environment if available
+    slurm_job_id = os.environ.get('SLURM_JOB_ID', config.job_id)
+    slurm_job_name = os.environ.get('SLURM_JOB_NAME', config.job_name)
+    
     # Initialize experiment manager
     base_output_dir = output_dir or config.training.experiment_output or "./output"
     exp_manager = ExperimentManager(
         config=config,
         output_dir=base_output_dir,
         experiment_name=config.experiment_name,
-        job_id=config.job_id,
-        job_name=config.job_name,
+        job_id=slurm_job_id,
+        job_name=slurm_job_name,
         suite_name=suite_name,
         suite_info=suite_info
     )

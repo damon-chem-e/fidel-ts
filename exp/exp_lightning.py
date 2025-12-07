@@ -313,23 +313,47 @@ def train_lightning_model(args, exp_manager):
     # Initialize data module
     data_module = TimeSeriesDataModule(args)
     
-    
+    # Check for resume information from exp_manager
+    resume_info = exp_manager.get_resume_info()
+    resume_checkpoint_path = None
+    if resume_info and resume_info.get("checkpoint_path"):
+        resume_checkpoint_path = resume_info["checkpoint_path"]
+        exp_manager.logger.info(f"Resume detected: will resume from checkpoint {resume_checkpoint_path}")
+    elif args.last_ckpt is not None:
+        # Use explicit checkpoint if provided (backward compatibility)
+        resume_checkpoint_path = args.last_ckpt
+        exp_manager.logger.info(f"Using explicit checkpoint: {args.last_ckpt}")
 
-    if args.last_ckpt is not None:
-        # Load the last checkpoint if provided
-        exp_manager.logger.info(f"Loading model from checkpoint: {args.last_ckpt}")
-        model = TimeSeriesLightningModel.load_from_checkpoint(args.last_ckpt, args=args, exp_manager=exp_manager)
-        checkpoint_path = os.path.dirname(args.last_ckpt)
-        exp_manager.logger.info(f"Checkpoint path: {checkpoint_path}")
+    # Initialize model (Lightning will load from checkpoint during trainer.fit if ckpt_path is provided)
+    model = TimeSeriesLightningModel(args, exp_manager=exp_manager)
+    # Use experiment_id from exp_manager
+    checkpoint_path = str(exp_manager.get_checkpoint_dir())
     
-    else:
-        # Initialize model
-        model = TimeSeriesLightningModel(args, exp_manager=exp_manager)
-        # Use experiment_id from exp_manager
-        checkpoint_path = str(exp_manager.get_checkpoint_dir())
+    if not os.path.exists(checkpoint_path):
+        os.makedirs(checkpoint_path)
+    
+    # Create callback for job history updates
+    class JobHistoryCallback(pl.Callback):
+        """Callback to update job history after each epoch."""
+        def __init__(self, exp_manager):
+            self.exp_manager = exp_manager
         
-        if not os.path.exists(checkpoint_path):
-            os.makedirs(checkpoint_path)
+        def on_train_epoch_end(self, trainer, pl_module):
+            """Update job history after each training epoch."""
+            if trainer.sanity_checking:
+                return
+            
+            current_epoch = trainer.current_epoch + 1  # Lightning uses 0-indexed, we use 1-indexed
+            
+            # Get checkpoint path (last checkpoint)
+            checkpoint_path = None
+            if hasattr(trainer.checkpoint_callback, 'last_model_path') and trainer.checkpoint_callback.last_model_path:
+                checkpoint_path = trainer.checkpoint_callback.last_model_path
+            
+            self.exp_manager.update_current_epoch(
+                epoch=current_epoch,
+                checkpoint_path=checkpoint_path
+            )
     
     # Configure callbacks
     early_stopping = EarlyStopping(
@@ -348,6 +372,8 @@ def train_lightning_model(args, exp_manager):
         save_last=True
     )
     
+    job_history_callback = JobHistoryCallback(exp_manager)
+    
     
     # Configure logger
     # Use experiment_id from exp_manager
@@ -365,7 +391,7 @@ def train_lightning_model(args, exp_manager):
         'accelerator': 'gpu' if args.use_gpu else 'cpu',
         'devices': args.device_ids if args.use_multi_gpu else [args.gpu] if args.use_gpu else None,
         'strategy': 'ddp' if args.use_multi_gpu else None,
-        'callbacks': [early_stopping, checkpoint_callback],
+        'callbacks': [early_stopping, checkpoint_callback, job_history_callback],
         'logger': logger,
         'deterministic': True,
         'precision': getattr(args, 'precision', 32),
@@ -389,7 +415,8 @@ def train_lightning_model(args, exp_manager):
     exp_manager.logger.info('>>>>>>>start training >>>>>>>>>>>>>>>>>>>>>>>>>>>')
         
     if not args.test:
-        trainer.fit(model, data_module)
+        # Resume from checkpoint if available
+        trainer.fit(model, data_module, ckpt_path=resume_checkpoint_path)
     
     # Get the path to the best model saved by the checkpoint callback
     best_model_path = checkpoint_callback.best_model_path
@@ -424,5 +451,32 @@ def train_lightning_model(args, exp_manager):
             json.dump({'average loss of all subsets': np.mean(list(info_results.values()))}, f)
     if args.test:
         return
+    
+    # Register job end in job history
+    final_epoch = trainer.current_epoch + 1 if hasattr(trainer, 'current_epoch') else args.train_epochs
+    final_checkpoint = checkpoint_callback.last_model_path if hasattr(checkpoint_callback, 'last_model_path') else best_model_path
+    
+    # Determine job status
+    if final_epoch >= args.train_epochs:
+        status = "completed"
+    else:
+        status = "timeout"  # Job likely timed out
+    
+    # Get final metrics if available
+    final_train_loss = None
+    final_val_loss = None
+    if hasattr(trainer, 'callback_metrics'):
+        if 'train_loss' in trainer.callback_metrics:
+            final_train_loss = trainer.callback_metrics['train_loss'].item()
+        if 'val_loss' in trainer.callback_metrics:
+            final_val_loss = trainer.callback_metrics['val_loss'].item()
+    
+    exp_manager.register_job_end(
+        end_epoch=final_epoch,
+        status=status,
+        checkpoint_path=final_checkpoint,
+        final_train_loss=final_train_loss,
+        final_val_loss=final_val_loss
+    )
     
     return best_model_path  # Return the wrapped model for compatibility

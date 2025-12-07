@@ -525,6 +525,104 @@ class Experiment(Exp_Basic):
         
         return vali_loss, test_loss, should_stop
 
+    def _load_resume_checkpoint(self, model_optim) -> int:
+        """
+        Load checkpoint if resuming from a previous job.
+        
+        Args:
+            model_optim: Optimizer instance (for loading optimizer state)
+        
+        Returns:
+            Start epoch (0-indexed) to begin training from
+        """
+        if not self.exp_manager:
+            return 0
+        
+        resume_info = self.exp_manager.get_resume_info()
+        if not resume_info:
+            return 0
+        
+        start_epoch = resume_info["start_epoch"] - 1  # Convert to 0-indexed
+        checkpoint_path = resume_info.get("checkpoint_path")
+        
+        # Load checkpoint if available
+        if checkpoint_path and os.path.exists(checkpoint_path):
+            self.exp_manager.logger.info(f"Loading checkpoint from: {checkpoint_path}")
+            try:
+                import torch
+                checkpoint = torch.load(checkpoint_path, map_location=self.device)
+                
+                # Load model state
+                if 'model_state_dict' in checkpoint:
+                    self.model.load_state_dict(checkpoint['model_state_dict'])
+                else:
+                    # Try loading directly (for Lightning checkpoints converted to PyTorch format)
+                    self.model.load_state_dict(checkpoint)
+                
+                # Load optimizer state if available
+                if 'optimizer_state_dict' in checkpoint and model_optim is not None:
+                    model_optim.load_state_dict(checkpoint['optimizer_state_dict'])
+                
+                self.exp_manager.logger.info(f"Resumed from checkpoint, starting at epoch {start_epoch + 1}")
+            except Exception as e:
+                self.exp_manager.logger.warning(f"Failed to load checkpoint: {e}. Starting from scratch.")
+                return 0
+        else:
+            self.exp_manager.logger.info(f"Resuming from epoch {start_epoch + 1} (no checkpoint to load)")
+        
+        return start_epoch
+    
+    def _update_job_history_after_epoch(self, path: str) -> None:
+        """
+        Update job history after each epoch completes.
+        
+        Args:
+            path: Checkpoint directory path
+        """
+        if not self.exp_manager:
+            return
+        
+        # Get checkpoint path if available
+        checkpoint_path = None
+        best_checkpoint = os.path.join(path, 'checkpoint.pth')
+        if os.path.exists(best_checkpoint):
+            checkpoint_path = best_checkpoint
+        
+        self.exp_manager.update_current_epoch(
+            epoch=self.current_epoch,
+            checkpoint_path=checkpoint_path
+        )
+    
+    def _register_job_end(self, path: str, train_loss: float, vali_loss: float) -> None:
+        """
+        Register job end in job history.
+        
+        Args:
+            path: Checkpoint directory path
+            train_loss: Final training loss
+            vali_loss: Final validation loss
+        """
+        if not self.exp_manager:
+            return
+        
+        final_checkpoint = os.path.join(path, 'checkpoint.pth')
+        checkpoint_path = final_checkpoint if os.path.exists(final_checkpoint) else None
+        
+        # Determine job status (completed if reached end, otherwise timeout)
+        final_epoch = self.current_epoch
+        if final_epoch >= self.args.train_epochs:
+            status = "completed"
+        else:
+            status = "timeout"  # Job likely timed out before completing all epochs
+        
+        self.exp_manager.register_job_end(
+            end_epoch=final_epoch,
+            status=status,
+            checkpoint_path=checkpoint_path,
+            final_train_loss=train_loss,
+            final_val_loss=vali_loss
+        )
+    
     def _finalize_training(self, path, model_optim, train_loss, vali_loss, test_loss):
         """
         Load best model checkpoint and finalize experiment tracking.
@@ -596,8 +694,11 @@ class Experiment(Exp_Basic):
         
         train_steps = len(train_loader)
         
+        # Load resume checkpoint if available
+        start_epoch = self._load_resume_checkpoint(model_optim)
+        
         # Training loop over all epochs
-        for epoch in range(self.args.train_epochs):
+        for epoch in range(start_epoch, self.args.train_epochs):
             self.current_epoch = epoch + 1
             
             # Train one complete epoch
@@ -612,12 +713,18 @@ class Experiment(Exp_Basic):
                 criterion, early_stopping, path, model_optim, track_per_sample, train_steps, epoch_time
             )
             
+            # Update job history after each epoch
+            self._update_job_history_after_epoch(path)
+            
             # Break if early stopping triggered
             if should_stop:
                 break
         
         # Finalize training: load best model and save final checkpoint
         self._finalize_training(path, model_optim, train_loss, vali_loss, test_loss)
+        
+        # Register job end in job history
+        self._register_job_end(path, train_loss, vali_loss)
         
         return self.model
 

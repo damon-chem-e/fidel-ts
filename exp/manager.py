@@ -10,7 +10,6 @@ This module provides the ExperimentManager class that handles:
 """
 
 import os
-import sys
 import json
 import hashlib
 import shutil
@@ -68,8 +67,14 @@ class ExperimentManager:
         self.suite_name = suite_name
         self.suite_info = suite_info or {}
         
-        # Generate experiment ID from config hash
-        self.experiment_id = self._generate_experiment_id()
+        # Determine experiment ID: use explicit resume_experiment_id if provided, otherwise generate new
+        if config.resume_experiment_id:
+            # Resuming existing experiment - use provided ID
+            self.experiment_id = config.resume_experiment_id
+        else:
+            # New experiment - generate ID from config hash
+            config_hash = self._generate_config_hash()
+            self.experiment_id = self._generate_experiment_id(config_hash)
         
         # Create experiment directory structure
         # If part of a suite, create directory under suite folder
@@ -79,10 +84,17 @@ class ExperimentManager:
             self.experiment_dir = suite_dir / self.experiment_id
         else:
             self.experiment_dir = self.output_dir / self.experiment_id
+        
         self._create_experiment_structure()
         
         # Set up proper logging (doesn't interfere with tqdm/rich progress bars)
         self._setup_logging()
+        
+        # Log resume detection after logger is set up
+        if config.resume_experiment_id:
+            self.logger.info(f"Resuming existing experiment: {self.experiment_id}")
+        else:
+            self.logger.info(f"Starting new experiment: {self.experiment_id}")
         
         # Capture metadata
         self.metadata = self._capture_metadata()
@@ -98,13 +110,21 @@ class ExperimentManager:
         self.wandb_run = None
         if config.wandb.enabled:
             self._init_wandb()
+        
+        # Load job history if experiment already exists (for resume)
+        self.job_history = self._load_job_history()
+        
+        # Detect if we're resuming and register new job
+        self.resume_info = self._detect_resume()
+        if self.resume_info:
+            self._register_job_start()
     
-    def _generate_experiment_id(self) -> str:
+    def _generate_config_hash(self) -> str:
         """
-        Generate unique experiment ID from config hash.
+        Generate config hash for experiment matching.
         
         Returns:
-            Experiment ID in format: {timestamp}_{short_hash}
+            12-character hex hash of config
         """
         # Serialize config to dict (excluding metadata fields that don't affect reproducibility)
         config_dict = self.config.model_dump(exclude={
@@ -117,10 +137,26 @@ class ExperimentManager:
         # Generate hash
         config_hash = hashlib.sha256(config_json.encode()).hexdigest()[:12]
         
+        return config_hash
+    
+    def _generate_experiment_id(self, config_hash: Optional[str] = None) -> str:
+        """
+        Generate unique experiment ID from config hash.
+        
+        Args:
+            config_hash: Optional pre-computed config hash
+        
+        Returns:
+            Experiment ID in format: {timestamp}_{short_hash}
+        """
+        if config_hash is None:
+            config_hash = self._generate_config_hash()
+        
         # Combine with timestamp for human readability
         timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
         
         return f"{timestamp}_{config_hash}"
+    
     
     def _create_experiment_structure(self) -> None:
         """Create experiment directory structure."""
@@ -757,4 +793,276 @@ class ExperimentManager:
     def get_console(self) -> Console:
         """Get Rich Console instance for terminal output."""
         return self.console
+    
+    def _load_job_history(self) -> Dict[str, Any]:
+        """
+        Load job history from experiment directory if it exists.
+        
+        Returns:
+            Dictionary containing job history, or empty dict if no history exists
+        """
+        job_history_path = self.experiment_dir / "job_history.json"
+        
+        # If resuming, validate that experiment exists
+        if self.config.resume_experiment_id:
+            if not job_history_path.exists():
+                raise ValueError(
+                    f"Cannot resume experiment {self.experiment_id}: job_history.json not found. "
+                    f"Ensure the experiment_id is correct and the experiment directory exists."
+                )
+            if not self.experiment_dir.exists():
+                raise ValueError(
+                    f"Cannot resume experiment {self.experiment_id}: experiment directory not found. "
+                    f"Ensure the experiment_id is correct."
+                )
+        
+        if not job_history_path.exists():
+            # First job - initialize empty history
+            return {
+                "experiment_id": self.experiment_id,
+                "total_epochs": self.config.training.epochs,
+                "jobs": [],
+                "current_epoch": 0,
+                "last_checkpoint": None,
+                "best_checkpoint": None
+            }
+        
+        try:
+            with open(job_history_path, 'r', encoding='utf-8') as f:
+                history = json.load(f)
+            
+            # Validate history structure and experiment_id match
+            if "experiment_id" not in history or history["experiment_id"] != self.experiment_id:
+                if self.config.resume_experiment_id:
+                    raise ValueError(
+                        f"Experiment ID mismatch: expected {self.experiment_id}, "
+                        f"but job_history.json has {history.get('experiment_id')}. "
+                        f"Ensure resume_experiment_id matches exactly."
+                    )
+                else:
+                    self.logger.warning(f"Job history experiment_id mismatch. Expected {self.experiment_id}, got {history.get('experiment_id')}. Creating new history.")
+                    return {
+                        "experiment_id": self.experiment_id,
+                        "total_epochs": self.config.training.epochs,
+                        "jobs": [],
+                        "current_epoch": 0,
+                        "last_checkpoint": None,
+                        "best_checkpoint": None
+                    }
+            
+            return history
+        except (json.JSONDecodeError, IOError) as e:
+            if self.config.resume_experiment_id:
+                raise ValueError(
+                    f"Failed to load job history for resume: {e}. "
+                    f"Ensure the experiment exists and job_history.json is valid."
+                )
+            self.logger.warning(f"Failed to load job history: {e}. Creating new history.")
+            return {
+                "experiment_id": self.experiment_id,
+                "total_epochs": self.config.training.epochs,
+                "jobs": [],
+                "current_epoch": 0,
+                "last_checkpoint": None,
+                "best_checkpoint": None
+            }
+    
+    def _save_job_history(self) -> None:
+        """Save job history to experiment directory."""
+        job_history_path = self.experiment_dir / "job_history.json"
+        with open(job_history_path, 'w', encoding='utf-8') as f:
+            json.dump(self.job_history, f, indent=2, default=str)
+    
+    def _detect_resume(self) -> Optional[Dict[str, Any]]:
+        """
+        Detect if we should resume from a previous checkpoint.
+        
+        Returns:
+            Dictionary with resume information (start_epoch, checkpoint_path) or None if starting fresh
+        """
+        # Check if we have any completed jobs
+        if not self.job_history.get("jobs"):
+            # No previous jobs - start fresh
+            return None
+        
+        # Get last completed job
+        completed_jobs = [job for job in self.job_history["jobs"] if job.get("status") in ["completed", "timeout"]]
+        if not completed_jobs:
+            # No completed jobs - check if there's a running job
+            running_jobs = [job for job in self.job_history["jobs"] if job.get("status") == "running"]
+            if running_jobs:
+                # Previous job might have timed out - use its last checkpoint
+                last_job = running_jobs[-1]
+                last_epoch = self.job_history.get("current_epoch", 0)
+                checkpoint_path = self._find_latest_checkpoint()
+                if checkpoint_path:
+                    return {
+                        "start_epoch": last_epoch + 1,
+                        "checkpoint_path": str(checkpoint_path),
+                        "last_epoch": last_epoch
+                    }
+            return None
+        
+        # Get the most recent completed job
+        last_job = completed_jobs[-1]
+        last_epoch = last_job.get("end_epoch", self.job_history.get("current_epoch", 0))
+        
+        # Check if training is complete
+        if last_epoch >= self.job_history.get("total_epochs", self.config.training.epochs):
+            self.logger.info(f"Training already completed (epoch {last_epoch}/{self.job_history.get('total_epochs', self.config.training.epochs)})")
+            return None
+        
+        # Find the latest checkpoint
+        checkpoint_path = self._find_latest_checkpoint()
+        if not checkpoint_path:
+            self.logger.warning("Resume detected but no checkpoint found. Starting from last completed epoch.")
+            return {
+                "start_epoch": last_epoch + 1,
+                "checkpoint_path": None,
+                "last_epoch": last_epoch
+            }
+        
+        self.logger.info(f"Resuming training from epoch {last_epoch + 1} (last completed: {last_epoch})")
+        return {
+            "start_epoch": last_epoch + 1,
+            "checkpoint_path": str(checkpoint_path),
+            "last_epoch": last_epoch
+        }
+    
+    def _find_latest_checkpoint(self) -> Optional[Path]:
+        """
+        Find the latest checkpoint in the checkpoint directory.
+        
+        Returns:
+            Path to latest checkpoint, or None if no checkpoint found
+        """
+        checkpoint_dir = self.get_checkpoint_dir()
+        
+        if not checkpoint_dir.exists():
+            return None
+        
+        # For PyTorch: look for checkpoint.pth or epoch-based checkpoints
+        # For Lightning: look for last.ckpt or epoch-based checkpoints
+        
+        # Try Lightning last checkpoint first
+        last_ckpt = checkpoint_dir / "last.ckpt"
+        if last_ckpt.exists():
+            return last_ckpt
+        
+        # Try PyTorch checkpoint.pth
+        pytorch_ckpt = checkpoint_dir / "checkpoint.pth"
+        if pytorch_ckpt.exists():
+            return pytorch_ckpt
+        
+        # Look for epoch-based checkpoints (Lightning format: checkpoint-{epoch:02d}-{val_loss:.6f}.ckpt)
+        epoch_checkpoints = list(checkpoint_dir.glob("checkpoint-*.ckpt"))
+        if epoch_checkpoints:
+            # Sort by modification time, return most recent
+            epoch_checkpoints.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            return epoch_checkpoints[0]
+        
+        # Look for any .pth files
+        pth_checkpoints = list(checkpoint_dir.glob("*.pth"))
+        if pth_checkpoints:
+            pth_checkpoints.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            return pth_checkpoints[0]
+        
+        return None
+    
+    def _register_job_start(self) -> None:
+        """Register the start of a new job in job history."""
+        job_entry = {
+            "job_id": self.job_id,
+            "slurm_job_id": os.environ.get("SLURM_JOB_ID", self.job_id),
+            "job_name": self.job_name or os.environ.get("SLURM_JOB_NAME", "training_job"),
+            "start_time": datetime.now().isoformat(),
+            "end_time": None,
+            "start_epoch": self.resume_info["start_epoch"] if self.resume_info else 0,
+            "end_epoch": None,
+            "epochs_completed": [],
+            "status": "running",
+            "checkpoint_path": None,
+            "final_train_loss": None,
+            "final_val_loss": None
+        }
+        
+        self.job_history["jobs"].append(job_entry)
+        self._save_job_history()
+        
+        if self.resume_info:
+            self.logger.info(f"Registered job start: SLURM_JOB_ID={job_entry['slurm_job_id']}, resuming from epoch {self.resume_info['start_epoch']}")
+        else:
+            self.logger.info(f"Registered job start: SLURM_JOB_ID={job_entry['slurm_job_id']}, starting from epoch 0")
+    
+    def register_job_end(
+        self,
+        end_epoch: int,
+        status: str = "completed",
+        checkpoint_path: Optional[str] = None,
+        final_train_loss: Optional[float] = None,
+        final_val_loss: Optional[float] = None
+    ) -> None:
+        """
+        Register the end of the current job in job history.
+        
+        Args:
+            end_epoch: Last epoch completed in this job
+            status: Job status ("completed", "timeout", "failed")
+            checkpoint_path: Path to final checkpoint for this job
+            final_train_loss: Final training loss
+            final_val_loss: Final validation loss
+        """
+        if not self.job_history.get("jobs"):
+            self.logger.warning("No job history to update. Job may not have been registered.")
+            return
+        
+        # Update the last (current) job entry
+        current_job = self.job_history["jobs"][-1]
+        current_job["end_time"] = datetime.now().isoformat()
+        current_job["end_epoch"] = end_epoch
+        current_job["status"] = status
+        current_job["checkpoint_path"] = checkpoint_path
+        current_job["final_train_loss"] = final_train_loss
+        current_job["final_val_loss"] = final_val_loss
+        
+        # Update global tracking
+        self.job_history["current_epoch"] = end_epoch
+        if checkpoint_path:
+            self.job_history["last_checkpoint"] = checkpoint_path
+        
+        self._save_job_history()
+        self.logger.info(f"Registered job end: epoch {end_epoch}, status={status}")
+    
+    def update_current_epoch(self, epoch: int, checkpoint_path: Optional[str] = None) -> None:
+        """
+        Update current epoch in job history (called after each epoch).
+        
+        Args:
+            epoch: Current epoch number (1-indexed)
+            checkpoint_path: Optional path to checkpoint saved at this epoch
+        """
+        if not self.job_history.get("jobs"):
+            return
+        
+        # Update current job's epochs_completed list
+        current_job = self.job_history["jobs"][-1]
+        if epoch not in current_job["epochs_completed"]:
+            current_job["epochs_completed"].append(epoch)
+        
+        # Update global tracking
+        self.job_history["current_epoch"] = epoch
+        if checkpoint_path:
+            self.job_history["last_checkpoint"] = checkpoint_path
+        
+        # Save periodically (every epoch)
+        self._save_job_history()
+    
+    def get_resume_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Get resume information for training.
+        
+        Returns:
+            Dictionary with resume info (start_epoch, checkpoint_path) or None
+        """
+        return self.resume_info
 
