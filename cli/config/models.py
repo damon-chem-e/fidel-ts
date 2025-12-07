@@ -121,6 +121,7 @@ class ExperimentConfig(BaseModel):
     # Optional fields
     hf_mirror: bool = Field(default=False, description="Use HuggingFace mirror")
     hf_offline: bool = Field(default=False, description="Use HuggingFace offline mode")
+    base_data_path: Optional[str] = Field(default=None, description="Base path to replace './data' in all data config paths")
     
     # Optional nested configs (as string paths)
     plotting: Optional[str] = Field(default=None, description="Path to plotting config")

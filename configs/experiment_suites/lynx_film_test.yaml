@@ -31,8 +31,6 @@ suite:
         data:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
-        data_config:
-          root_path: "/nfs/sloanlab007/projects/chimera_proj/fidel-ts/data/NYC_traffic_speed/time_series"
         training:
           input_len: 360
           output_len: 24
@@ -45,4 +43,5 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/film_test"
+        base_data_path: "/nfs/sloanlab007/projects/chimera_proj/fidel-ts/data"
 
