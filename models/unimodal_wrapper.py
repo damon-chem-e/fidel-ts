@@ -253,6 +253,12 @@ class UnimodalModelWrapper:
         """
         Load state dict from checkpoint, handling different formats.
         
+        Supports multiple checkpoint formats:
+        - PyTorch format with 'state_dict' key
+        - PyTorch format with 'model_state_dict' key (common in training scripts)
+        - PyTorch format with direct state dict (no wrapper)
+        - Lightning format (.ckpt files)
+        
         Args:
             checkpoint_path: Path to checkpoint file
             
@@ -280,9 +286,18 @@ class UnimodalModelWrapper:
                 state_dict = checkpoint
         else:
             # PyTorch checkpoint format (.pth)
-            if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
-                state_dict = checkpoint['state_dict']
+            if isinstance(checkpoint, dict):
+                # Check for 'model_state_dict' first (common in training scripts)
+                if 'model_state_dict' in checkpoint:
+                    state_dict = checkpoint['model_state_dict']
+                # Check for 'state_dict' (standard PyTorch format)
+                elif 'state_dict' in checkpoint:
+                    state_dict = checkpoint['state_dict']
+                else:
+                    # Direct state dict (no wrapper)
+                    state_dict = checkpoint
             else:
+                # Not a dict, assume it's the state dict directly
                 state_dict = checkpoint
         
         return state_dict
