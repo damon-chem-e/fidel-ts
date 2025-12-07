@@ -60,7 +60,8 @@ class ExperimentManager:
             suite_info: Optional suite information dictionary (name, description, tags, etc.)
         """
         self.config = config
-        self.output_dir = Path(output_dir)
+        # Ensure output_dir is absolute for reliable path operations
+        self.output_dir = Path(output_dir).resolve()
         self.experiment_name = experiment_name or config.experiment_name
         self.job_id = job_id or config.job_id
         self.job_name = job_name or config.job_name
@@ -81,9 +82,9 @@ class ExperimentManager:
         if self.suite_name:
             suite_dir = self.output_dir / self.suite_name
             suite_dir.mkdir(parents=True, exist_ok=True)
-            self.experiment_dir = suite_dir / self.experiment_id
+            self.experiment_dir = (suite_dir / self.experiment_id).resolve()
         else:
-            self.experiment_dir = self.output_dir / self.experiment_id
+            self.experiment_dir = (self.output_dir / self.experiment_id).resolve()
         
         self._create_experiment_structure()
         
@@ -660,6 +661,8 @@ class ExperimentManager:
     def _save_metrics(self) -> None:
         """Save metrics to JSON file."""
         metrics_path = self.experiment_dir / "metrics" / "metrics.json"
+        # Ensure directory exists before writing
+        metrics_path.parent.mkdir(parents=True, exist_ok=True)
         with open(metrics_path, 'w', encoding='utf-8') as f:
             json.dump(self.metrics, f, indent=2, default=str)
     

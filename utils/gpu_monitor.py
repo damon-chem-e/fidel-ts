@@ -195,6 +195,11 @@ class GpuMonitor:
         
         # Write CSV file
         try:
+            # Ensure output directory exists before writing
+            out_dir = os.path.dirname(self.out_csv)
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
+            
             with open(self.out_csv, 'w', newline='') as f:
                 w = csv.writer(f)
                 w.writerow([
