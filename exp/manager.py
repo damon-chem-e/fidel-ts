@@ -80,9 +80,25 @@ class ExperimentManager:
         # Create experiment directory structure
         # If part of a suite, create directory under suite folder
         if self.suite_name:
-            suite_dir = self.output_dir / self.suite_name
-            suite_dir.mkdir(parents=True, exist_ok=True)
-            self.experiment_dir = (suite_dir / self.experiment_id).resolve()
+            # If resuming, use explicit resume_suite_id if provided
+            if config.resume_experiment_id:
+                if config.resume_suite_id:
+                    # Use the explicitly provided suite directory
+                    suite_dir = self.output_dir / config.resume_suite_id
+                    self.experiment_dir = (suite_dir / self.experiment_id).resolve()
+                    # Update suite_name to match the resume suite
+                    self.suite_name = config.resume_suite_id
+                else:
+                    # Resuming but no resume_suite_id provided - this is an error for suite experiments
+                    raise ValueError(
+                        f"Cannot resume suite experiment {self.experiment_id} without resume_suite_id. "
+                        f"When resuming a suite experiment, both resume_experiment_id and resume_suite_id must be provided."
+                    )
+            else:
+                # New experiment - create new suite directory if it doesn't exist
+                suite_dir = self.output_dir / self.suite_name
+                suite_dir.mkdir(parents=True, exist_ok=True)
+                self.experiment_dir = (suite_dir / self.experiment_id).resolve()
         else:
             self.experiment_dir = (self.output_dir / self.experiment_id).resolve()
         
@@ -93,7 +109,10 @@ class ExperimentManager:
         
         # Log resume detection after logger is set up
         if config.resume_experiment_id:
-            self.logger.info(f"Resuming existing experiment: {self.experiment_id}")
+            if self.suite_name:
+                self.logger.info(f"Resuming existing experiment: {self.experiment_id} in suite: {self.suite_name}")
+            else:
+                self.logger.info(f"Resuming existing experiment: {self.experiment_id}")
         else:
             self.logger.info(f"Starting new experiment: {self.experiment_id}")
         
@@ -132,6 +151,7 @@ class ExperimentManager:
             else:
                 # New experiment or user explicitly provided run_id
                 self._init_wandb()
+    
     
     def _generate_config_hash(self) -> str:
         """
