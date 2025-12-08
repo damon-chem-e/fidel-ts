@@ -46,6 +46,11 @@ class Model(nn.Module):
             news: News embeddings [B, l, news_num, text_dim]
             channel_description: Channel descriptions [B, 1, C, d_model]
         """
+        # Ensure input is on the same device as the unimodal model
+        # This prevents device mismatch errors when model is on GPU but input is on CPU
+        unimodal_device = next(self.unimodal_wrapper.model.parameters()).device
+        x = x.to(unimodal_device)
+        
         # Step 1: Normalize input using wrapper's normalization scheme
         x_norm, norm_params = self.unimodal_wrapper.normalize_input(x)
         
@@ -76,3 +81,38 @@ class Model(nn.Module):
         final_pred = self.unimodal_wrapper.denormalize_output(final_pred_norm, norm_params)
         
         return final_pred
+    
+    def move_to_device(self, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, 
+                      hetero_x_time, hetero_y_time, hetero_general, hetero_channel, device):
+        """
+        Move data to device (same as TGTSF for compatibility).
+        
+        This method ensures all model components and input tensors are moved to
+        the specified device. It's critical for proper GPU/CPU device placement.
+        
+        Args:
+            seq_x: Input sequences
+            seq_y: Target sequences
+            x_time: Input timestamps
+            y_time: Target timestamps
+            x_hetero: Input heterogeneous features
+            y_hetero: Target heterogeneous features
+            hetero_x_time: Heterogeneous input timestamps
+            hetero_y_time: Heterogeneous target timestamps
+            hetero_general: General heterogeneous features
+            hetero_channel: Channel descriptions
+            device: Target device
+            
+        Returns:
+            tuple: All inputs moved to device
+        """
+        # Move data tensors to device
+        seq_x = seq_x.float().to(device)
+        seq_y = seq_y.float().to(device)
+        hetero_channel = hetero_channel.float().to(device)
+        y_hetero = y_hetero.float().to(device)
+        
+        # Move unimodal model to device (critical for device consistency)
+        self.unimodal_wrapper.model = self.unimodal_wrapper.model.to(device)
+        
+        return seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel

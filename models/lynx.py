@@ -199,6 +199,11 @@ class Model(nn.Module):
         Returns:
             final_pred: Final prediction [B, pred_len, C]
         """
+        # Ensure input is on the same device as the unimodal model
+        # This prevents device mismatch errors when model is on GPU but input is on CPU
+        unimodal_device = next(self.unimodal_wrapper.model.parameters()).device
+        x = x.to(unimodal_device)
+        
         # Step 1: Normalize input using wrapper's normalization scheme
         x_norm, norm_params = self.unimodal_wrapper.normalize_input(x)
         # norm_params contains the normalization data (mean, std, etc.)
