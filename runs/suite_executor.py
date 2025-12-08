@@ -148,24 +148,58 @@ class SuiteExecutor:
         
         # Set up suite-specific logging
         suite_name = self.suite_info.get('name', 'unknown')
-        suite_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_file = Path(self.log_dir) / f"{suite_name}_{suite_timestamp}.log"
+        
+        # Check for suite-level resume configuration
+        # If resuming, all experiments in the suite must be resuming from the same suite
+        resume_suite_id = self.suite_info.get('resume_suite_id')
+        
+        if resume_suite_id:
+            # Resuming - use existing suite directory
+            self.suite_name_base = suite_name
+            # Extract timestamp from resume_suite_id (format: suite_name_YYYYMMDD_HHMMSS)
+            # The resume_suite_id should be the full suite directory name
+            self.suite_name = resume_suite_id
+            # Try to extract timestamp if possible, otherwise use current time for logging
+            if '_' in resume_suite_id:
+                parts = resume_suite_id.rsplit('_', 1)
+                if len(parts) == 2 and len(parts[1]) == 15:  # YYYYMMDD_HHMMSS format
+                    self.suite_timestamp = parts[1]
+                else:
+                    self.suite_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            else:
+                self.suite_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            self.suite_dir = self.output_dir / self.suite_name
+            # Don't create directory if it doesn't exist - it should already exist for resume
+            if not self.suite_dir.exists():
+                raise ValueError(
+                    f"Cannot resume suite: suite directory '{self.suite_dir}' does not exist. "
+                    f"Ensure resume_suite_id '{resume_suite_id}' is correct."
+                )
+            logger.info(f"Resuming suite: {self.suite_name}")
+        else:
+            # New suite - create new directory with timestamp
+            suite_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            self.suite_name_base = suite_name
+            self.suite_timestamp = suite_timestamp
+            self.suite_name = f"{suite_name}_{suite_timestamp}"
+            self.suite_dir = self.output_dir / self.suite_name
+            self.suite_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Initialized new suite: {self.suite_name}")
+        
+        # Set up logging (use current timestamp for log file even when resuming)
+        log_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_file = Path(self.log_dir) / f"{suite_name}_{log_timestamp}.log"
         file_handler = logging.FileHandler(log_file)
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(file_handler)
         
-        # Create suite directory in output directory with timestamp for uniqueness
-        self.suite_name_base = suite_name
-        self.suite_timestamp = suite_timestamp
-        self.suite_name = f"{suite_name}_{suite_timestamp}"
-        self.suite_dir = self.output_dir / self.suite_name
-        self.suite_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Save suite-level metadata
-        self._save_suite_metadata()
-        
-        logger.info(f"Initialized suite executor for: {self.suite_name}")
+        # Save suite-level metadata (only for new suites, or update existing for resume)
+        if not resume_suite_id:
+            self._save_suite_metadata()
+        else:
+            # When resuming, don't overwrite existing metadata, but log that we're resuming
+            logger.info(f"Resuming existing suite (metadata preserved): {self.suite_name}")
     
     def _save_suite_metadata(self) -> None:
         """Save suite-level metadata to suite directory."""
@@ -204,6 +238,22 @@ class SuiteExecutor:
             exp for exp in self.suite_info.get('experiments', [])
             if exp.get('enabled', True)
         ]
+        
+        # Validate resume configuration: if suite is resuming, all experiments must have resume_experiment_id
+        if self.suite_info.get('resume_suite_id'):
+            missing_resume_ids = []
+            for exp in experiments:
+                overrides = exp.get('overrides', {})
+                if 'resume_experiment_id' not in overrides:
+                    missing_resume_ids.append(exp.get('name', 'unknown'))
+            
+            if missing_resume_ids:
+                raise ValueError(
+                    f"Suite is resuming (resume_suite_id: {self.suite_info.get('resume_suite_id')}), "
+                    f"but the following experiments are missing 'resume_experiment_id' in their overrides: "
+                    f"{', '.join(missing_resume_ids)}. "
+                    f"When resuming a suite, all enabled experiments must specify their resume_experiment_id."
+                )
         
         logger.info(f"Starting suite execution: {len(experiments)} experiments")
         
@@ -259,6 +309,18 @@ class SuiteExecutor:
         
         if not template_path:
             raise ValueError(f"Template path not specified for experiment '{exp_name}'")
+        
+        # If suite is resuming, inject resume_suite_id into experiment overrides
+        # and validate that resume_experiment_id is set for this experiment
+        if self.suite_info.get('resume_suite_id'):
+            if 'resume_experiment_id' not in overrides:
+                raise ValueError(
+                    f"Suite is resuming (resume_suite_id: {self.suite_info.get('resume_suite_id')}), "
+                    f"but experiment '{exp_name}' does not have 'resume_experiment_id' set in its overrides. "
+                    f"When resuming a suite, all experiments must specify their resume_experiment_id."
+                )
+            # Inject resume_suite_id from suite level into experiment overrides
+            overrides['resume_suite_id'] = self.suite_info.get('resume_suite_id')
         
         # Load template
         template = load_template(template_path)

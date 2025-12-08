@@ -13,6 +13,9 @@ suite:
     parallel: false
     continue_on_error: true
     log_dir: "./logs/suites/tgtsf_test"
+  
+  # Resume configuration (suite-level)
+  resume_suite_id: "tgtsf_test_20251207_145025"
     
   # Experiments in this suite
   experiments:
@@ -40,8 +43,8 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/tgtsf_test"
-        # Resume configuration - all required when resuming suite experiments
+        
+        # Resume configuration (experiment-level)
         resume_experiment_id: "20251207-145025_30357cc62e44"
-        resume_suite_id: "tgtsf_test_20251207_145025"
         mark_last_job_complete: true  # Mark the previous running job as complete/timeout
 
