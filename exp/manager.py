@@ -130,10 +130,11 @@ class ExperimentManager:
         # This must happen before wandb init so we can resume the same wandb run
         self.job_history = self._load_job_history()
         
-        # Detect if we're resuming and register new job
+        # Detect if we're resuming
         self.resume_info = self._detect_resume()
-        if self.resume_info:
-            self._register_job_start()
+        
+        # Register job start for ALL jobs (new and resume)
+        self._register_job_start()
         
         # Initialize wandb if enabled
         # If resuming, use the stored wandb_run_id to resume the same run
@@ -942,22 +943,42 @@ class ExperimentManager:
             # No previous jobs - start fresh
             return None
         
-        # Get last completed job
+        # Check for running jobs first
+        running_jobs = [job for job in self.job_history["jobs"] if job.get("status") == "running"]
+        if running_jobs:
+            # There's a running job - require explicit confirmation that it's complete
+            if not self.config.mark_last_job_complete:
+                last_job = running_jobs[-1]
+                raise ValueError(
+                    f"Another job is currently running on this experiment. "
+                    f"Job {last_job.get('slurm_job_id', last_job.get('job_id', 'unknown'))} "
+                    f"started at {last_job.get('start_time')} and is marked as 'running'. "
+                    f"If that job has completed or timed out, set 'mark_last_job_complete: true' "
+                    f"in your config to mark it as complete and resume."
+                )
+            
+            # Explicitly mark the last running job as complete/timeout (mark_last_job_complete: true)
+            last_job = running_jobs[-1]
+            last_epoch = self.job_history.get("current_epoch", 0)
+            
+            if last_epoch == 0:
+                raise ValueError(
+                    "Cannot resume: last running job has current_epoch=0 in job_history. "
+                    "This indicates the job history was not properly updated. "
+                    "Please check the job_history.json file and ensure current_epoch reflects the actual last completed epoch."
+                )
+            
+            # Mark the job as timeout (since it didn't complete normally)
+            last_job["status"] = "timeout"
+            last_job["end_time"] = datetime.now().isoformat()
+            last_job["end_epoch"] = last_epoch
+            self._save_job_history()
+            self.logger.info(f"Marked last running job as timeout, ended at epoch {last_epoch}")
+        
+        # Get last completed job (now includes the job we just marked as timeout)
         completed_jobs = [job for job in self.job_history["jobs"] if job.get("status") in ["completed", "timeout"]]
         if not completed_jobs:
-            # No completed jobs - check if there's a running job
-            running_jobs = [job for job in self.job_history["jobs"] if job.get("status") == "running"]
-            if running_jobs:
-                # Previous job might have timed out - use its last checkpoint
-                last_job = running_jobs[-1]
-                last_epoch = self.job_history.get("current_epoch", 0)
-                checkpoint_path = self._find_latest_checkpoint()
-                if checkpoint_path:
-                    return {
-                        "start_epoch": last_epoch + 1,
-                        "checkpoint_path": str(checkpoint_path),
-                        "last_epoch": last_epoch
-                    }
+            # No completed jobs - start fresh
             return None
         
         # Get the most recent completed job
@@ -968,6 +989,14 @@ class ExperimentManager:
         if last_epoch >= self.job_history.get("total_epochs", self.config.training.epochs):
             self.logger.info(f"Training already completed (epoch {last_epoch}/{self.job_history.get('total_epochs', self.config.training.epochs)})")
             return None
+        
+        # Validate that we have a valid epoch
+        if last_epoch == 0:
+            raise ValueError(
+                "Cannot resume: last completed job has end_epoch=0. "
+                "This indicates the job history was not properly updated. "
+                "Please check the job_history.json file and ensure end_epoch reflects the actual last completed epoch."
+            )
         
         # Find the latest checkpoint
         checkpoint_path = self._find_latest_checkpoint()
@@ -982,7 +1011,7 @@ class ExperimentManager:
         self.logger.info(f"Resuming training from epoch {last_epoch + 1} (last completed: {last_epoch})")
         return {
             "start_epoch": last_epoch + 1,
-            "checkpoint_path": str(checkpoint_path),
+            "checkpoint_path": str(checkpoint_path) if checkpoint_path else None,
             "last_epoch": last_epoch
         }
     
@@ -1028,13 +1057,20 @@ class ExperimentManager:
     
     def _register_job_start(self) -> None:
         """Register the start of a new job in job history."""
+        # Determine start epoch: use resume_info if resuming, otherwise use current_epoch from history
+        if self.resume_info:
+            start_epoch = self.resume_info["start_epoch"]
+        else:
+            # New job - start from current_epoch (which should be 0 for new experiments)
+            start_epoch = self.job_history.get("current_epoch", 0)
+        
         job_entry = {
             "job_id": self.job_id,
             "slurm_job_id": os.environ.get("SLURM_JOB_ID", self.job_id),
             "job_name": self.job_name or os.environ.get("SLURM_JOB_NAME", "training_job"),
             "start_time": datetime.now().isoformat(),
             "end_time": None,
-            "start_epoch": self.resume_info["start_epoch"] if self.resume_info else 0,
+            "start_epoch": start_epoch,
             "end_epoch": None,
             "epochs_completed": [],
             "status": "running",
@@ -1047,9 +1083,9 @@ class ExperimentManager:
         self._save_job_history()
         
         if self.resume_info:
-            self.logger.info(f"Registered job start: SLURM_JOB_ID={job_entry['slurm_job_id']}, resuming from epoch {self.resume_info['start_epoch']}")
+            self.logger.info(f"Registered job start: SLURM_JOB_ID={job_entry['slurm_job_id']}, resuming from epoch {start_epoch}")
         else:
-            self.logger.info(f"Registered job start: SLURM_JOB_ID={job_entry['slurm_job_id']}, starting from epoch 0")
+            self.logger.info(f"Registered job start: SLURM_JOB_ID={job_entry['slurm_job_id']}, starting from epoch {start_epoch}")
     
     def register_job_end(
         self,

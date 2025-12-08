@@ -40,7 +40,8 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/tgtsf_test"
-        # Resume configuration - both required when resuming suite experiments
+        # Resume configuration - all required when resuming suite experiments
         resume_experiment_id: "20251207-145025_30357cc62e44"
         resume_suite_id: "tgtsf_test_20251207_145025"
+        mark_last_job_complete: true  # Mark the previous running job as complete/timeout
 

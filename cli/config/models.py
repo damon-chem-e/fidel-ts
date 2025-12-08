@@ -133,6 +133,7 @@ class ExperimentConfig(BaseModel):
     random_seed: int = Field(default=2021, description="Random seed for reproducibility")
     resume_experiment_id: Optional[str] = Field(default=None, description="Experiment ID to resume (must match exactly, including timestamp)")
     resume_suite_id: Optional[str] = Field(default=None, description="Suite directory name to resume (required when resuming suite experiments, e.g., 'tgtsf_test_20251207_145025')")
+    mark_last_job_complete: bool = Field(default=False, description="Mark the last running job as complete/timeout (required when resuming if previous job timed out)")
     
     model_config = ConfigDict(extra="allow")  # Allow extra fields for nested configs
     

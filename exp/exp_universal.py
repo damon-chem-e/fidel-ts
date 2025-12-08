@@ -545,6 +545,13 @@ class Experiment(Exp_Basic):
         start_epoch = resume_info["start_epoch"] - 1  # Convert to 0-indexed
         checkpoint_path = resume_info.get("checkpoint_path")
         
+        # Resolve checkpoint path relative to experiment directory if it's a relative path
+        if checkpoint_path:
+            if not os.path.isabs(checkpoint_path):
+                # Relative path - resolve relative to experiment directory
+                exp_dir = self.exp_manager.get_experiment_dir()
+                checkpoint_path = str(exp_dir / checkpoint_path)
+        
         # Load checkpoint if available
         if checkpoint_path and os.path.exists(checkpoint_path):
             self.exp_manager.logger.info(f"Loading checkpoint from: {checkpoint_path}")
@@ -582,11 +589,12 @@ class Experiment(Exp_Basic):
         if not self.exp_manager:
             return
         
-        # Get checkpoint path if available
+        # Get checkpoint path if available (store as absolute path)
         checkpoint_path = None
         best_checkpoint = os.path.join(path, 'checkpoint.pth')
         if os.path.exists(best_checkpoint):
-            checkpoint_path = best_checkpoint
+            # Convert to absolute path for storage
+            checkpoint_path = os.path.abspath(best_checkpoint)
         
         self.exp_manager.update_current_epoch(
             epoch=self.current_epoch,
@@ -606,7 +614,11 @@ class Experiment(Exp_Basic):
             return
         
         final_checkpoint = os.path.join(path, 'checkpoint.pth')
-        checkpoint_path = final_checkpoint if os.path.exists(final_checkpoint) else None
+        if os.path.exists(final_checkpoint):
+            # Convert to absolute path for storage
+            checkpoint_path = os.path.abspath(final_checkpoint)
+        else:
+            checkpoint_path = None
         
         # Determine job status (completed if reached end, otherwise timeout)
         final_epoch = self.current_epoch
