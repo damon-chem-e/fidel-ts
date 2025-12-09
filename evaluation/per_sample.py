@@ -275,7 +275,8 @@ def _load_checkpoint_config(ckpt_path, eval_config, config):
                 
                 if os.path.exists(resolved_path):
                     with open(resolved_path, 'r') as f:
-                        checkpoint_config.model_config = dotdict(yaml.safe_load(f))
+                        loaded_model_config = yaml.safe_load(f) or {}
+                        checkpoint_config.model_config = dotdict(loaded_model_config)
                 else:
                     raise FileNotFoundError(
                         f"Model config file not found: {model_config_path}\n"
@@ -283,6 +284,22 @@ def _load_checkpoint_config(ckpt_path, eval_config, config):
                         f"  Current working directory: {os.getcwd()}\n"
                         f"  Note: Use absolute paths in configs for more robust evaluation."
                     )
+        
+        # Merge any model_config overrides from experiment_config.yaml
+        # (e.g., pretrained_model_path may be set in experiment_config.yaml's model_config section)
+        # This ensures that overrides from suite configs are properly applied
+        if 'model_config' in config_dict and isinstance(config_dict['model_config'], dict):
+            model_config_overrides = config_dict['model_config']
+            # Ensure model_config is a dotdict for attribute access
+            if not isinstance(checkpoint_config.model_config, dotdict):
+                if isinstance(checkpoint_config.model_config, dict):
+                    checkpoint_config.model_config = dotdict(checkpoint_config.model_config)
+                else:
+                    checkpoint_config.model_config = dotdict({})
+            # Merge overrides
+            for key, value in model_config_overrides.items():
+                if value:  # Only override if value is not empty/None/empty string
+                    checkpoint_config.model_config[key] = value
         
         if isinstance(checkpoint_config.data_config, str) or (isinstance(checkpoint_config.data_config, dict) and 'config_path' in checkpoint_config.data_config):
             data_config_path = checkpoint_config.data_config if isinstance(checkpoint_config.data_config, str) else checkpoint_config.data_config.get('config_path')
