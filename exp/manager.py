@@ -45,7 +45,8 @@ class ExperimentManager:
         job_id: Optional[str] = None,
         job_name: Optional[str] = None,
         suite_name: Optional[str] = None,
-        suite_info: Optional[Dict[str, Any]] = None
+        suite_info: Optional[Dict[str, Any]] = None,
+        init_only: bool = False
     ):
         """
         Initialize ExperimentManager.
@@ -58,8 +59,10 @@ class ExperimentManager:
             job_name: Optional job name from cluster/scheduler
             suite_name: Optional suite name if experiment is part of a suite
             suite_info: Optional suite information dictionary (name, description, tags, etc.)
+            init_only: If True, only initialize experiment structure without starting job
         """
         self.config = config
+        self.init_only = init_only
         # Ensure output_dir is absolute for reliable path operations
         self.output_dir = Path(output_dir).resolve()
         self.experiment_name = experiment_name or config.experiment_name
@@ -130,6 +133,22 @@ class ExperimentManager:
         # This must happen before wandb init so we can resume the same wandb run
         self.job_history = self._load_job_history()
         
+        if self.init_only:
+            # Pre-generate WandB run ID if enabled
+            if self.config.wandb.enabled and not self.job_history.get("wandb_run_id"):
+                try:
+                    import wandb
+                    # Generate a unique run ID offline
+                    self.job_history["wandb_run_id"] = wandb.util.generate_id()
+                    self.logger.info(f"Pre-generated WandB run ID: {self.job_history['wandb_run_id']}")
+                except ImportError:
+                    self.logger.warning("WandB not installed. Skipping run ID generation.")
+            
+            # Save the initialized (potentially empty) job history
+            self._save_job_history()
+            self.logger.info(f"Initialized experiment structure for: {self.experiment_id}")
+            return
+
         # Detect if we're resuming
         self.resume_info = self._detect_resume()
         
@@ -539,11 +558,10 @@ class ExperimentManager:
             # Add run_id if specified (for resuming/overwriting runs)
             if self.config.wandb.run_id:
                 init_kwargs['id'] = self.config.wandb.run_id
-                # Use 'must' if resuming (run must exist), 'allow' if user explicitly provided
-                if self.job_history.get("wandb_run_id") == self.config.wandb.run_id:
-                    init_kwargs['resume'] = 'must'  # Must resume existing run
-                else:
-                    init_kwargs['resume'] = 'allow'  # Allow resuming/overwriting
+                # Use 'allow' to support both:
+                # 1. First run with pre-generated ID (creates new run on server)
+                # 2. Resuming existing run (resumes run on server)
+                init_kwargs['resume'] = 'allow'
             
             # Initialize wandb run
             self.wandb_run = wandb.init(**init_kwargs)

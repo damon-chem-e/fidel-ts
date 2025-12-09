@@ -24,7 +24,8 @@ app = typer.Typer(
 @app.command()
 def pytorch(
     config_path: str = typer.Argument(..., help="Path to experiment configuration file"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Validate config without running training")
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate config without running training"),
+    init_only: bool = typer.Option(False, "--init-only", help="Initialize experiment structure without running training")
 ):
     """
     Train using PyTorch pipeline.
@@ -48,8 +49,12 @@ def pytorch(
         # Import here to avoid circular imports
         from runs.pytorch import run
         
-        typer.echo(f"Starting PyTorch training with config: {config_path}")
-        run(config)
+        if init_only:
+            typer.echo(f"Initializing PyTorch experiment structure (no execution): {config_path}")
+        else:
+            typer.echo(f"Starting PyTorch training with config: {config_path}")
+            
+        run(config, init_only=init_only)
         
     except FileNotFoundError as e:
         if RICH_AVAILABLE:
@@ -65,7 +70,8 @@ def pytorch(
 @app.command()
 def lightning(
     config_path: str = typer.Argument(..., help="Path to experiment configuration file"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Validate config without running training")
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate config without running training"),
+    init_only: bool = typer.Option(False, "--init-only", help="Initialize experiment structure without running training")
 ):
     """
     Train using PyTorch Lightning pipeline.
@@ -89,8 +95,12 @@ def lightning(
         # Import here to avoid circular imports
         from runs.lightning import run
         
-        typer.echo(f"Starting Lightning training with config: {config_path}")
-        run(config)
+        if init_only:
+            typer.echo(f"Initializing Lightning experiment structure (no execution): {config_path}")
+        else:
+            typer.echo(f"Starting Lightning training with config: {config_path}")
+            
+        run(config, init_only=init_only)
         
     except FileNotFoundError as e:
         if RICH_AVAILABLE:
@@ -106,7 +116,8 @@ def lightning(
 @app.command()
 def llm(
     config_path: str = typer.Argument(..., help="Path to experiment configuration file"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Validate config without running")
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate config without running"),
+    init_only: bool = typer.Option(False, "--init-only", help="Initialize experiment structure without running")
 ):
     """
     Run LLM-based time series forecasting experiments.
@@ -129,8 +140,12 @@ def llm(
         # Import here to avoid circular imports
         from runs.llm import run
         
-        typer.echo(f"Starting LLM experiment with config: {config_path}")
-        run(config)
+        if init_only:
+            typer.echo(f"Initializing LLM experiment structure (no execution): {config_path}")
+        else:
+            typer.echo(f"Starting LLM experiment with config: {config_path}")
+            
+        run(config, init_only=init_only)
         
     except FileNotFoundError as e:
         if RICH_AVAILABLE:
@@ -146,7 +161,8 @@ def llm(
 @app.command()
 def fm(
     config_path: str = typer.Argument(..., help="Path to experiment configuration file"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Validate config without running")
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate config without running"),
+    init_only: bool = typer.Option(False, "--init-only", help="Initialize experiment structure without running")
 ):
     """
     Test Foundation Models (FM) for time series forecasting.
@@ -169,8 +185,12 @@ def fm(
         # Import here to avoid circular imports
         from runs.fm import run
         
-        typer.echo(f"Starting Foundation Model testing with config: {config_path}")
-        run(config)
+        if init_only:
+            typer.echo(f"Initializing FM experiment structure (no execution): {config_path}")
+        else:
+            typer.echo(f"Starting Foundation Model testing with config: {config_path}")
+            
+        run(config, init_only=init_only)
         
     except FileNotFoundError as e:
         if RICH_AVAILABLE:

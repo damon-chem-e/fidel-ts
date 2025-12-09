@@ -128,7 +128,7 @@ def substitute_placeholders(config: Dict[str, Any], experiment_name: str,
 class SuiteExecutor:
     """Execute experiment suites defined in YAML configs."""
     
-    def __init__(self, suite_config: Dict[str, Any], log_dir: Optional[str] = None, output_dir: Optional[str] = None):
+    def __init__(self, suite_config: Dict[str, Any], log_dir: Optional[str] = None, output_dir: Optional[str] = None, init_only: bool = False):
         """
         Initialize suite executor.
         
@@ -136,8 +136,10 @@ class SuiteExecutor:
             suite_config: Suite configuration dictionary
             log_dir: Directory for suite execution logs (optional)
             output_dir: Base directory for experiment outputs (optional, defaults to ./output)
+            init_only: If True, only initialize experiment structures without running them
         """
         self.suite_config = suite_config
+        self.init_only = init_only
         self.suite_info = suite_config.get('suite', {})
         self.execution_config = self.suite_info.get('execution', {})
         self.log_dir = log_dir or self.execution_config.get('log_dir', './logs/suites')
@@ -387,6 +389,10 @@ class SuiteExecutor:
         
         # Execute based on experiment type
         if exp_type == 'evaluation':
+            if self.init_only:
+                logger.info(f"Skipping evaluation experiment '{experiment_name}' during initialization.")
+                return
+
             # Evaluation uses a different config structure (dotdict with evaluation section)
             from utils.tools import dotdict
             # Convert config dict to dotdict format expected by evaluate()
@@ -417,11 +423,11 @@ class SuiteExecutor:
             # Execute based on experiment type
             # Pass the timestamped suite name so experiments are saved in the correct directory
             if exp_type == 'pytorch':
-                run_pytorch(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir))
+                run_pytorch(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only)
             elif exp_type == 'lightning':
-                run_lightning(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir))
+                run_lightning(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only)
             elif exp_type == 'llm':
-                run_llm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir))
+                run_llm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only)
             elif exp_type == 'fm':
                 # FM experiments may have task specified at experiment level
                 if 'task' in config.get('experiment', {}):
@@ -430,7 +436,7 @@ class SuiteExecutor:
                     # Recreate ExperimentConfig with task field
                     experiment_config = ExperimentConfig(**config)
                     experiment_config.experiment_name = experiment_name
-                run_fm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir))
+                run_fm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only)
             else:
                 raise ValueError(f"Unknown experiment type: {exp_type}")
 
@@ -455,14 +461,15 @@ def load_suite_config(suite_config_path: str) -> Dict[str, Any]:
     return suite_config
 
 
-def execute_suite(suite_config_path: str) -> None:
+def execute_suite(suite_config_path: str, init_only: bool = False) -> None:
     """
     Execute an experiment suite from a config file.
     
     Args:
         suite_config_path: Path to suite YAML config file
+        init_only: If True, only initialize experiment structures without running them
     """
     suite_config = load_suite_config(suite_config_path)
-    executor = SuiteExecutor(suite_config)
+    executor = SuiteExecutor(suite_config, init_only=init_only)
     executor.execute()
 

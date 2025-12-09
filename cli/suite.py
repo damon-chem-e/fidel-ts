@@ -22,7 +22,8 @@ console = Console()
 def run(
     suite_config_path: str = typer.Argument(..., help="Path to experiment suite configuration file"),
     filter_experiments: Optional[str] = typer.Option(None, "--filter", "-f", help="Filter experiments by name pattern"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Validate config without running experiments")
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate config without running experiments"),
+    init_only: bool = typer.Option(False, "--init-only", help="Initialize experiment structures without running them")
 ):
     """
     Run an experiment suite from a suite config file.
@@ -55,10 +56,19 @@ def run(
             console.print(f"[green]Dry run: Validated suite '{suite_name}' with {len(suite_info.get('experiments', []))} experiments[/green]")
             return
         
-        console.print(f"[green]Running suite: {suite_name}[/green]")
-        executor = SuiteExecutor(suite_config)
+        if init_only:
+            console.print(f"[green]Initializing suite structure (no execution): {suite_name}[/green]")
+        else:
+            console.print(f"[green]Running suite: {suite_name}[/green]")
+            
+        executor = SuiteExecutor(suite_config, init_only=init_only)
         executor.execute()
-        console.print(f"[green]Suite execution completed[/green]")
+        
+        if init_only:
+            console.print(f"[green]Suite initialization completed[/green]")
+            console.print(f"Use the following resume_suite_id for your job: [bold cyan]{executor.suite_name}[/bold cyan]")
+        else:
+            console.print(f"[green]Suite execution completed[/green]")
         
     except Exception as e:
         console.print(f"[red]Error executing suite: {str(e)}[/red]")

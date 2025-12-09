@@ -119,7 +119,7 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     return args
 
 
-def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: Optional[Dict[str, Any]] = None, output_dir: Optional[str] = None):
+def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: Optional[Dict[str, Any]] = None, output_dir: Optional[str] = None, init_only: bool = False):
     """
     Run PyTorch Lightning training experiment.
     
@@ -131,6 +131,7 @@ def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: 
         suite_name: Optional suite name if experiment is part of a suite
         suite_info: Optional suite information dictionary
         output_dir: Optional base output directory (overrides config setting)
+        init_only: If True, only initialize experiment structure without running training
     
     Example:
         >>> from cli.config.loader import load_config
@@ -150,9 +151,13 @@ def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: 
         job_id=slurm_job_id,
         job_name=slurm_job_name,
         suite_name=suite_name,
-        suite_info=suite_info
+        suite_info=suite_info,
+        init_only=init_only
     )
     
+    if init_only:
+        return
+
     # Set environment variables for HuggingFace
     if config.hf_mirror:
         os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
