@@ -44,7 +44,8 @@ class Model(nn.Module):
         Args:
             x: Input time series [B, seq_len, C]
             news: News embeddings [B, l, news_num, text_dim]
-            channel_description: Channel descriptions [B, 1, C, d_model]
+            channel_description: Channel descriptions [B, C, d_model] or [B, 1, C, d_model]
+                Will be automatically expanded to [B, l, C, d_model] to match news time dimension
         """
         # Ensure input is on the same device as the unimodal model
         # This prevents device mismatch errors when model is on GPU but input is on CPU
@@ -62,7 +63,14 @@ class Model(nn.Module):
         # Note: TGTSF text_encoder output shape logic:
         # It reshapes news and description, passes through transformer.
         # Output is [B, L, C, D].
-        text_emb = self.text_encoder(news, channel_description)
+        # Transform channel_description to match text_encoder expected input shape [B, L, C, D]
+        # Handle both [B, C, D] and [B, 1, C, D] input shapes
+        if len(channel_description.shape) == 3:
+            # If [B, C, D], unsqueeze to [B, 1, C, D]
+            channel_description = channel_description.unsqueeze(1)
+        # Repeat along time dimension to match news shape: [B, L, C, D]
+        description = channel_description.repeat(1, news.shape[1], 1, 1)
+        text_emb = self.text_encoder(news, description)
         
         # Step 4: Prepare text embeddings for FiLM
         # iTransformerFilm expects [B, C, L, text_dim]
