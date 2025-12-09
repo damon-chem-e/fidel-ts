@@ -244,11 +244,19 @@ def _load_checkpoint_config(ckpt_path, eval_config, config):
         with open(config_path, 'r') as f:
             config_dict = yaml.safe_load(f)
         # Extract model and data configs
+        # Handle config_path which may be a string (path) or dict
+        model_config_path = config_dict.get('model', {}).get('config_path', {})
+        data_config_path = config_dict.get('data', {}).get('config_path', {})
+        
+        # Only wrap in dotdict if it's a dict, otherwise keep as string (will be loaded later)
+        model_config_val = model_config_path if isinstance(model_config_path, str) else (dotdict(model_config_path) if isinstance(model_config_path, dict) else {})
+        data_config_val = data_config_path if isinstance(data_config_path, str) else (dotdict(data_config_path) if isinstance(data_config_path, dict) else {})
+        
         checkpoint_config = dotdict({
             'model': config_dict.get('model', {}).get('name', 'unknown'),
-            'model_config': dotdict(config_dict.get('model', {}).get('config_path', {})),
+            'model_config': model_config_val,
             'data': config_dict.get('data', {}).get('name', 'unknown'),
-            'data_config': dotdict(config_dict.get('data', {}).get('config_path', {})),
+            'data_config': data_config_val,
             'task': config_dict.get('experiment', {}).get('type', 'TSF'),
             'loss': config_dict.get('training', {}).get('loss', 'mse'),
             'input_len': config_dict.get('training', {}).get('input_len', 360),
