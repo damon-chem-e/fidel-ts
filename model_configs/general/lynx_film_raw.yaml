@@ -1,0 +1,38 @@
+# lynx-film-raw Model Configuration
+# lynx-film-raw uses FiLM to modulate iTransformer for raw signal learning
+# (No pretrained unimodal model - learns entire structure from scratch)
+
+model: lynx_film_raw
+
+# Model Parameters (iTransformerFilm)
+individual: False
+enc_in: 1
+e_layers: 3       # Layers in iTransformerFilm
+n_heads: 4
+d_model: 256
+d_ff: 1024        # Feed forward dimension (typically 4*d_model)
+dropout: 0.3
+activation: "gelu"
+output_attention: False
+use_norm: False   # Normalization handled externally (via revin or use_norm flag)
+factor: 1         # Attention factor
+
+# Text Encoder Parameters (used to generate text embeddings for FiLM)
+cross_layers: 3
+self_layers: 3
+text_dim: 256     # Dimension of text embeddings (input to FiLM)
+
+# Normalization
+# Choose one normalization scheme:
+# - revin: True for RevIN normalization (like TGTSF)
+# - use_norm: True for iTransformer normalization (Non-stationary Transformer)
+# Note: Only one should be True. If both False, no normalization is applied.
+revin: True       # Use RevIN normalization (recommended, similar to TGTSF)
+# use_norm: False # Alternative: use iTransformer normalization
+
+# Other
+patch_len: 6
+stride: 3
+hetero_align_stride: True
+task: TGTSF
+
