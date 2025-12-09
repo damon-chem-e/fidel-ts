@@ -266,14 +266,43 @@ def _load_checkpoint_config(ckpt_path, eval_config, config):
         # Load actual model and data configs if they're paths
         if isinstance(checkpoint_config.model_config, str) or (isinstance(checkpoint_config.model_config, dict) and 'config_path' in checkpoint_config.model_config):
             model_config_path = checkpoint_config.model_config if isinstance(checkpoint_config.model_config, str) else checkpoint_config.model_config.get('config_path')
-            if model_config_path and os.path.exists(model_config_path):
-                with open(model_config_path, 'r') as f:
-                    checkpoint_config.model_config = dotdict(yaml.safe_load(f))
+            if model_config_path:
+                # Resolve path: check if absolute, otherwise look relative to current working directory
+                if os.path.isabs(model_config_path):
+                    resolved_path = model_config_path
+                else:
+                    resolved_path = os.path.join(os.getcwd(), model_config_path)
+                
+                if os.path.exists(resolved_path):
+                    with open(resolved_path, 'r') as f:
+                        checkpoint_config.model_config = dotdict(yaml.safe_load(f))
+                else:
+                    raise FileNotFoundError(
+                        f"Model config file not found: {model_config_path}\n"
+                        f"  Resolved to: {resolved_path}\n"
+                        f"  Current working directory: {os.getcwd()}\n"
+                        f"  Note: Use absolute paths in configs for more robust evaluation."
+                    )
+        
         if isinstance(checkpoint_config.data_config, str) or (isinstance(checkpoint_config.data_config, dict) and 'config_path' in checkpoint_config.data_config):
             data_config_path = checkpoint_config.data_config if isinstance(checkpoint_config.data_config, str) else checkpoint_config.data_config.get('config_path')
-            if data_config_path and os.path.exists(data_config_path):
-                with open(data_config_path, 'r') as f:
-                    checkpoint_config.data_config = dotdict(yaml.safe_load(f))
+            if data_config_path:
+                # Resolve path: check if absolute, otherwise look relative to current working directory
+                if os.path.isabs(data_config_path):
+                    resolved_path = data_config_path
+                else:
+                    resolved_path = os.path.join(os.getcwd(), data_config_path)
+                
+                if os.path.exists(resolved_path):
+                    with open(resolved_path, 'r') as f:
+                        checkpoint_config.data_config = dotdict(yaml.safe_load(f))
+                else:
+                    raise FileNotFoundError(
+                        f"Data config file not found: {data_config_path}\n"
+                        f"  Resolved to: {resolved_path}\n"
+                        f"  Current working directory: {os.getcwd()}\n"
+                        f"  Note: Use absolute paths in configs for more robust evaluation."
+                    )
     else:
         # Legacy format: args.json
         config_path = os.path.join(ckpt_path, 'args.json')
@@ -290,6 +319,30 @@ def _load_checkpoint_config(ckpt_path, eval_config, config):
         checkpoint_config.data_config = dotdict(yaml.safe_load(open(config.data_config, 'r')))
     else:
         checkpoint_config.data_config = dotdict(checkpoint_config.data_config)
+    
+    # Check pretrained_model_path if present in model config (e.g., for LYNX models)
+    if hasattr(checkpoint_config.model_config, 'pretrained_model_path') and checkpoint_config.model_config.pretrained_model_path:
+        pretrained_path = checkpoint_config.model_config.pretrained_model_path
+        if not os.path.isabs(pretrained_path):
+            print(f"[Warning] pretrained_model_path is not absolute: {pretrained_path}")
+            print("  It is much more robust to use absolute paths for pretrained_model_path in configs.")
+            print(f"  Will only look relative to current working directory: {os.getcwd()}")
+        
+        # Resolve path: check if absolute, otherwise look relative to current working directory
+        if os.path.isabs(pretrained_path):
+            resolved_pretrained_path = pretrained_path
+        else:
+            resolved_pretrained_path = os.path.join(os.getcwd(), pretrained_path)
+        
+        if not os.path.exists(resolved_pretrained_path):
+            raise FileNotFoundError(
+                f"pretrained_model_path not found: {pretrained_path}\n"
+                f"  Resolved to: {resolved_pretrained_path}\n"
+                f"  Current working directory: {os.getcwd()}\n"
+                f"  Note: Use absolute paths in model config for more robust evaluation."
+            )
+        # Update the path to the resolved absolute path
+        checkpoint_config.model_config.pretrained_model_path = os.path.abspath(resolved_pretrained_path)
     
     # Set evaluation-specific config values
     checkpoint_config.gpu = eval_config.device
