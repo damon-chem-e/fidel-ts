@@ -542,6 +542,11 @@ class ExperimentManager:
             # Determine run name (use fixed name if provided, otherwise use experiment_id)
             run_name = self.config.wandb.run_name if self.config.wandb.run_name else self.experiment_id
             
+            # Ensure wandb directory path is absolute and exists
+            # This is critical when base_data_path is set and we're not in the project root
+            wandb_dir = (self.experiment_dir / "wandb").resolve()
+            wandb_dir.mkdir(parents=True, exist_ok=True)
+            
             # Build wandb.init() arguments
             init_kwargs = {
                 'project': self.config.wandb.project,
@@ -551,7 +556,7 @@ class ExperimentManager:
                 'notes': self.config.wandb.notes,
                 'config': wandb_config,
                 'mode': self.config.wandb.mode,
-                'dir': str(self.experiment_dir / "wandb"),
+                'dir': str(wandb_dir),  # Use absolute path to avoid working directory issues
                 'reinit': False
             }
             
