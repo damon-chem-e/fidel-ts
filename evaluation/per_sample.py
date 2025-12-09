@@ -404,12 +404,17 @@ def _load_model_from_checkpoint(ckpt_path, checkpoint_config, device):
     # Initialize model
     model = model_init(checkpoint_config.model, checkpoint_config.model_config, checkpoint_config).to(device)
     
-    # Find checkpoint file
-    ckpt_file = glob.glob(os.path.join(ckpt_path, 'checkpoint*'))
-    if not ckpt_file:
-        raise FileNotFoundError(f"No checkpoint file (e.g., 'checkpoint.pth') found in {ckpt_path}")
+    # Find checkpoint file (filter out directories, only keep files)
+    # Prefer best_checkpoint.* if it exists, otherwise use checkpoint.*
+    best_ckpt_files = [f for f in glob.glob(os.path.join(ckpt_path, 'best_checkpoint*')) if os.path.isfile(f)]
+    if best_ckpt_files:
+        ckpt_file_path = best_ckpt_files[0]
+    else:
+        ckpt_files = [f for f in glob.glob(os.path.join(ckpt_path, 'checkpoint*')) if os.path.isfile(f)]
+        if not ckpt_files:
+            raise FileNotFoundError(f"No checkpoint file (e.g., 'checkpoint.pth' or 'best_checkpoint.pth') found in {ckpt_path}")
+        ckpt_file_path = ckpt_files[0]
     
-    ckpt_file_path = ckpt_file[0]
     print(f"[Info] Loading model from: {ckpt_file_path}")
     checkpoint = torch.load(ckpt_file_path, map_location=device)
     
