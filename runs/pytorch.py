@@ -17,6 +17,7 @@ from utils.gpu_monitor import gpu_monitoring_context
 from exp.exp_universal import Experiment
 from cli.config.models import ExperimentConfig
 from exp.manager import ExperimentManager
+from utils.data_path_utils import replace_data_paths
 
 
 def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
@@ -94,6 +95,21 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     
     with open(args.data_config, 'r') as f:
         data_configs = yaml.safe_load(f)
+    
+    # Merge data_config overrides if present (from experiment suite)
+    # Pydantic models with extra="allow" store extra fields in model_extra or model_dump()
+    if hasattr(config, 'model_dump'):
+        config_dict = config.model_dump()
+        if 'data_config' in config_dict and isinstance(config_dict['data_config'], dict):
+            data_configs.update(config_dict['data_config'])
+    # Also check if data_config is directly accessible (for backwards compatibility)
+    elif hasattr(config, 'data_config') and isinstance(config.data_config, dict):
+        data_configs.update(config.data_config)
+    
+    # Replace './data' with base_data_path if specified
+    if config.base_data_path:
+        data_configs = replace_data_paths(data_configs, config.base_data_path)
+    
     args.data_config = dotdict(data_configs)
     
     # Handle ahead task

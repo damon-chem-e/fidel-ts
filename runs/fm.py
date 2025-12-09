@@ -17,6 +17,7 @@ from utils.gpu_monitor import gpu_monitoring_context
 from exp.exp_fm import Experiment
 from cli.config.models import ExperimentConfig
 from exp.manager import ExperimentManager
+from utils.data_path_utils import replace_data_paths
 
 
 def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
@@ -79,6 +80,11 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     
     with open(args.data_config, 'r') as f:
         data_configs = yaml.safe_load(f)
+    
+    # Replace './data' with base_data_path if specified
+    if config.base_data_path:
+        data_configs = replace_data_paths(data_configs, config.base_data_path)
+    
     args.data_config = dotdict(data_configs)
     
     # Handle ahead task
