@@ -337,6 +337,8 @@ class Universal_Dataset(Dataset):
 
 
 
+from utils.text_embedding import TextEmbedder
+
 class Heterogeneous_Dataset(Dataset):
     """
     Specialized dataset for managing heterogeneous cross-modal data sources.
@@ -358,19 +360,19 @@ class Heterogeneous_Dataset(Dataset):
         formatter (str): File naming pattern for data files
         id_info (dict): Mapping of dataset IDs to metadata
         static_path (str, optional): Path to static/constant heterogeneous data
-        matching (str): Strategy for temporal alignment ('nearest', 'interpolate')
-        output_format (str): Format for heterogeneous data output ('json', 'text')
+        matching (str, optional): Strategy for temporal alignment ('nearest', 'interpolate')
+        output_format (str, optional): Format for heterogeneous data output ('json', 'text')
         timezone (str, optional): Timezone for timestamp alignment
-        noise (float): Noise level for data augmentation
-        hetero_type (str): Type of heterogeneous data handling strategy
+        noise (float, optional): Noise level for data augmentation
+        hetero_type (str, optional): Type of heterogeneous data handling strategy
         id_list (list, optional): Specific IDs to process
-        postemb (str, optional): Positional embedding configuration
+        postemb (bool, optional): Whether to use positional embeddings
         postemb_model (str, optional): Model for generating positional embeddings
         postemb_max_len (int, optional): Maximum sequence length for embeddings
         postemb_d (int, optional): Dimensionality of positional embeddings
-        postemb_batch_size (int): Batch size for embedding generation
+        postemb_batch_size (int, optional): Batch size for embedding generation
         postemb_handle_downtime (str, optional): Strategy for handling data gaps
-        device (str): Computing device ('cpu' or cuda device id)
+        device (str, optional): Computing device ('cpu' or cuda device id)
     
     Example:
         ```python
@@ -390,7 +392,7 @@ class Heterogeneous_Dataset(Dataset):
         self.root_path = root_path
         self.formatter = formatter
         self.id_list = id_list
-        self.device = torch.device('cpu') if device == 'cpu' else torch.device(f'cuda:{device}')
+        self.device = device # device string or int
         self.postemb = postemb
         self.postemb_model = postemb_model
         self.postemb_max_len = int(postemb_max_len) if postemb_max_len is not None else postemb_max_len
@@ -398,8 +400,10 @@ class Heterogeneous_Dataset(Dataset):
         self.postemb_batch_size = int(postemb_batch_size) if postemb_batch_size is not None else postemb_batch_size
         self.postemb_handle_downtime = postemb_handle_downtime
 
-        self.tokenizer = AutoTokenizer.from_pretrained(self.postemb_model) if postemb is not None else None
-        self.model = AutoModel.from_pretrained(self.postemb_model).to(self.device) if postemb is not None else None
+        if postemb is not None:
+            self.text_embedder = TextEmbedder(model_name=self.postemb_model, device=self.device, batch_size=self.postemb_batch_size)
+        else:
+            self.text_embedder = None
 
         self.id_info = id_info
         self.static_path = static_path
@@ -423,58 +427,10 @@ class Heterogeneous_Dataset(Dataset):
         return x
 
     def convert_plain_text_to_embeddings(self, text):
-        tokenizer = self.tokenizer
-        model = self.model
-        model.eval()
-
-        encoded = tokenizer(text,
-                            padding=True,
-                            truncation=True,
-                            max_length=512,
-                            return_tensors='pt')
-
-        input_ids = encoded['input_ids'].to(self.device)
-        attention_mask = encoded['attention_mask'].to(self.device)
-
-        with torch.no_grad():
-            outputs = model(input_ids, attention_mask=attention_mask)
-            # [CLS]
-            text_embedding = outputs.last_hidden_state[:, 0, :].to('cpu')
-
-        return text_embedding[0]
+        return self.text_embedder.get_embedding_single(text)
 
     def convert_df_text_to_embeddings(self, df):
-        tokenizer = self.tokenizer
-        model = self.model
-        model.eval()
-
-        df_time = df[['time']]
-        df_merged = df.drop('time', axis=1).astype(str).apply(''.join, axis=1)
-
-        batch_size = self.postemb_batch_size
-        ls_embeddings = []
-        
-        for i in tqdm(range(0, len(df), batch_size), desc="Processing post embedding batches", unit="batch"):
-            batch_texts = df_merged.iloc[i:i+batch_size].tolist()
-
-            encoded = tokenizer(batch_texts,
-                            padding=True,
-                            truncation=True,
-                            max_length=512,
-                            return_tensors='pt')
-
-            input_ids = encoded['input_ids'].to(self.device)
-            attention_mask = encoded['attention_mask'].to(self.device)
-
-            with torch.no_grad():
-                outputs = model(input_ids, attention_mask=attention_mask)
-                # [CLS]
-                batch_embeddings = outputs.last_hidden_state[:, 0, :].to('cpu')
-                ls_embeddings.extend(batch_embeddings)
-
-        df_time['embeddings'] = ls_embeddings
-
-        return df_time
+        return self.text_embedder.convert_df_text_to_embeddings(df)
 
     def load_data(self):
         self.dynamic_data = {}
