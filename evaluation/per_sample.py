@@ -426,9 +426,15 @@ def _load_model_from_checkpoint(ckpt_path, checkpoint_config, device):
             state_dict = {key.replace("model.model.", "model."): value for key, value in checkpoint['state_dict'].items()}
         else:
             state_dict = {key.replace("model.", ""): value for key, value in checkpoint['state_dict'].items()}
+    elif isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        # Checkpoint format with model_state_dict key (common in training checkpoints)
+        state_dict = checkpoint['model_state_dict']
+    elif isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+        # Standard PyTorch checkpoint with state_dict key
+        state_dict = checkpoint['state_dict']
     else:
-        # Standard PyTorch checkpoint
-        state_dict = checkpoint if isinstance(checkpoint, dict) and 'state_dict' not in checkpoint else checkpoint.get('state_dict', checkpoint)
+        # Direct state dict (uncommon)
+        state_dict = checkpoint
     
     # Load weights
     model.load_state_dict(state_dict)
