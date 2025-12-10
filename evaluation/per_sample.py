@@ -12,13 +12,14 @@ import json
 import glob
 import yaml
 from typing import Optional
-from tqdm import tqdm
 from models import model_init
 from data_provider.data_factory import Data_Provider
 from utils.tools import dotdict, general_move_to_device
 from utils.per_sample_metrics import PerSampleMetricsTracker
 from utils.loss_utils import compute_per_sample_loss, compute_per_sample_per_channel_loss
 from evaluation.standard import find_checkpoint
+from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn
+from rich.console import Console
 
 
 def _forward_step_standalone(iter_data, model, config, device):
@@ -116,9 +117,60 @@ def _get_channel_names(num_channels, config):
     return [str(i) for i in range(num_channels)]
 
 
+def _process_batch(iter_data, model, config, device, split_name, epoch, entity_id,
+                   metrics_tracker, criterion):
+    """
+    Process a single batch and add metrics to tracker.
+    
+    Args:
+        iter_data: Batch data from DataLoader
+        model: Trained model instance
+        config: Configuration object
+        device: PyTorch device
+        split_name: Split name
+        epoch: Epoch number
+        entity_id: Entity ID (None for train/val)
+        metrics_tracker: PerSampleMetricsTracker instance
+        criterion: Loss function
+        
+    Returns:
+        tuple: (batch_loss, batch_size) for loss aggregation
+    """
+    # Forward pass
+    output, gt, sample_ids = _forward_step_standalone(iter_data, model, config, device)
+    current_batch_size = gt.size(0)
+    
+    # Compute batch loss
+    loss = criterion(output, gt)
+    batch_loss_value = loss.item() * current_batch_size
+    
+    # Compute per-sample metrics
+    per_sample_loss = compute_per_sample_loss(output, gt, criterion)
+    per_sample_per_channel_loss = compute_per_sample_per_channel_loss(output, gt, criterion)
+    
+    # Extract timestamps from batch tuple (index 3 after sample_ids)
+    timestamps = iter_data[3] if len(iter_data) > 3 else None
+    num_channels = per_sample_per_channel_loss.shape[1]
+    channel_names = _get_channel_names(num_channels, config)
+    
+    # Add to metrics tracker
+    metrics_tracker.add_batch(
+        epoch=epoch,
+        split=split_name,
+        entity_id=entity_id,
+        sample_ids=sample_ids,
+        timestamps=timestamps[:, 0] if timestamps is not None else None,
+        losses=per_sample_loss,
+        channel_ids=channel_names,
+        per_channel_losses=per_sample_per_channel_loss
+    )
+    
+    return batch_loss_value, current_batch_size
+
+
 def process_split_with_per_sample_metrics(loader, model, config, device, split_name, 
                                          metrics_tracker, criterion, epoch=0, 
-                                         entity_id=None, progress_bar=None):
+                                         entity_id=None):
     """
     Process a single data split and compute per-sample metrics.
     
@@ -134,7 +186,6 @@ def process_split_with_per_sample_metrics(loader, model, config, device, split_n
         criterion: Loss function
         epoch: Epoch number (default 0 for final model)
         entity_id: Entity ID for test split (None for train/val)
-        progress_bar: Optional tqdm progress bar
         
     Returns:
         float: Average loss for the split
@@ -143,85 +194,245 @@ def process_split_with_per_sample_metrics(loader, model, config, device, split_n
     running_loss = 0.0
     total_samples = 0
     
+    console = Console()
+    
+    # Create progress bar components (shared for both cases)
+    progress_components = [
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+    ]
+    
     with torch.no_grad():
         # Handle test split (dict of loaders per entity)
         if isinstance(loader, dict):
             # Test split: process each entity separately
-            for entity_name, entity_loader in loader.items():
-                entity_running_loss = 0.0
-                entity_total_samples = 0
+            with Progress(*progress_components, console=console) as progress:
+                entity_task = progress.add_task(f"Processing {split_name}", total=len(loader))
                 
-                for iter_data in tqdm(entity_loader, desc=f"  {split_name}/{entity_name}", 
-                                     disable=(progress_bar is not None), leave=False):
-                    # Forward pass
-                    output, gt, sample_ids = _forward_step_standalone(iter_data, model, config, device)
-                    current_batch_size = gt.size(0)
+                for entity_name, entity_loader in loader.items():
+                    # Inner progress bar for samples within current entity
+                    sample_task = progress.add_task(f"  └─ {entity_name}", total=len(entity_loader))
                     
-                    # Compute batch loss
-                    loss = criterion(output, gt)
-                    entity_running_loss += loss.item() * current_batch_size
-                    entity_total_samples += current_batch_size
-                    running_loss += loss.item() * current_batch_size
-                    total_samples += current_batch_size
+                    for iter_data in entity_loader:
+                        batch_loss, batch_size = _process_batch(
+                            iter_data, model, config, device, split_name, epoch,
+                            entity_name, metrics_tracker, criterion
+                        )
+                        running_loss += batch_loss
+                        total_samples += batch_size
+                        progress.update(sample_task, advance=1)
                     
-                    # Compute per-sample metrics
-                    per_sample_loss = compute_per_sample_loss(output, gt, criterion)
-                    per_sample_per_channel_loss = compute_per_sample_per_channel_loss(output, gt, criterion)
-                    
-                    # Extract timestamps from batch tuple (index 3 after sample_ids)
-                    timestamps = iter_data[3] if len(iter_data) > 3 else None
-                    num_channels = per_sample_per_channel_loss.shape[1]
-                    channel_names = _get_channel_names(num_channels, config)
-                    
-                    # Add to metrics tracker
-                    metrics_tracker.add_batch(
-                        epoch=epoch,
-                        split=split_name,
-                        entity_id=entity_name,  # Use entity name from dict key
-                        sample_ids=sample_ids,
-                        timestamps=timestamps[:, 0] if timestamps is not None else None,
-                        losses=per_sample_loss,
-                        channel_ids=channel_names,
-                        per_channel_losses=per_sample_per_channel_loss
-                    )
+                    progress.remove_task(sample_task)
+                    progress.update(entity_task, advance=1)
         
         else:
             # Train/Val split: single DataLoader
-            for iter_data in tqdm(loader, desc=f"  {split_name}", 
-                                 disable=(progress_bar is not None), leave=False):
-                # Forward pass
-                output, gt, sample_ids = _forward_step_standalone(iter_data, model, config, device)
-                current_batch_size = gt.size(0)
+            with Progress(*progress_components, console=console) as progress:
+                task = progress.add_task(f"Processing {split_name}", total=len(loader))
                 
-                # Compute batch loss
-                loss = criterion(output, gt)
-                running_loss += loss.item() * current_batch_size
-                total_samples += current_batch_size
-                
-                # Compute per-sample metrics
-                per_sample_loss = compute_per_sample_loss(output, gt, criterion)
-                per_sample_per_channel_loss = compute_per_sample_per_channel_loss(output, gt, criterion)
-                
-                # Extract timestamps from batch tuple (index 3 after sample_ids)
-                timestamps = iter_data[3] if len(iter_data) > 3 else None
-                num_channels = per_sample_per_channel_loss.shape[1]
-                channel_names = _get_channel_names(num_channels, config)
-                
-                # Add to metrics tracker
-                metrics_tracker.add_batch(
-                    epoch=epoch,
-                    split=split_name,
-                    entity_id=entity_id,  # None for train/val (will extract from sample_ids)
-                    sample_ids=sample_ids,
-                    timestamps=timestamps[:, 0] if timestamps is not None else None,
-                    losses=per_sample_loss,
-                    channel_ids=channel_names,
-                    per_channel_losses=per_sample_per_channel_loss
-                )
+                for iter_data in loader:
+                    batch_loss, batch_size = _process_batch(
+                        iter_data, model, config, device, split_name, epoch,
+                        entity_id, metrics_tracker, criterion
+                    )
+                    running_loss += batch_loss
+                    total_samples += batch_size
+                    progress.update(task, advance=1)
     
     # Return average loss
     avg_loss = running_loss / total_samples if total_samples > 0 else 0.0
     return avg_loss
+
+
+def _resolve_config_path(config_path_str):
+    """
+    Resolve a config file path (absolute or relative to current working directory).
+    
+    Args:
+        config_path_str: Config file path (may be absolute or relative)
+        
+    Returns:
+        str: Resolved absolute path
+    """
+    if os.path.isabs(config_path_str):
+        return config_path_str
+    else:
+        return os.path.join(os.getcwd(), config_path_str)
+
+
+def _load_config_file(config_path_str, file_type="config"):
+    """
+    Load a config file (YAML) and return as dotdict.
+    
+    Args:
+        config_path_str: Path to config file
+        file_type: Type of config file (for error messages)
+        
+    Returns:
+        dotdict: Loaded configuration
+    """
+    resolved_path = _resolve_config_path(config_path_str)
+    
+    if not os.path.exists(resolved_path):
+        raise FileNotFoundError(
+            f"{file_type.capitalize()} file not found: {config_path_str}\n"
+            f"  Resolved to: {resolved_path}\n"
+            f"  Current working directory: {os.getcwd()}\n"
+            f"  Note: Use absolute paths in configs for more robust evaluation."
+        )
+    
+    with open(resolved_path, 'r') as f:
+        loaded_config = yaml.safe_load(f) or {}
+        return dotdict(loaded_config)
+
+
+def _load_yaml_config(ckpt_path):
+    """
+    Load experiment config from YAML format.
+    
+    Args:
+        ckpt_path: Path to checkpoint directory
+        
+    Returns:
+        dict: Parsed YAML configuration
+    """
+    config_path = os.path.join(ckpt_path, 'configs', 'experiment_config.yaml')
+    with open(config_path, 'r') as f:
+        return yaml.safe_load(f)
+
+
+def _load_legacy_config(ckpt_path):
+    """
+    Load experiment config from legacy JSON format.
+    
+    Args:
+        ckpt_path: Path to checkpoint directory
+        
+    Returns:
+        dotdict: Parsed configuration
+    """
+    config_path = os.path.join(ckpt_path, 'args.json')
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(
+            f"Configuration file not found in {ckpt_path}\n"
+            f"  Expected: configs/experiment_config.yaml or args.json"
+        )
+    checkpoint_config = dotdict(json.load(open(config_path)))
+    checkpoint_config.model_config = dotdict(checkpoint_config.model_config)
+    return checkpoint_config
+
+
+def _extract_training_params(training_config):
+    """
+    Extract training parameters with defaults.
+    
+    Args:
+        training_config: Training config dictionary
+        
+    Returns:
+        dict: Training parameters with defaults applied
+    """
+    return {
+        'loss': training_config.get('loss', 'mse'),
+        'input_len': training_config.get('input_len', 360),
+        'output_len': training_config.get('output_len', 24),
+        'batch_size': training_config.get('batch_size', 128),
+        'noise': training_config.get('noise', 0.0),
+        'scale': training_config.get('scale', True),
+        'disable_buffer': training_config.get('disable_buffer', False),
+        'preload_hetero': training_config.get('preload_hetero', False),
+        'prefetch_factor': training_config.get('prefetch_factor', 2),
+        'num_workers': training_config.get('num_workers', 0),
+        'sample_step': training_config.get('sample_step', 24),
+        'hetero_align_stride': training_config.get('hetero_align_stride', True),
+    }
+
+
+def _load_nested_config(config_value):
+    """
+    Load a nested config file if config_value is a path.
+    
+    Args:
+        config_value: Either a string path, dict with 'config_path', or dict config
+        
+    Returns:
+        dotdict or str: Loaded config or original value
+    """
+    # Extract path if it's a dict with config_path
+    if isinstance(config_value, dict) and 'config_path' in config_value:
+        config_path = config_value.get('config_path')
+    elif isinstance(config_value, str):
+        config_path = config_value
+    else:
+        # Already a dict config, wrap in dotdict
+        return dotdict(config_value) if config_value else {}
+    
+    # If we have a path, load the file
+    if config_path:
+        return _load_config_file(config_path, "config")
+    
+    return dotdict({})
+
+
+def _merge_model_config_overrides(checkpoint_config, config_dict):
+    """
+    Merge model_config overrides from experiment_config.yaml into checkpoint_config.
+    
+    Args:
+        checkpoint_config: Checkpoint configuration to update
+        config_dict: Experiment config dictionary
+    """
+    if 'model_config' not in config_dict or not isinstance(config_dict['model_config'], dict):
+        return
+    
+    model_config_overrides = config_dict['model_config']
+    
+    # Ensure model_config is a dotdict for attribute access
+    if not isinstance(checkpoint_config.model_config, dotdict):
+        if isinstance(checkpoint_config.model_config, dict):
+            checkpoint_config.model_config = dotdict(checkpoint_config.model_config)
+        else:
+            checkpoint_config.model_config = dotdict({})
+    
+    # Merge overrides (only non-empty values)
+    for key, value in model_config_overrides.items():
+        if value:  # Only override if value is not empty/None/empty string
+            checkpoint_config.model_config[key] = value
+
+
+def _validate_pretrained_model_path(checkpoint_config):
+    """
+    Validate and resolve pretrained_model_path if present in model config.
+    
+    Args:
+        checkpoint_config: Checkpoint configuration to validate
+    """
+    if not hasattr(checkpoint_config.model_config, 'pretrained_model_path'):
+        return
+    
+    pretrained_path = checkpoint_config.model_config.pretrained_model_path
+    if not pretrained_path:
+        return
+    
+    if not os.path.isabs(pretrained_path):
+        print(f"[Warning] pretrained_model_path is not absolute: {pretrained_path}")
+        print("  It is much more robust to use absolute paths for pretrained_model_path in configs.")
+        print(f"  Will only look relative to current working directory: {os.getcwd()}")
+    
+    resolved_path = _resolve_config_path(pretrained_path)
+    
+    if not os.path.exists(resolved_path):
+        raise FileNotFoundError(
+            f"pretrained_model_path not found: {pretrained_path}\n"
+            f"  Resolved to: {resolved_path}\n"
+            f"  Current working directory: {os.getcwd()}\n"
+            f"  Note: Use absolute paths in model config for more robust evaluation."
+        )
+    
+    # Update the path to the resolved absolute path
+    checkpoint_config.model_config.pretrained_model_path = os.path.abspath(resolved_path)
 
 
 def _load_checkpoint_config(ckpt_path, eval_config, config):
@@ -241,125 +452,52 @@ def _load_checkpoint_config(ckpt_path, eval_config, config):
     config_path = os.path.join(ckpt_path, 'configs', 'experiment_config.yaml')
     if os.path.exists(config_path):
         # New format: YAML config
-        with open(config_path, 'r') as f:
-            config_dict = yaml.safe_load(f)
-        # Extract model and data configs
-        # Handle config_path which may be a string (path) or dict
+        config_dict = _load_yaml_config(ckpt_path)
+        
+        # Extract model and data config paths
         model_config_path = config_dict.get('model', {}).get('config_path', {})
         data_config_path = config_dict.get('data', {}).get('config_path', {})
         
-        # Only wrap in dotdict if it's a dict, otherwise keep as string (will be loaded later)
-        model_config_val = model_config_path if isinstance(model_config_path, str) else (dotdict(model_config_path) if isinstance(model_config_path, dict) else {})
-        data_config_val = data_config_path if isinstance(data_config_path, str) else (dotdict(data_config_path) if isinstance(data_config_path, dict) else {})
+        # Initialize config values (will be loaded if they're paths)
+        model_config_val = model_config_path if isinstance(model_config_path, str) else (
+            dotdict(model_config_path) if isinstance(model_config_path, dict) else {}
+        )
+        data_config_val = data_config_path if isinstance(data_config_path, str) else (
+            dotdict(data_config_path) if isinstance(data_config_path, dict) else {}
+        )
         
+        # Extract training config with defaults
+        training_config = config_dict.get('training', {})
+        training_params = _extract_training_params(training_config)
+        
+        # Create base checkpoint config
         checkpoint_config = dotdict({
             'model': config_dict.get('model', {}).get('name', 'unknown'),
             'model_config': model_config_val,
             'data': config_dict.get('data', {}).get('name', 'unknown'),
             'data_config': data_config_val,
             'task': config_dict.get('experiment', {}).get('type', 'TSF'),
-            'loss': config_dict.get('training', {}).get('loss', 'mse'),
-            'input_len': config_dict.get('training', {}).get('input_len', 360),
-            'output_len': config_dict.get('training', {}).get('output_len', 24),
-            'batch_size': config_dict.get('training', {}).get('batch_size', 128),
+            **training_params
         })
+        
         # Load actual model and data configs if they're paths
-        if isinstance(checkpoint_config.model_config, str) or (isinstance(checkpoint_config.model_config, dict) and 'config_path' in checkpoint_config.model_config):
-            model_config_path = checkpoint_config.model_config if isinstance(checkpoint_config.model_config, str) else checkpoint_config.model_config.get('config_path')
-            if model_config_path:
-                # Resolve path: check if absolute, otherwise look relative to current working directory
-                if os.path.isabs(model_config_path):
-                    resolved_path = model_config_path
-                else:
-                    resolved_path = os.path.join(os.getcwd(), model_config_path)
-                
-                if os.path.exists(resolved_path):
-                    with open(resolved_path, 'r') as f:
-                        loaded_model_config = yaml.safe_load(f) or {}
-                        checkpoint_config.model_config = dotdict(loaded_model_config)
-                else:
-                    raise FileNotFoundError(
-                        f"Model config file not found: {model_config_path}\n"
-                        f"  Resolved to: {resolved_path}\n"
-                        f"  Current working directory: {os.getcwd()}\n"
-                        f"  Note: Use absolute paths in configs for more robust evaluation."
-                    )
+        checkpoint_config.model_config = _load_nested_config(checkpoint_config.model_config)
+        checkpoint_config.data_config = _load_nested_config(checkpoint_config.data_config)
         
-        # Merge any model_config overrides from experiment_config.yaml
-        # (e.g., pretrained_model_path may be set in experiment_config.yaml's model_config section)
-        # This ensures that overrides from suite configs are properly applied
-        if 'model_config' in config_dict and isinstance(config_dict['model_config'], dict):
-            model_config_overrides = config_dict['model_config']
-            # Ensure model_config is a dotdict for attribute access
-            if not isinstance(checkpoint_config.model_config, dotdict):
-                if isinstance(checkpoint_config.model_config, dict):
-                    checkpoint_config.model_config = dotdict(checkpoint_config.model_config)
-                else:
-                    checkpoint_config.model_config = dotdict({})
-            # Merge overrides
-            for key, value in model_config_overrides.items():
-                if value:  # Only override if value is not empty/None/empty string
-                    checkpoint_config.model_config[key] = value
-        
-        if isinstance(checkpoint_config.data_config, str) or (isinstance(checkpoint_config.data_config, dict) and 'config_path' in checkpoint_config.data_config):
-            data_config_path = checkpoint_config.data_config if isinstance(checkpoint_config.data_config, str) else checkpoint_config.data_config.get('config_path')
-            if data_config_path:
-                # Resolve path: check if absolute, otherwise look relative to current working directory
-                if os.path.isabs(data_config_path):
-                    resolved_path = data_config_path
-                else:
-                    resolved_path = os.path.join(os.getcwd(), data_config_path)
-                
-                if os.path.exists(resolved_path):
-                    with open(resolved_path, 'r') as f:
-                        checkpoint_config.data_config = dotdict(yaml.safe_load(f))
-                else:
-                    raise FileNotFoundError(
-                        f"Data config file not found: {data_config_path}\n"
-                        f"  Resolved to: {resolved_path}\n"
-                        f"  Current working directory: {os.getcwd()}\n"
-                        f"  Note: Use absolute paths in configs for more robust evaluation."
-                    )
+        # Merge model_config overrides from experiment_config.yaml
+        _merge_model_config_overrides(checkpoint_config, config_dict)
     else:
         # Legacy format: args.json
-        config_path = os.path.join(ckpt_path, 'args.json')
-        if not os.path.exists(config_path):
-            raise FileNotFoundError(
-                f"Configuration file not found in {ckpt_path}\n"
-                f"  Expected: configs/experiment_config.yaml or args.json"
-            )
-        checkpoint_config = dotdict(json.load(open(config_path)))
-        checkpoint_config.model_config = dotdict(checkpoint_config.model_config)
+        checkpoint_config = _load_legacy_config(ckpt_path)
     
     # Use provided data_config override if available, otherwise use checkpoint's data_config
     if hasattr(config, 'data_config') and config.data_config:
-        checkpoint_config.data_config = dotdict(yaml.safe_load(open(config.data_config, 'r')))
+        checkpoint_config.data_config = _load_config_file(config.data_config, "data config")
     else:
         checkpoint_config.data_config = dotdict(checkpoint_config.data_config)
     
-    # Check pretrained_model_path if present in model config (e.g., for LYNX models)
-    if hasattr(checkpoint_config.model_config, 'pretrained_model_path') and checkpoint_config.model_config.pretrained_model_path:
-        pretrained_path = checkpoint_config.model_config.pretrained_model_path
-        if not os.path.isabs(pretrained_path):
-            print(f"[Warning] pretrained_model_path is not absolute: {pretrained_path}")
-            print("  It is much more robust to use absolute paths for pretrained_model_path in configs.")
-            print(f"  Will only look relative to current working directory: {os.getcwd()}")
-        
-        # Resolve path: check if absolute, otherwise look relative to current working directory
-        if os.path.isabs(pretrained_path):
-            resolved_pretrained_path = pretrained_path
-        else:
-            resolved_pretrained_path = os.path.join(os.getcwd(), pretrained_path)
-        
-        if not os.path.exists(resolved_pretrained_path):
-            raise FileNotFoundError(
-                f"pretrained_model_path not found: {pretrained_path}\n"
-                f"  Resolved to: {resolved_pretrained_path}\n"
-                f"  Current working directory: {os.getcwd()}\n"
-                f"  Note: Use absolute paths in model config for more robust evaluation."
-            )
-        # Update the path to the resolved absolute path
-        checkpoint_config.model_config.pretrained_model_path = os.path.abspath(resolved_pretrained_path)
+    # Validate pretrained_model_path if present
+    _validate_pretrained_model_path(checkpoint_config)
     
     # Set evaluation-specific config values
     checkpoint_config.gpu = eval_config.device
