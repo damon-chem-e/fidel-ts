@@ -1,0 +1,24 @@
+model: lynx_mmitransformer
+d_model: 128
+d_ff: 128
+output_attention: False
+use_norm: True
+dropout: 0.1
+factor: 1
+n_heads: 8
+activation: gelu
+e_layers: 2
+task: TGTSF
+
+# Text Encoder Parameters
+text_dim: 384
+stride: 8
+
+# Channel Description Parameters
+channel_desc_dim: 64  # M dimension for channel descriptions
+
+# News Embedding Parameters
+num_text_variates: 1  # K: number of global text variates (default 1, can be increased for ablation)
+news_num_heads: 4  # Number of attention heads for news aggregation transformer
+news_num_layers: 2  # Number of transformer layers for news aggregation
+
