@@ -21,4 +21,5 @@ channel_desc_dim: 64  # M dimension for channel descriptions
 num_text_variates: 1  # K: number of global text variates (default 1, can be increased for ablation)
 news_num_heads: 4  # Number of attention heads for news aggregation transformer
 news_num_layers: 2  # Number of transformer layers for news aggregation
+news_aggregation_type: hierarchical  # 'hierarchical' (default, Option B) or 'flat' (Option A)
 

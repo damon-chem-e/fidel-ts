@@ -56,7 +56,8 @@ class Model(nn.Module):
             seq_len=text_seq_len,
             dropout=configs.dropout,
             num_heads=getattr(configs, 'news_num_heads', 4),
-            num_layers=getattr(configs, 'news_num_layers', 2)
+            num_layers=getattr(configs, 'news_num_layers', 2),
+            aggregation_type=getattr(configs, 'news_aggregation_type', 'hierarchical')
         )
         
         # 3. Encoder (Modified to work with d_model + M)
