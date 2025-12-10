@@ -1,0 +1,34 @@
+# mmitransformer-residual Model Configuration
+# Uses mmitransformer to learn a residual correction to a frozen iTransformer baseline
+
+model: mmitransformer_residual
+
+# Pretrained model configuration
+pretrained_model_path: ""  # Path to pretrained checkpoint
+pretrained_model_type: "iTransformer"
+pretrained_model_config_path: ""
+
+# Residual Model (mmitransformer) Parameters
+# (These override or augment defaults)
+individual: False
+enc_in: 1
+e_layers: 2       # Layers in residual mmitransformer
+n_heads: 8
+d_model: 128
+d_ff: 128
+dropout: 0.1
+activation: "gelu"
+output_attention: False
+use_norm: True    # Default for iTransformer structure (disabled dynamically for residual learning)
+factor: 1         # Attention factor
+
+# Text Encoder Parameters (used to generate text embeddings)
+cross_layers: 2
+self_layers: 2
+text_dim: 384     # Dimension of text embeddings
+stride: 8
+
+# Other
+task: TGTSF
+
+

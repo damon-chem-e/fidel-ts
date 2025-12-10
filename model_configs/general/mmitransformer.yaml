@@ -1,0 +1,19 @@
+model: mmitransformer
+d_model: 128
+d_ff: 128
+output_attention: False
+use_norm: True
+dropout: 0.1
+factor: 1
+n_heads: 8
+activation: gelu
+e_layers: 2
+task: TGTSF
+
+# Text Encoder Parameters
+cross_layers: 2
+self_layers: 2
+text_dim: 384
+stride: 8
+
+
