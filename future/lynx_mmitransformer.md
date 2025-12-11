@@ -3454,3 +3454,550 @@ Without editing code make a plan to address this.
 I think this is a good plan when we have sequence length included. When sequence length is not included, doing what we currently have I think is perfectly fine (remove the self attention stuff from this module since at that point it's irrelevant -- we just have multiple layers of temporal attention or 2d attention). Perhaps for simplicity and completeness we make a detailed plan to remove support for sequence length in the current module (lynx_text_encoder.py), then make another module (lynx_text_encoder_seq.py) that only supports including the sequence length, and for that one we do this new plan.
 
 Please proceed to make the plan.
+
+---
+
+## Plan: Split Non-Seq vs Seq Text Encoders
+
+**Goal**  
+Keep `lynx_text_encoder.py` strictly 4D (no token sequence); create `lynx_text_encoder_seq.py` for 5D token-aware flow implementing the new ordering: token self-attention (with K projections) → temporal attention → output variates.
+
+### A) Simplify `lynx_text_encoder.py` (4D only)
+- Remove all sequence-dimension logic:
+  - Delete `TextSelfAttention`, any seq_len handling, and related masks.
+  - Restrict inputs to `[B, L, N, D]`; raise if 5D.
+  - In `AlternatingBlock`, keep only temporal transformer layers.
+  - In aggregators, enforce 4D paths; drop seq_len masking/branches.
+- Config impact:
+  - Remove/ignore `use_text_sequence` and text-layer counts for this module.
+  - Keep `aggregation_type` (hierarchical/flat) and news/head/layer params.
+- Docstrings/tests:
+  - Update docstrings to state 4D-only.
+  - Add/adjust tests to cover hierarchical/flat with N=1 and N>1.
+
+### B) New `lynx_text_encoder_seq.py` (5D only, token-aware)
+- Input contract: `[B, L, N, seq_len, D]`; raise if 4D.
+- Masking: `news_mask` `[B, L, N]`, `text_mask` `[B, L, N, seq_len]`.
+- Block ordering (per prompt):
+  1) **Token self-attention first**: per (B, L, N) over seq_len (shared module).  
+  2) **Per-article projection to K_heads**: project each token-processed article to K text reps (multihead; K hyperparam). Output per time step: `[B, L, N*K, D]` (or `[B, L, K, D]` if N=1).  
+  3) **Temporal attention** over L on those N*K variates (can share weights or per-head; default shared).  
+  4) Optional final aggregation to `[B, K, D_out]` via multi-query or per-head pooling; then project to output_dim (d_model+M).
+- Modules:
+  - `TokenSelfAttention`: transformer over seq_len, batch_first, norm_first; respects `text_mask`.
+  - `PerArticleProjector`: linear (or MLP) from token-processed D to K_heads×D (reshape to K slices).
+  - `TemporalTransformerSeq`: transformer over L; input shape `[B, L, N*K, D]` (flatten N*K) or `[B, L, N, K, D]` with reshape.
+  - `VariateProjectorSeq`: separate projection per variate/head to output_dim.
+- Config (new YAML or section):
+  - `use_text_sequence: true` (enforced here).
+  - `text_seq_len` (if needed), `token_num_heads`, `token_num_layers`.
+  - `k_text_heads` (K), `temporal_num_heads`, `temporal_num_layers`.
+  - Drop `aggregation_type` here (architecture fixed to new flow).
+- Wiring:
+  - Export `TextEmbeddingSeq` class.
+  - In `lynx_mmitransformer.py`, choose encoder based on `use_text_sequence`; instantiate seq module when true.
+- Tests:
+  - Shapes: verify `[B, L, N, seq_len, D]` → `[B, K, output_dim]`.
+  - Masking: padded tokens and padded news items excluded.
+  - N=1 and N>1 cases; K>1 and K=1 cases.
+
+### C) Migration/Compatibility
+- Keep current behavior for 4D users via `lynx_text_encoder.py`.
+- Token-aware users set `use_text_sequence: true` to route to `lynx_text_encoder_seq.py`.
+- Document the split and the new defaults/order.
+
+---
+
+Make the default for temporal attention per head weights on temporal attention in lynx_text_encoder_seq. The final aggregation is to [B, K, D_out] where D_out = d_model + M. This step projects out of the temporal dimension, and K in [B, K, D_out] is the same as the K_heads before, so if N>1 it also projects out of the articles dimension. 
+
+Please proceed
+
+---
+
+"""Text encoder with token sequence support (5D input)."""
+
+import torch
+import torch.nn as nn
+
+
+class TokenSelfAttention(nn.Module):
+    """Self-attention over seq_len per article/time."""
+
+    def __init__(self, text_dim, num_heads=4, num_layers=1, dropout=0.1):
+        super(TokenSelfAttention, self).__init__()
+        layer = nn.TransformerEncoderLayer(
+            d_model=text_dim,
+            nhead=num_heads,
+            dim_feedforward=text_dim * 4,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.encoder = nn.TransformerEncoder(layer, num_layers=num_layers, norm=nn.LayerNorm(text_dim))
+
+    def forward(self, tokens, token_mask=None):
+        """
+        tokens: [B, L, N, seq_len, D]
+        token_mask: [B, L, N, seq_len] or None
+        """
+        B, L, N, seq_len, D = tokens.shape
+        flat = tokens.reshape(B * L * N, seq_len, D)
+        mask = None
+        if token_mask is not None:
+            mask = ~token_mask.reshape(B * L * N, seq_len).bool()
+        out = self.encoder(flat, src_key_padding_mask=mask)
+        return out.reshape(B, L, N, seq_len, D)
+
+
+class TokenAggregator(nn.Module):
+    """K queries attend over seq_len per article to get K heads."""
+
+    def __init__(self, text_dim, num_variates):
+        super(TokenAggregator, self).__init__()
+        self.num_variates = num_variates
+        self.queries = nn.Parameter(torch.randn(num_variates, 1, text_dim))
+
+    def forward(self, token_emb, token_mask=None):
+        """
+        token_emb: [B, L, N, seq_len, D]
+        token_mask: [B, L, N, seq_len] or None
+        returns: [B, L, N, K, D]
+        """
+        B, L, N, seq_len, D = token_emb.shape
+        K = self.num_variates
+        emb_flat = token_emb.reshape(B * L * N, seq_len, D)
+        queries = self.queries.unsqueeze(0).expand(B * L * N, -1, -1, -1).reshape(B * L * N * K, 1, D)
+        emb_exp = emb_flat.unsqueeze(1).expand(-1, K, -1, -1).reshape(B * L * N * K, seq_len, D)
+        scores = torch.bmm(queries, emb_exp.transpose(1, 2)) / (D**0.5)
+        if token_mask is not None:
+            mask = ~token_mask.unsqueeze(3).expand(-1, -1, -1, K, -1).reshape(B * L * N * K, seq_len).bool()
+            scores = scores.masked_fill(mask.unsqueeze(1), float("-inf"))
+        weights = torch.softmax(scores, dim=-1)
+        agg = torch.bmm(weights, emb_exp).reshape(B, L, N, K, D)
+        return agg
+
+
+class ArticlePooler(nn.Module):
+    """Pools across articles N (mean with mask) keeping K heads."""
+
+    @staticmethod
+    def forward(text_heads, news_mask=None):
+        """
+        text_heads: [B, L, N, K, D]
+        news_mask: [B, L, N] or None
+        returns: [B, L, K, D]
+        """
+        if news_mask is None:
+            return text_heads.mean(dim=2)
+        weights = news_mask.unsqueeze(-1).unsqueeze(-1)  # [B,L,N,1,1]
+        summed = (text_heads * weights).sum(dim=2)
+        denom = weights.sum(dim=2).clamp(min=1e-6)
+        return summed / denom
+
+
+class TemporalTransformerSeq(nn.Module):
+    """Temporal transformer over L; default per-head weights."""
+
+    def __init__(
+        self,
+        text_dim,
+        num_heads=4,
+        num_layers=2,
+        dropout=0.1,
+        per_head=True,
+        num_variates=1,
+    ):
+        super(TemporalTransformerSeq, self).__init__()
+        self.per_head = per_head
+        if per_head:
+            self.shared = None
+        else:
+            layer = nn.TransformerEncoderLayer(
+                d_model=text_dim,
+                nhead=num_heads,
+                dim_feedforward=text_dim * 4,
+                dropout=dropout,
+                activation="gelu",
+                batch_first=True,
+                norm_first=True,
+            )
+            self.shared = nn.TransformerEncoder(layer, num_layers=num_layers, norm=nn.LayerNorm(text_dim))
+        self.layers = None
+        if per_head:
+            layer = nn.TransformerEncoderLayer(
+                d_model=text_dim,
+                nhead=num_heads,
+                dim_feedforward=text_dim * 4,
+                dropout=dropout,
+                activation="gelu",
+                batch_first=True,
+                norm_first=True,
+            )
+            self.layers = nn.ModuleList(
+                [
+                    nn.TransformerEncoder(
+                        layer, num_layers=num_layers, norm=nn.LayerNorm(text_dim)
+                    )
+                    for _ in range(num_variates)
+                ]
+            )
+
+    def forward(self, seq_emb, time_mask=None):
+        """
+        seq_emb: [B, L, K, D]
+        time_mask: [B, L] or None
+        returns: [B, L, K, D]
+        """
+        B, L, K, D = seq_emb.shape
+        padding_mask = None
+        if time_mask is not None:
+            padding_mask = ~time_mask.bool()
+        if self.per_head:
+            outs = []
+            for k in range(K):
+                out = self.layers[k](seq_emb[:, :, k, :], src_key_padding_mask=padding_mask)
+                outs.append(out.unsqueeze(2))
+            return torch.cat(outs, dim=2)
+        seq_flat = seq_emb.reshape(B * K, L, D)
+        if padding_mask is not None:
+            padding_mask = padding_mask.unsqueeze(1).expand(-1, K, -1).reshape(B * K, L)
+        out = self.shared(seq_flat, src_key_padding_mask=padding_mask)
+        return out.reshape(B, K, L, D).permute(0, 2, 1, 3)
+
+
+class TemporalAggregator(nn.Module):
+    """K queries attend over L to produce [B, K, D]."""
+
+    def __init__(self, text_dim, num_variates):
+        super(TemporalAggregator, self).__init__()
+        self.num_variates = num_variates
+        self.queries = nn.Parameter(torch.randn(num_variates, 1, text_dim))
+
+    def forward(self, temporal_emb, time_mask=None):
+        """
+        temporal_emb: [B, L, K, D]
+        time_mask: [B, L] or None
+        returns: [B, K, D]
+        """
+        B, L, K, D = temporal_emb.shape
+        queries = self.queries.unsqueeze(0).expand(B, -1, -1, -1).reshape(B * K, 1, D)
+        temp_flat = temporal_emb.permute(0, 2, 1, 3).reshape(B * K, L, D)
+        scores = torch.bmm(queries, temp_flat.transpose(1, 2)) / (D**0.5)
+        if time_mask is not None:
+            mask = ~time_mask.unsqueeze(1).expand(-1, K, -1).reshape(B * K, L).bool()
+            scores = scores.masked_fill(mask.unsqueeze(1), float("-inf"))
+        weights = torch.softmax(scores, dim=-1)
+        agg = torch.bmm(weights, temp_flat).reshape(B, K, D)
+        return agg
+
+
+class VariateProjectorSeq(nn.Module):
+    """Separate projection per variate to output_dim."""
+
+    def __init__(self, text_dim, output_dim, num_variates=1, dropout=0.1):
+        super(VariateProjectorSeq, self).__init__()
+        self.num_variates = num_variates
+        if num_variates == 1:
+            self.projections = nn.Linear(text_dim, output_dim)
+        else:
+            self.projections = nn.ModuleList(
+                [nn.Linear(text_dim, output_dim) for _ in range(num_variates)]
+            )
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, variates):
+        if self.num_variates == 1:
+            return self.dropout(self.projections(variates))
+        outputs = [proj(variates[:, k, :]) for k, proj in enumerate(self.projections)]
+        return self.dropout(torch.stack(outputs, dim=1))
+
+
+class TextEmbeddingSeq(nn.Module):
+    """Token-aware encoder: tokens -> K heads -> temporal -> [B, K, output_dim]."""
+
+    def __init__(
+        self,
+        text_dim,
+        output_dim,
+        num_text_variates=1,
+        token_num_heads=4,
+        token_num_layers=1,
+        temporal_num_heads=4,
+        temporal_num_layers=2,
+        temporal_per_head=True,
+        dropout=0.1,
+    ):
+        super(TextEmbeddingSeq, self).__init__()
+        self.token_attn = TokenSelfAttention(text_dim, token_num_heads, token_num_layers, dropout)
+        self.token_agg = TokenAggregator(text_dim, num_text_variates)
+        self.article_pool = ArticlePooler()
+        self.temporal = TemporalTransformerSeq(
+            text_dim,
+            temporal_num_heads,
+            temporal_num_layers,
+            dropout,
+            per_head=temporal_per_head,
+            num_variates=num_text_variates,
+        )
+        self.temporal_agg = TemporalAggregator(text_dim, num_text_variates)
+        self.projector = VariateProjectorSeq(text_dim, output_dim, num_text_variates, dropout)
+
+    def forward(self, news_emb, news_mask=None, text_mask=None):
+        """
+        news_emb: [B, L, N, seq_len, D]
+        news_mask: [B, L, N] or None
+        text_mask: [B, L, N, seq_len] or None
+        """
+        if len(news_emb.shape) != 5:
+            raise ValueError(f"TextEmbeddingSeq expects 5D input; got {news_emb.shape}")
+
+        token_out = self.token_attn(news_emb, text_mask)  # [B,L,N,seq_len,D]
+        token_heads = self.token_agg(token_out, text_mask)  # [B,L,N,K,D]
+        pooled = self.article_pool(token_heads, news_mask)  # [B,L,K,D]
+
+        time_mask = None
+        if news_mask is not None:
+            time_mask = (news_mask.sum(dim=2) > 0).float()
+
+        temporal_out = self.temporal(pooled, time_mask)  # [B,L,K,D]
+        agg = self.temporal_agg(temporal_out, time_mask)  # [B,K,D]
+        return self.projector(agg)  # [B,K,output_dim]
+
+
+
+---
+
+"""Text encoder without token sequence suppor (no sequence length dimension for text)."""
+
+import torch
+import torch.nn as nn
+
+
+class TextItemsTransformer(nn.Module):
+    """Attention over news items (N) per time step for 4D inputs [B, L, N, D]."""
+
+    def __init__(self, text_dim, num_heads=4, num_layers=2, dropout=0.1):
+        super(TextItemsTransformer, self).__init__()
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=text_dim,
+            nhead=num_heads,
+            dim_feedforward=text_dim * 4,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.transformer = nn.TransformerEncoder(
+            encoder_layer, num_layers=num_layers, norm=nn.LayerNorm(text_dim)
+        )
+
+    def forward(self, news_emb, news_mask=None):
+        """
+        Args:
+            news_emb: [B, L, N, D]
+            news_mask: [B, L, N] or None
+        Returns:
+            [B, L, D]
+        """
+        if len(news_emb.shape) != 4:
+            raise ValueError(f"Expected 4D news_emb, got {news_emb.shape}")
+
+        B, L, N, D = news_emb.shape
+        if N == 1:
+            return news_emb.squeeze(2)
+
+        news_flat = news_emb.reshape(B * L, N, D)
+        if news_mask is not None:
+            mask_flat = news_mask.reshape(B * L, N).bool()
+            aggregated = self.transformer(
+                news_flat, src_key_padding_mask=~mask_flat
+            )
+        else:
+            aggregated = self.transformer(news_flat)
+
+        aggregated = aggregated.mean(dim=1)
+        return aggregated.reshape(B, L, D)
+
+
+class TemporalTransformer(nn.Module):
+    """Transformer over temporal dimension L for 3D inputs [B, L, D]."""
+
+    def __init__(self, text_dim, num_heads=4, num_layers=2, dropout=0.1):
+        super(TemporalTransformer, self).__init__()
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=text_dim,
+            nhead=num_heads,
+            dim_feedforward=text_dim * 4,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.transformer = nn.TransformerEncoder(
+            encoder_layer, num_layers=num_layers, norm=nn.LayerNorm(text_dim)
+        )
+
+    def forward(self, temporal_emb):
+        if len(temporal_emb.shape) != 3:
+            raise ValueError(f"Expected 3D temporal_emb, got {temporal_emb.shape}")
+        return self.transformer(temporal_emb)
+
+
+class HierarchicalAggregator(nn.Module):
+    """Option B: aggregate across N, then a stack of temporal transformers (4D only)."""
+
+    def __init__(
+        self,
+        text_dim,
+        num_heads=4,
+        num_layers=2,
+        dropout=0.1,
+        num_blocks=1,
+        num_temporal_layers_per_block=2,
+    ):
+        super(HierarchicalAggregator, self).__init__()
+        self.text_items_transformer = TextItemsTransformer(text_dim, num_heads, num_layers, dropout)
+        self.temporal_blocks = nn.ModuleList(
+            [
+                TemporalTransformer(text_dim, num_heads, num_temporal_layers_per_block, dropout)
+                for _ in range(num_blocks)
+            ]
+        )
+
+    def forward(self, news_emb, news_mask=None):
+        aggregated = self.text_items_transformer(news_emb, news_mask)
+        for block in self.temporal_blocks:
+            aggregated = block(aggregated)
+        return aggregated
+
+
+class FlatAggregator(nn.Module):
+    """Option A: flatten L·N, attend jointly, mean-pool over N (4D only)."""
+
+    def __init__(self, text_dim, num_heads=4, num_layers=2, dropout=0.1):
+        super(FlatAggregator, self).__init__()
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=text_dim,
+            nhead=num_heads,
+            dim_feedforward=text_dim * 4,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.transformer = nn.TransformerEncoder(
+            encoder_layer, num_layers=num_layers, norm=nn.LayerNorm(text_dim)
+        )
+
+    def forward(self, news_emb, news_mask=None):
+        if len(news_emb.shape) != 4:
+            raise ValueError(f"Expected 4D news_emb, got {news_emb.shape}")
+
+        B, L, N, D = news_emb.shape
+        news_flat = news_emb.reshape(B, L * N, D)
+        if news_mask is not None:
+            mask_flat = news_mask.reshape(B, L * N).bool()
+            transformed = self.transformer(
+                news_flat, src_key_padding_mask=~mask_flat
+            )
+        else:
+            transformed = self.transformer(news_flat)
+
+        transformed = transformed.reshape(B, L, N, D).mean(dim=2)
+        return transformed
+
+
+class MultiQueryAggregator(nn.Module):
+    """K learnable queries attend over L to produce K variates (3D input)."""
+
+    def __init__(self, text_dim, num_variates=1):
+        super(MultiQueryAggregator, self).__init__()
+        self.num_variates = num_variates
+        self.queries = nn.Parameter(torch.randn(num_variates, 1, text_dim))
+
+    def forward(self, temporal_emb):
+        if len(temporal_emb.shape) != 3:
+            raise ValueError(f"Expected 3D temporal_emb, got {temporal_emb.shape}")
+
+        B, L, D = temporal_emb.shape
+        K = self.num_variates
+        queries = self.queries.unsqueeze(0).expand(B, -1, -1, -1).reshape(B * K, 1, D)
+        temporal_expanded = (
+            temporal_emb.unsqueeze(1).expand(-1, K, -1, -1).reshape(B * K, L, D)
+        )
+        attn_scores = torch.bmm(queries, temporal_expanded.transpose(1, 2)) / (
+            D**0.5
+        )
+        attn_weights = torch.softmax(attn_scores, dim=-1)
+        aggregated = torch.bmm(attn_weights, temporal_expanded).squeeze(1)
+        return aggregated.reshape(B, K, D)
+
+
+class VariateProjector(nn.Module):
+    """Separate projection per variate to output_dim."""
+
+    def __init__(self, text_dim, output_dim, num_variates=1):
+        super(VariateProjector, self).__init__()
+        self.num_variates = num_variates
+        if num_variates == 1:
+            self.projections = nn.Linear(text_dim, output_dim)
+        else:
+            self.projections = nn.ModuleList(
+                [nn.Linear(text_dim, output_dim) for _ in range(num_variates)]
+            )
+
+    def forward(self, variates):
+        if self.num_variates == 1:
+            return self.projections(variates)
+        outputs = [proj(variates[:, k, :]) for k, proj in enumerate(self.projections)]
+        return torch.stack(outputs, dim=1)
+
+
+class TextEmbedding(nn.Module):
+    """Embeds 4D news [B, L, N, D] to K variates [B, K, output_dim] (no token seq)."""
+
+    def __init__(
+        self,
+        text_dim,
+        output_dim,
+        num_text_variates=1,
+        dropout=0.1,
+        num_heads=4,
+        num_layers=2,
+        aggregation_type="hierarchical",
+        num_blocks=1,
+        num_temporal_layers_per_block=2,
+    ):
+        super(TextEmbedding, self).__init__()
+        if aggregation_type == "hierarchical":
+            self.aggregator = HierarchicalAggregator(
+                text_dim,
+                num_heads,
+                num_layers,
+                dropout,
+                num_blocks,
+                num_temporal_layers_per_block,
+            )
+        elif aggregation_type == "flat":
+            self.aggregator = FlatAggregator(
+                text_dim, num_heads, num_layers, dropout
+            )
+        else:
+            raise ValueError(f"Unknown aggregation_type: {aggregation_type}")
+
+        self.query_aggregator = MultiQueryAggregator(text_dim, num_text_variates)
+        self.projector = VariateProjector(text_dim, output_dim, num_text_variates)
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, news_emb, news_mask=None):
+        if len(news_emb.shape) != 4:
+            raise ValueError(
+                f"TextEmbedding expects 4D input [B, L, N, D]; got {news_emb.shape}"
+            )
+        temporal_emb = self.aggregator(news_emb, news_mask)  # [B, L, D]
+        variates = self.query_aggregator(temporal_emb)  # [B, K, D]
+        output = self.projector(variates)  # [B, K, output_dim]
+        return self.dropout(output)
+
+---

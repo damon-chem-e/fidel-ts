@@ -25,6 +25,14 @@ news_aggregation_type: hierarchical  # 'hierarchical' (default, Option B) or 'fl
 
 # Sequence Dimension Support (for text self-attention)
 use_text_sequence: false  # Set to true if input has sequence dimension [B, L, N, seq_len, text_dim]
+token_num_heads: 4
+token_num_layers: 1
+article_num_heads: 4  # Attention heads for article pooling (attention over N dimension)
+article_num_layers: 1  # Number of transformer layers for article pooling
+text_temporal_num_heads: 4
+text_temporal_num_layers: 2
+text_temporal_num_blocks: 2  # Number of stacked temporal transformer blocks
+text_temporal_per_head: true
 
 # Alternating Blocks (for hierarchical aggregation)
 news_num_blocks: 1  # Number of alternating (temporal + text) blocks

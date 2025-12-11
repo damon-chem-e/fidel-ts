@@ -4,7 +4,7 @@ from layers.Transformer_EncDec import Encoder, EncoderLayer
 from layers.SelfAttention_Family import FullAttention, AttentionLayer
 from layers.Embed import DataEmbedding_inverted
 from layers.lynx_text_encoder import TextEmbedding
-import numpy as np
+from layers.lynx_text_encoder_seq import TextEmbeddingSeq
 
 
 class Model(nn.Module):
@@ -47,23 +47,35 @@ class Model(nn.Module):
         )
         
         # 2. Text Embedding (time-agnostic)
-        # Input: [B, L, N, text_dim] or [B, L, N, seq_len, text_dim] -> Output: [B, K, d_model + M]
-        text_seq_len = int(np.ceil(configs.pred_len / getattr(configs, 'stride', 8)))
+        # 4D path uses TextEmbedding; 5D path uses TextEmbeddingSeq
         self.use_text_sequence = getattr(configs, 'use_text_sequence', False)
-        self.text_embedding = TextEmbedding(
-            text_dim=configs.text_dim,
-            output_dim=self.d_model_extended,
-            num_text_variates=self.num_text_variates,
-            seq_len=text_seq_len,
-            dropout=configs.dropout,
-            num_heads=getattr(configs, 'news_num_heads', 4),
-            num_layers=getattr(configs, 'news_num_layers', 2),
-            aggregation_type=getattr(configs, 'news_aggregation_type', 'hierarchical'),
-            use_text_sequence=self.use_text_sequence,
-            num_blocks=getattr(configs, 'news_num_blocks', 1),
-            num_temporal_layers_per_block=getattr(configs, 'news_num_temporal_layers_per_block', 2),
-            num_text_layers_per_block=getattr(configs, 'news_num_text_layers_per_block', 2)
-        )
+        if self.use_text_sequence:
+            self.text_embedding = TextEmbeddingSeq(
+                text_dim=configs.text_dim,
+                output_dim=self.d_model_extended,
+                num_text_variates=self.num_text_variates,
+                token_num_heads=getattr(configs, 'token_num_heads', 4),
+                token_num_layers=getattr(configs, 'token_num_layers', 1),
+                article_num_heads=getattr(configs, 'article_num_heads', 4),
+                article_num_layers=getattr(configs, 'article_num_layers', 1),
+                temporal_num_heads=getattr(configs, 'text_temporal_num_heads', 4),
+                temporal_num_layers=getattr(configs, 'text_temporal_num_layers', 2),
+                temporal_num_blocks=getattr(configs, 'text_temporal_num_blocks', 2),
+                temporal_per_head=getattr(configs, 'text_temporal_per_head', True),
+                dropout=configs.dropout
+            )
+        else:
+            self.text_embedding = TextEmbedding(
+                text_dim=configs.text_dim,
+                output_dim=self.d_model_extended,
+                num_text_variates=self.num_text_variates,
+                dropout=configs.dropout,
+                num_heads=getattr(configs, 'news_num_heads', 4),
+                num_layers=getattr(configs, 'news_num_layers', 2),
+                aggregation_type=getattr(configs, 'news_aggregation_type', 'hierarchical'),
+                num_blocks=getattr(configs, 'news_num_blocks', 1),
+                num_temporal_layers_per_block=getattr(configs, 'news_num_temporal_layers_per_block', 2),
+            )
         
         # 3. Encoder (Modified to work with d_model + M)
         # All layers need to work with d_model_extended dimension
@@ -180,17 +192,19 @@ class Model(nn.Module):
                 f"must match time series variates ({N})"
             )
         
-        # Step 3: Concatenate Channel Description + Time Series
+        # Step 3: Concatenate Channel Description + Channel Time Series -> channel variates
         # [B, N, d_model] + [B, N, M] -> [B, N, d_model + M]
         enc_variates = torch.cat([enc_time, channel_description], dim=-1)  # [B, N, d_model + M]
         
-        # Step 4: Text Embedding (time-agnostic)
+        # Step 4: Text Embedding (time-agnostic, global relevance)
         # [B, L, N, text_dim] or [B, L, N, seq_len, text_dim] -> [B, K, d_model + M]
-        # Create masks for padded news items and tokens
         news_mask, text_mask = self._create_masks(news)
         
         if news is not None:
-            enc_news = self.text_embedding(news, news_mask, text_mask)  # [B, K, d_model + M]
+            if self.use_text_sequence:
+                enc_news = self.text_embedding(news, news_mask, text_mask)  # [B, K, d_model + M]
+            else:
+                enc_news = self.text_embedding(news, news_mask)  # [B, K, d_model + M]
         else:
             # If no news, create zero embeddings
             enc_news = torch.zeros(
@@ -200,7 +214,7 @@ class Model(nn.Module):
                 device=enc_variates.device
             )  # [B, K, d_model + M]
         
-        # Step 5: Concatenate All Variates
+        # Step 5: Concatenate All Variates (channels and global text)
         # [B, N, d_model + M] + [B, K, d_model + M] -> [B, N + K, d_model + M]
         enc_in = torch.cat([enc_variates, enc_news], dim=1)  # [B, N + K, d_model + M]
 
