@@ -20,6 +20,14 @@ channel_desc_dim: 64  # M dimension for channel descriptions
 # News Embedding Parameters
 num_text_variates: 1  # K: number of global text variates (default 1, can be increased for ablation)
 news_num_heads: 4  # Number of attention heads for news aggregation transformer
-news_num_layers: 2  # Number of transformer layers for news aggregation
+news_num_layers: 2  # Number of transformer layers for news aggregation (or flat aggregator)
 news_aggregation_type: hierarchical  # 'hierarchical' (default, Option B) or 'flat' (Option A)
+
+# Sequence Dimension Support (for text self-attention)
+use_text_sequence: false  # Set to true if input has sequence dimension [B, L, N, seq_len, text_dim]
+
+# Alternating Blocks (for hierarchical aggregation)
+news_num_blocks: 1  # Number of alternating (temporal + text) blocks
+news_num_temporal_layers_per_block: 2  # Temporal transformer layers per block
+news_num_text_layers_per_block: 2  # Text self-attention layers per block (only if use_text_sequence=true)
 

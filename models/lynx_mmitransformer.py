@@ -47,8 +47,9 @@ class Model(nn.Module):
         )
         
         # 2. News Embedding (time-agnostic)
-        # Input: [B, L, N, text_dim] -> Output: [B, K, d_model + M]
+        # Input: [B, L, N, text_dim] or [B, L, N, seq_len, text_dim] -> Output: [B, K, d_model + M]
         text_seq_len = int(np.ceil(configs.pred_len / getattr(configs, 'stride', 8)))
+        self.use_text_sequence = getattr(configs, 'use_text_sequence', False)
         self.news_embedding = NewsEmbedding(
             text_dim=configs.text_dim,
             output_dim=self.d_model_extended,
@@ -57,7 +58,11 @@ class Model(nn.Module):
             dropout=configs.dropout,
             num_heads=getattr(configs, 'news_num_heads', 4),
             num_layers=getattr(configs, 'news_num_layers', 2),
-            aggregation_type=getattr(configs, 'news_aggregation_type', 'hierarchical')
+            aggregation_type=getattr(configs, 'news_aggregation_type', 'hierarchical'),
+            use_text_sequence=self.use_text_sequence,
+            num_blocks=getattr(configs, 'news_num_blocks', 1),
+            num_temporal_layers_per_block=getattr(configs, 'news_num_temporal_layers_per_block', 2),
+            num_text_layers_per_block=getattr(configs, 'news_num_text_layers_per_block', 2)
         )
         
         # 3. Encoder (Modified to work with d_model + M)
@@ -86,7 +91,7 @@ class Model(nn.Module):
         """
         Args:
             x_enc: [B, L, C] - Time series input
-            news: [B, L, N, text_dim] - News embeddings
+            news: [B, L, N, text_dim] or [B, L, N, seq_len, text_dim] - News embeddings
             channel_description: [B, C, M] - Channel description embeddings (time-agnostic)
             x_mark_enc: Optional temporal features
         """
@@ -127,13 +132,31 @@ class Model(nn.Module):
         enc_variates = torch.cat([enc_time, channel_description], dim=-1)  # [B, N, d_model + M]
         
         # Step 4: News Embedding (time-agnostic)
-        # [B, L, N, text_dim] -> [B, K, d_model + M]
+        # [B, L, N, text_dim] or [B, L, N, seq_len, text_dim] -> [B, K, d_model + M]
         # Create news mask if needed (for padded news items)
         news_mask = None
+        text_mask = None
         if news is not None:
-            # Check if news has padding (zeros)
-            news_mask = (news.sum(dim=-1) != 0).float()  # [B, L, N]
-            enc_news = self.news_embedding(news, news_mask)  # [B, K, d_model + M]
+            # Detect input shape
+            if len(news.shape) == 4:
+                # Standard: [B, L, N, text_dim]
+                news_mask = (news.sum(dim=-1) != 0).float()  # [B, L, N]
+                text_mask = None
+            elif len(news.shape) == 5:
+                # Sequence dimension: [B, L, N, seq_len, text_dim]
+                # News mask: [B, L, N]
+                news_mask = (news.sum(dim=-1).sum(dim=-1) != 0).float()  # [B, L, N]
+                # Text mask: [B, L, N, seq_len] or [B, L, seq_len] if N=1
+                if news.shape[2] == 1:
+                    # N=1: [B, L, seq_len]
+                    text_mask = (news.squeeze(2).sum(dim=-1) != 0).float()  # [B, L, seq_len]
+                else:
+                    # N>1: [B, L, N, seq_len]
+                    text_mask = (news.sum(dim=-1) != 0).float()  # [B, L, N, seq_len]
+            else:
+                raise ValueError(f"Unexpected news shape: {news.shape}. Expected 4D or 5D.")
+            
+            enc_news = self.news_embedding(news, news_mask, text_mask)  # [B, K, d_model + M]
         else:
             # If no news, create zero embeddings
             enc_news = torch.zeros(
