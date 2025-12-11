@@ -3446,3 +3446,11 @@ class TextEmbedding(nn.Module):
 
 ---
 
+I think as it currently stands, the temporal attention is *too much* in the blocks. Consider that it would be temporal attention in the temporal dimension *per token* in the text sequence. That's too much and would be prone to overfitting. I think we keep the self attention along the sequence length dimension, but those blocks must be strictly before the temporal attention blocks. I like the idea of having the self-attention learn multiple (k) heads (default to one), meaning a few different representations per block of text. If N=1 then we have k text representation vectors after the self-attention and projection (per time step), if N>1 then we have N*k text representation vectors after the self-attention and projection (per time step). Then these N*k text representation vectors (of which we have L) are attended with a temporal set of transformer blocks then projected to produce the final text embeddings (B x k x D). This would mean the multiquery aggregator would essentially happen earlier when we project out of the sequence length dimension. 
+
+
+Without editing code make a plan to address this.
+
+I think this is a good plan when we have sequence length included. When sequence length is not included, doing what we currently have I think is perfectly fine (remove the self attention stuff from this module since at that point it's irrelevant -- we just have multiple layers of temporal attention or 2d attention). Perhaps for simplicity and completeness we make a detailed plan to remove support for sequence length in the current module (lynx_text_encoder.py), then make another module (lynx_text_encoder_seq.py) that only supports including the sequence length, and for that one we do this new plan.
+
+Please proceed to make the plan.
