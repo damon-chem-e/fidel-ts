@@ -1,19 +1,19 @@
 import torch
 import torch.nn as nn
+import numpy as np
 from layers.Transformer_EncDec import Encoder, EncoderLayer
 from layers.SelfAttention_Family import FullAttention, AttentionLayer
 from layers.Embed import DataEmbedding_inverted
-from layers.TGTSF_torch import text_encoder
-import numpy as np
 
 
 class Model(nn.Module):
     """
-    mmitransformer: Multimodal iTransformer
+    mmitransformer: Multimodal iTransformer (Original Paper Implementation)
     
     This model integrates text embeddings into the iTransformer architecture.
-    Text embeddings are projected to the same dimension as time series variates
+    Text embeddings (BERT) are projected to the same dimension as time series variates
     and treated as additional tokens in the Transformer encoder.
+    
     """
 
     def __init__(self, configs):
@@ -23,24 +23,25 @@ class Model(nn.Module):
         self.output_attention = configs.output_attention
         self.use_norm = configs.use_norm
         
-        # 1. Text Encoder (from TGTSF)
-        self.text_encoder = text_encoder(
-            cross_layer=configs.cross_layers, 
-            self_layer=configs.self_layers, 
-            embedding_dim=configs.text_dim, 
-            num_heads=configs.n_heads, 
-            dropout=configs.dropout, 
-            pred_len=configs.pred_len, 
-            stride=configs.stride
-        )
+        # Number of recent patches to use (hyperparameter)
+        # Default: use all available patches, but can be limited
+        # Note: Ideally, we only use the last patch (num_recent_patches=1), making pooling
+        # over the temporal dimension redundant. This is suggested based on the original
+        # MMiTransformer paper which states "only use the most recent text".
+        self.num_recent_patches = getattr(configs, 'num_recent_patches', None)
         
-        # Calculate text sequence length based on TGTSF text_encoder logic
-        self.text_seq_len = int(np.ceil(configs.pred_len / configs.stride))
+        # Calculate expected text sequence length (similar to stride-based calculation)
+        # This is used to determine the input size for the projector
+        stride = getattr(configs, 'stride', 8)
+        expected_patches = int(np.ceil(configs.pred_len / stride))
         
-        # Text Projector: Projects flattened text embeddings to d_model
-        # Input: text_dim * text_seq_len
+        # If num_recent_patches is specified, use that; otherwise use expected_patches
+        patches_to_use = self.num_recent_patches if self.num_recent_patches is not None else expected_patches
+        
+        # Text Projector: Projects concatenated recent text embeddings to d_model
+        # Input: text_dim * patches_to_use
         # Output: d_model
-        self.text_projector = nn.Linear(configs.text_dim * self.text_seq_len, configs.d_model)
+        self.text_projector = nn.Linear(configs.text_dim * patches_to_use, configs.d_model)
         
         # 2. Time Series Embedding (iTransformer)
         self.enc_embedding = DataEmbedding_inverted(configs.seq_len, configs.d_model, configs.dropout)
@@ -56,7 +57,7 @@ class Model(nn.Module):
                     configs.d_ff,
                     dropout=configs.dropout,
                     activation=configs.activation
-                ) for l in range(configs.e_layers)
+                ) for _ in range(configs.e_layers)
             ],
             norm_layer=torch.nn.LayerNorm(configs.d_model)
         )
@@ -78,16 +79,35 @@ class Model(nn.Module):
         # B L N -> B N E
         enc_time = self.enc_embedding(x_enc, x_mark_enc)
         
-        # 2. Text Processing
-        # text_emb: [B, L_text, N, text_dim]
-        text_emb = self.text_encoder(news, channel_description)
-        B, L_text, N_text, D_text = text_emb.shape
+        # 2. Text Processing (Original MMiTransformer approach)
+        # news: [B, L, N, text_dim] - BERT embeddings (no preprocessing)
+        # Only use the most recent text: pool across temporal dimension
+        B, L_text, N_text, D_text = news.shape
         
-        # Flatten text embeddings per variate
+        # Select most recent patches (if num_recent_patches is specified)
+        if self.num_recent_patches is not None and L_text > self.num_recent_patches:
+            # Use only the most recent num_recent_patches
+            news = news[:, -self.num_recent_patches:, :, :]  # [B, num_recent_patches, N, text_dim]
+            L_text = self.num_recent_patches
+        
+        # Concatenate embeddings over recent patches
         # [B, L_text, N, text_dim] -> [B, N, L_text, text_dim] -> [B, N, L_text * text_dim]
-        # Note: We assume N_text matches N (variates). 
-        # TGTSF text_encoder returns [B, L_text, C, D] where C is channels (variates).
-        text_emb_flat = text_emb.permute(0, 2, 1, 3).reshape(B, N_text, -1)
+        text_emb_flat = news.permute(0, 2, 1, 3).reshape(B, N_text, L_text * D_text)
+        
+        # Handle case where actual patches don't match expected input size
+        expected_input_size = self.text_projector.in_features
+        actual_input_size = L_text * D_text
+        
+        if actual_input_size != expected_input_size:
+            # Pad or truncate to match expected size
+            if actual_input_size < expected_input_size:
+                # Pad with zeros
+                padding_size = expected_input_size - actual_input_size
+                padding = torch.zeros(B, N_text, padding_size, device=text_emb_flat.device, dtype=text_emb_flat.dtype)
+                text_emb_flat = torch.cat([text_emb_flat, padding], dim=-1)
+            else:
+                # Truncate (take the last expected_input_size dimensions)
+                text_emb_flat = text_emb_flat[:, :, -expected_input_size:]
         
         # Project to d_model
         # [B, N, L_text * text_dim] -> [B, N, d_model]

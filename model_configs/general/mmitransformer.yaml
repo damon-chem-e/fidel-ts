@@ -10,10 +10,9 @@ activation: gelu
 e_layers: 2
 task: TGTSF
 
-# Text Encoder Parameters
-cross_layers: 2
-self_layers: 2
-text_dim: 384
-stride: 8
+# Text Encoder Parameters (Original MMiTransformer)
+text_dim: 384  # BERT embedding dimension
+stride: 8  # Used to calculate expected number of patches
+num_recent_patches: null  # Number of recent patches to use (null = use all available)
 
 
