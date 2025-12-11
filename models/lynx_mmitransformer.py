@@ -3,7 +3,7 @@ import torch.nn as nn
 from layers.Transformer_EncDec import Encoder, EncoderLayer
 from layers.SelfAttention_Family import FullAttention, AttentionLayer
 from layers.Embed import DataEmbedding_inverted
-from layers.lynx_mmitransformer_text_encoder import NewsEmbedding
+from layers.lynx_text_encoder import TextEmbedding
 import numpy as np
 
 
@@ -46,11 +46,11 @@ class Model(nn.Module):
             dropout=configs.dropout
         )
         
-        # 2. News Embedding (time-agnostic)
+        # 2. Text Embedding (time-agnostic)
         # Input: [B, L, N, text_dim] or [B, L, N, seq_len, text_dim] -> Output: [B, K, d_model + M]
         text_seq_len = int(np.ceil(configs.pred_len / getattr(configs, 'stride', 8)))
         self.use_text_sequence = getattr(configs, 'use_text_sequence', False)
-        self.news_embedding = NewsEmbedding(
+        self.text_embedding = TextEmbedding(
             text_dim=configs.text_dim,
             output_dim=self.d_model_extended,
             num_text_variates=self.num_text_variates,
@@ -86,6 +86,59 @@ class Model(nn.Module):
         
         # 4. Projector (works with d_model_extended)
         self.projector = nn.Linear(self.d_model_extended, configs.pred_len, bias=True)
+    
+    def _create_masks(self, news):
+        """
+        Creates masks for news embeddings to handle padding.
+        
+        This method handles two types of masks:
+        1. **news_mask**: Indicates which news items are valid (not padded) at each time step.
+           Shape: [B, L, N] where 1 = valid news item, 0 = padding.
+           
+        2. **text_mask**: Indicates which tokens are valid (not padded) within each news item.
+           Only created when sequence dimension is present (5D input).
+           Shape: [B, L, N, seq_len] or [B, L, seq_len] (if N=1) where 1 = valid token, 0 = padding.
+        
+        The masks are created by checking if the sum of embeddings is non-zero:
+        - For 4D input [B, L, N, text_dim]: news_mask checks if sum over text_dim != 0
+        - For 5D input [B, L, N, seq_len, text_dim]: 
+          - news_mask checks if sum over (seq_len, text_dim) != 0
+          - text_mask checks if sum over text_dim != 0 for each token position
+        
+        Args:
+            news: [B, L, N, text_dim] or [B, L, N, seq_len, text_dim] - News embeddings
+            
+        Returns:
+            news_mask: [B, L, N] or None - Mask for padded news items
+            text_mask: [B, L, N, seq_len] or [B, L, seq_len] or None - Mask for padded tokens
+        """
+        news_mask = None
+        text_mask = None
+        
+        if news is None:
+            return news_mask, text_mask
+        
+        if len(news.shape) == 4:
+            # Standard: [B, L, N, text_dim]
+            # news_mask: [B, L, N] - 1 if news item has any non-zero embedding, 0 if all zeros (padding)
+            news_mask = (news.sum(dim=-1) != 0).float()  # [B, L, N]
+            text_mask = None
+        elif len(news.shape) == 5:
+            # Sequence dimension: [B, L, N, seq_len, text_dim]
+            # news_mask: [B, L, N] - 1 if news item has any non-zero tokens, 0 if all zeros (padding)
+            news_mask = (news.sum(dim=-1).sum(dim=-1) != 0).float()  # [B, L, N]
+            
+            # text_mask: [B, L, N, seq_len] or [B, L, seq_len] - 1 if token is valid, 0 if padding
+            if news.shape[2] == 1:
+                # N=1: [B, L, seq_len]
+                text_mask = (news.squeeze(2).sum(dim=-1) != 0).float()  # [B, L, seq_len]
+            else:
+                # N>1: [B, L, N, seq_len]
+                text_mask = (news.sum(dim=-1) != 0).float()  # [B, L, N, seq_len]
+        else:
+            raise ValueError(f"Unexpected news shape: {news.shape}. Expected 4D or 5D.")
+        
+        return news_mask, text_mask
     
     def forecast(self, x_enc, news, channel_description, x_mark_enc=None):
         """
@@ -131,32 +184,13 @@ class Model(nn.Module):
         # [B, N, d_model] + [B, N, M] -> [B, N, d_model + M]
         enc_variates = torch.cat([enc_time, channel_description], dim=-1)  # [B, N, d_model + M]
         
-        # Step 4: News Embedding (time-agnostic)
+        # Step 4: Text Embedding (time-agnostic)
         # [B, L, N, text_dim] or [B, L, N, seq_len, text_dim] -> [B, K, d_model + M]
-        # Create news mask if needed (for padded news items)
-        news_mask = None
-        text_mask = None
+        # Create masks for padded news items and tokens
+        news_mask, text_mask = self._create_masks(news)
+        
         if news is not None:
-            # Detect input shape
-            if len(news.shape) == 4:
-                # Standard: [B, L, N, text_dim]
-                news_mask = (news.sum(dim=-1) != 0).float()  # [B, L, N]
-                text_mask = None
-            elif len(news.shape) == 5:
-                # Sequence dimension: [B, L, N, seq_len, text_dim]
-                # News mask: [B, L, N]
-                news_mask = (news.sum(dim=-1).sum(dim=-1) != 0).float()  # [B, L, N]
-                # Text mask: [B, L, N, seq_len] or [B, L, seq_len] if N=1
-                if news.shape[2] == 1:
-                    # N=1: [B, L, seq_len]
-                    text_mask = (news.squeeze(2).sum(dim=-1) != 0).float()  # [B, L, seq_len]
-                else:
-                    # N>1: [B, L, N, seq_len]
-                    text_mask = (news.sum(dim=-1) != 0).float()  # [B, L, N, seq_len]
-            else:
-                raise ValueError(f"Unexpected news shape: {news.shape}. Expected 4D or 5D.")
-            
-            enc_news = self.news_embedding(news, news_mask, text_mask)  # [B, K, d_model + M]
+            enc_news = self.text_embedding(news, news_mask, text_mask)  # [B, K, d_model + M]
         else:
             # If no news, create zero embeddings
             enc_news = torch.zeros(

@@ -4,7 +4,7 @@ Text Encoder for lynx_mmitransformer
 Embeds temporal news into time-agnostic global text variates.
 Similar to DataEmbedding_inverted but for news data.
 
-Note: When N=1 (concatenated articles per time step), NewsTransformer is essentially
+Note: When N=1 (concatenated articles per time step), TextItemsTransformer is essentially
 skipped and we proceed directly to temporal attention. If sequence dimension is available,
 text self-attention can be applied within each article's token sequence.
 """
@@ -14,15 +14,22 @@ import torch.nn as nn
 import warnings
 
 
-class NewsTransformer(nn.Module):
+class TextItemsTransformer(nn.Module):
     """
-    Transformer that processes news items (N dimension) per time step.
+    Transformer that performs attention over text items (N dimension) at each time step.
     Supports both 4D input [B, L, N, D] and 5D input [B, L, N, seq_len, D].
-    When N=1, this essentially becomes a pass-through (no aggregation needed).
+    
+    For 4D input: Performs attention over N dimension for each (B, L) combination.
+    For 5D input: Performs attention over N dimension for each (B, L, seq_len) combination,
+                  holding seq_len constant (i.e., attention for every L,seq_len combo over N).
+    
+    Note: This component is typically not used much in practice. The common use case is N=1,
+    where we use TemporalTransformer (attention over L, holding seq_len and N fixed) and
+    TextSelfAttention (attention over seq_len, holding N and L fixed).
     """
     
     def __init__(self, text_dim, num_heads=4, num_layers=2, dropout=0.1):
-        super(NewsTransformer, self).__init__()
+        super(TextItemsTransformer, self).__init__()
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=text_dim,
             nhead=num_heads,
@@ -57,7 +64,7 @@ class NewsTransformer(nn.Module):
             # Reshape to process each time step independently
             news_flat = news_emb.reshape(B * L, N, D)  # [B*L, N, D]
             
-            # Apply transformer
+            # Apply transformer (attention over N dimension)
             if news_mask is not None:
                 mask_flat = news_mask.reshape(B * L, N).bool()
                 padding_mask = ~mask_flat
@@ -75,33 +82,32 @@ class NewsTransformer(nn.Module):
         
         elif len(news_emb.shape) == 5:
             # Sequence dimension case: [B, L, N, seq_len, D]
+            # Do attention over N dimension for each (L, seq_len) combination
             B, L, N, seq_len, D = news_emb.shape
             
             # If N=1, no aggregation needed - just reshape
             if N == 1:
                 return news_emb.squeeze(2)  # [B, L, seq_len, D]
             
-            # Reshape to process each time step independently
-            # [B, L, N, seq_len, D] -> [B*L, N, seq_len, D]
-            news_flat = news_emb.reshape(B * L, N, seq_len, D)
+            # Reshape to process each (L, seq_len) combination independently
+            # [B, L, N, seq_len, D] -> [B*L*seq_len, N, D]
+            news_flat = news_emb.permute(0, 1, 3, 2, 4).reshape(B * L * seq_len, N, D)
             
-            # For now, mean pool over sequence dimension first, then aggregate news items
-            # This could be enhanced to do proper 2D attention
-            news_flat = news_flat.mean(dim=2)  # [B*L, N, D]
-            
-            # Apply transformer across news items
+            # Apply transformer across news items (N dimension) for each (L, seq_len) combo
             if news_mask is not None:
-                mask_flat = news_mask.reshape(B * L, N).bool()
+                # news_mask: [B, L, N] -> expand to [B, L, seq_len, N]
+                mask_expanded = news_mask.unsqueeze(2).expand(-1, -1, seq_len, -1)  # [B, L, seq_len, N]
+                mask_flat = mask_expanded.reshape(B * L * seq_len, N).bool()
                 padding_mask = ~mask_flat
                 aggregated = self.transformer(news_flat, src_key_padding_mask=padding_mask)
             else:
-                aggregated = self.transformer(news_flat)  # [B*L, N, D]
+                aggregated = self.transformer(news_flat)  # [B*L*seq_len, N, D]
             
-            # Aggregate all news items per time step (mean pooling)
-            aggregated = aggregated.mean(dim=1)  # [B*L, D]
+            # Aggregate all news items per (L, seq_len) combination (mean pooling over N)
+            aggregated = aggregated.mean(dim=1)  # [B*L*seq_len, D]
             
-            # Reshape back
-            aggregated = aggregated.reshape(B, L, D)  # [B, L, D]
+            # Reshape back: [B*L*seq_len, D] -> [B, L, seq_len, D]
+            aggregated = aggregated.reshape(B, L, seq_len, D)
             
             return aggregated
         
@@ -276,8 +282,9 @@ class AlternatingBlock(nn.Module):
 
 class HierarchicalAggregator(nn.Module):
     """
-    Hierarchical aggregation: first across news items (N), then alternating blocks.
-    Option B - Default approach.
+    Hierarchical aggregation: first across news items (N), then blocks of alternating 
+    temporal and text self-attention layers.
+    Default approach.
     """
     
     def __init__(self, text_dim, num_heads=4, num_layers=2, dropout=0.1,
@@ -286,8 +293,8 @@ class HierarchicalAggregator(nn.Module):
         super(HierarchicalAggregator, self).__init__()
         self.use_text_sequence = use_text_sequence
         
-        # News aggregation (only one step, only when N>1)
-        self.news_transformer = NewsTransformer(text_dim, num_heads, num_layers, dropout)
+        # Text items aggregation (only one step, only when N>1)
+        self.text_items_transformer = TextItemsTransformer(text_dim, num_heads, num_layers, dropout)
         
         # Alternating blocks
         self.blocks = nn.ModuleList([
@@ -311,8 +318,8 @@ class HierarchicalAggregator(nn.Module):
         Returns:
             [B, L, D] or [B, L, seq_len, D] - Processed temporal sequence
         """
-        # Step 1: Aggregate news items per time step (only when N>1)
-        aggregated = self.news_transformer(news_emb, news_mask)
+        # Step 1: Aggregate text items per time step (only when N>1)
+        aggregated = self.text_items_transformer(news_emb, news_mask)
         
         # Step 2: Apply alternating blocks
         for block in self.blocks:
@@ -324,7 +331,7 @@ class HierarchicalAggregator(nn.Module):
 class FlatAggregator(nn.Module):
     """
     Flat aggregation: process all L·N positions simultaneously.
-    Option A - Good when L or N is small.
+    Good when L or N is small.
     Supports multiple layers.
     """
     
@@ -488,7 +495,7 @@ class VariateProjector(nn.Module):
         return output
 
 
-class NewsEmbedding(nn.Module):
+class TextEmbedding(nn.Module):
     """
     Embeds temporal news into time-agnostic representations.
     
@@ -496,7 +503,7 @@ class NewsEmbedding(nn.Module):
     or [B, L, N, seq_len, text_dim] and embeds it to time-agnostic variates [B, K, output_dim].
     
     Process:
-    1. Aggregate news items (hierarchical or flat)
+    1. Aggregate text items (hierarchical or flat)
     2. Use K queries to extract K different representations
     3. Project each to output_dim
     
@@ -523,7 +530,7 @@ class NewsEmbedding(nn.Module):
             num_temporal_layers_per_block: Temporal transformer layers per block
             num_text_layers_per_block: Text self-attention layers per block
         """
-        super(NewsEmbedding, self).__init__()
+        super(TextEmbedding, self).__init__()
         self.text_dim = text_dim
         self.output_dim = output_dim
         self.num_text_variates = num_text_variates
@@ -602,3 +609,4 @@ class NewsEmbedding(nn.Module):
         output = self.dropout(output)
         
         return output  # [B, K, output_dim]
+
