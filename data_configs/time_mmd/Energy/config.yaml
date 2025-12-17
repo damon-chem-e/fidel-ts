@@ -6,6 +6,7 @@ timestamp_col: date
 target: OT
 id: all
 formatter: US_GasolinePrice_Week.csv
+id_info: id_info.json  # Minimal id_info.json will be auto-created if not present
 dataset_type: time_mmd
 text_column: auto
 use_closedllm: false

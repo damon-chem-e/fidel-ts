@@ -61,7 +61,8 @@ class Data_Provider(object):
 
         self.dataset_config = args.data_config
 
-        self.id_info = json.load(open(os.path.join(self.dataset_config.root_path, self.dataset_config.id_info)))
+        # Load or create id_info.json
+        self.id_info = self._load_or_create_id_info()
 
         if self.dataset_config.id == 'all':
             self.id_list = self.id_info.keys()
@@ -131,6 +132,42 @@ class Data_Provider(object):
             bool: True if dataset_type is 'time_mmd', False otherwise
         """
         return self.dataset_config.get('dataset_type', None) == 'time_mmd'
+    
+    def _load_or_create_id_info(self):
+        """
+        Load or create id_info.json for the dataset.
+        
+        For Time-MMD datasets, creates a minimal id_info.json if it doesn't exist.
+        For standard datasets, loads the specified id_info.json file.
+        
+        Returns:
+            dict: id_info dictionary
+        """
+        if self._is_time_mmd_dataset():
+            # For Time-MMD, create a minimal id_info with a single 'all' entry
+            # This allows the dataset to work with the existing Data_Provider structure
+            id_info_filename = getattr(self.dataset_config, 'id_info', 'id_info.json')
+            id_info_path = os.path.join(self.dataset_config.root_path, id_info_filename)
+            
+            if os.path.exists(id_info_path):
+                # Load existing id_info if present
+                return json.load(open(id_info_path))
+            else:
+                # Create minimal id_info if file doesn't exist
+                id_info = {'all': {'description': 'Time-MMD dataset'}}
+                # Optionally create the file for future use
+                try:
+                    with open(id_info_path, 'w') as f:
+                        json.dump(id_info, f, indent=2)
+                    print(f'[ info ] Created minimal id_info.json at {id_info_path}')
+                except Exception as e:
+                    print(f'[ warning ] Could not create id_info.json file: {e}')
+                    print('[ info ] Using in-memory id_info (this is OK)')
+                return id_info
+        else:
+            # Standard datasets require id_info
+            id_info_path = os.path.join(self.dataset_config.root_path, self.dataset_config.id_info)
+            return json.load(open(id_info_path))
     
     def _create_time_mmd_dataset(self, i, flag):
         """

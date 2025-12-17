@@ -1,0 +1,40 @@
+# Test configuration for Time-MMD dataset
+# Usage: 
+#   python -m cli.train pytorch configs/experiments/time_mmd_test.yaml
+#   python examples/test_time_mmd_dataset.py data_configs/time_mmd/Traffic/config.yaml
+
+model:
+  name: DLinear
+  config_path: model_configs/general/DLinear.yaml
+
+data:
+  name: time_mmd_traffic
+  config_path: data_configs/time_mmd/Traffic/config.yaml
+
+training:
+  experiment_output: ./output
+  epochs: 1  # Single epoch for testing
+  batch_size: 4  # Small batch size for testing
+  learning_rate: 5e-4
+  patience: 3
+  loss: mse
+  lradj: type3
+  scale: true
+  disable_buffer: false
+  preload_hetero: false
+  prefetch_factor: 2
+  noise: 0.0
+  input_len: 96
+  output_len: 24
+  num_workers: 0
+
+device:
+  use_gpu: true
+  gpu: 0
+  use_multi_gpu: false
+  devices: "0"
+
+# Optional: HuggingFace settings
+hf_mirror: false
+hf_offline: false
+
