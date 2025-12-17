@@ -1,0 +1,19 @@
+root_path: ./data/time-mmd/Public_Health
+data_path: US_FLURATIO_Week.csv
+spliter: ratio
+split_info: [7, 1, 2]
+timestamp_col: date
+target: OT
+id: all
+formatter: US_FLURATIO_Week.csv
+dataset_type: time_mmd
+text_column: auto
+use_closedllm: false
+text_len: 4
+general_info: "US Flu Ratio weekly time series data"
+channel_info: ""
+time_zone: null
+downsample: null
+sampling_rate: 1week
+base_T: 52
+

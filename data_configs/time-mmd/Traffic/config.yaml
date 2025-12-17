@@ -1,0 +1,19 @@
+root_path: ./data/time-mmd/Traffic
+data_path: US_VMT_Month.csv
+spliter: ratio
+split_info: [7, 1, 2]  # Match MM-TSFlib default: 70% train, 10% val, 20% test
+timestamp_col: date
+target: OT
+id: all
+formatter: US_VMT_Month.csv
+dataset_type: time_mmd  # Flag to use TimeMMD_Dataset
+text_column: auto  # Auto-detect Final_Search_* or Final_Output
+use_closedllm: false  # Whether to use Final_Output column
+text_len: 4  # For Final_Search_{text_len} detection
+general_info: "US Vehicle Miles Traveled monthly time series data"
+channel_info: ""  # Empty string for single-entity datasets
+time_zone: null
+downsample: null
+sampling_rate: 1month
+base_T: 12
+
