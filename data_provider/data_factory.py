@@ -1,7 +1,9 @@
 
 from data_provider.data_loader import Universal_Dataset, Heterogeneous_Dataset
 from torch.utils.data import DataLoader
-import json, torch, yaml, os
+import json
+import torch
+import os
 from utils.tools import dotdict
 from functools import partial
 from .data_helper import timestamp_spliter, ratio_spliter, data_buffer
@@ -121,6 +123,68 @@ class Data_Provider(object):
             spliter = partial(ratio_spliter, split=(7,1,2), seq_len=self.args.input_len)
         return spliter
     
+    def _is_time_mmd_dataset(self):
+        """
+        Check if the current dataset configuration is for a Time-MMD dataset.
+        
+        Returns:
+            bool: True if dataset_type is 'time_mmd', False otherwise
+        """
+        return self.dataset_config.get('dataset_type', None) == 'time_mmd'
+    
+    def _create_time_mmd_dataset(self, i, flag):
+        """
+        Create a TimeMMD_Dataset instance for the given ID and flag.
+        
+        This method handles all Time-MMD dataset instantiation logic in one place
+        to avoid code duplication.
+        
+        Args:
+            i: Dataset ID
+            flag: Dataset split identifier ('train', 'val', 'test')
+            
+        Returns:
+            TimeMMD_Dataset: Configured TimeMMD_Dataset instance
+        """
+        from data_provider.time_mmd_dataset import TimeMMD_Dataset
+        
+        # For Time-MMD, use data_path if specified, otherwise formatter
+        if 'data_path' in self.dataset_config:
+            data_path = self.dataset_config.data_path
+        else:
+            data_path = self.formatter.format(i=i) if '{i}' in self.formatter else self.formatter
+        
+        # Get hetero_info for output_format if available
+        output_format = 'json'  # default
+        if self.args.data_config.hetero_info is not None:
+            output_format = self.args.data_config.hetero_info.get('input_format', 'json')
+        
+        return TimeMMD_Dataset(
+            root_path=self.dataset_config.root_path,
+            data_path=data_path,
+            flag=flag,
+            seq_len=self.args.input_len,
+            pred_len=self.args.output_len,
+            spliter=self.spliter,
+            timestamp_col=self.dataset_config.timestamp_col,
+            target=self.dataset_config.target,
+            scale=self.args.scale,
+            data_buffer=self.data_buffer,
+            preload_hetero=self.args.preload_hetero,
+            hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
+            task=self.args.model_config.task,
+            custom_input=self.args.model_config.custom_input,
+            timezone=self.dataset_config.time_zone,
+            downsample=self.dataset_config.downsample,
+            entity_id=i,
+            text_column=self.dataset_config.get('text_column', 'auto'),
+            use_closedllm=self.dataset_config.get('use_closedllm', False),
+            text_len=self.dataset_config.get('text_len', 4),
+            output_format=output_format,
+            general_info=self.dataset_config.get('general_info', ''),
+            channel_info=self.dataset_config.get('channel_info', '')
+        )
+    
     def get_train(self, return_type='loader'):
         """
         Creates and returns training data in the specified format.
@@ -214,49 +278,8 @@ class Data_Provider(object):
             ) as progress:
                 task = progress.add_task(f"Loading {flag} datasets", total=len(self.id_list))
                 for i in self.id_list:
-                    # Check if this is a Time-MMD dataset
-                    dataset_type = self.dataset_config.get('dataset_type', None)
-                    
-                    if dataset_type == 'time_mmd':
-                        # Use TimeMMD_Dataset for MM-TSFlib format
-                        from data_provider.time_mmd_dataset import TimeMMD_Dataset
-                        
-                        # For Time-MMD, use data_path if specified, otherwise formatter
-                        if 'data_path' in self.dataset_config:
-                            data_path = self.dataset_config.data_path
-                        else:
-                            data_path = self.formatter.format(i=i) if '{i}' in self.formatter else self.formatter
-                        
-                        # Get hetero_info for output_format if available
-                        output_format = 'json'  # default
-                        if self.args.data_config.hetero_info is not None:
-                            output_format = self.args.data_config.hetero_info.get('input_format', 'json')
-                        
-                        dataset = TimeMMD_Dataset(
-                            root_path=self.dataset_config.root_path,
-                            data_path=data_path,
-                            flag=flag,
-                            seq_len=self.args.input_len,
-                            pred_len=self.args.output_len,
-                            spliter=self.spliter,
-                            timestamp_col=self.dataset_config.timestamp_col,
-                            target=self.dataset_config.target,
-                            scale=self.args.scale,
-                            data_buffer=self.data_buffer,
-                            preload_hetero=self.args.preload_hetero,
-                            hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
-                            task=self.args.model_config.task,
-                            custom_input=self.args.model_config.custom_input,
-                            timezone=self.dataset_config.time_zone,
-                            downsample=self.dataset_config.downsample,
-                            entity_id=i,
-                            text_column=self.dataset_config.get('text_column', 'auto'),
-                            use_closedllm=self.dataset_config.get('use_closedllm', False),
-                            text_len=self.dataset_config.get('text_len', 4),
-                            output_format=output_format,
-                            general_info=self.dataset_config.get('general_info', ''),
-                            channel_info=self.dataset_config.get('channel_info', '')
-                        )
+                    if self._is_time_mmd_dataset():
+                        dataset = self._create_time_mmd_dataset(i, flag)
                     else:
                         # Use standard Universal_Dataset
                         if self.args.data_config.hetero_info is not None:
@@ -279,49 +302,8 @@ class Data_Provider(object):
         else:
             # Fallback: simple iteration without progress bar
             for i in self.id_list:
-                # Check if this is a Time-MMD dataset
-                dataset_type = self.dataset_config.get('dataset_type', None)
-                
-                if dataset_type == 'time_mmd':
-                    # Use TimeMMD_Dataset for MM-TSFlib format
-                    from data_provider.time_mmd_dataset import TimeMMD_Dataset
-                    
-                    # For Time-MMD, use data_path if specified, otherwise formatter
-                    if 'data_path' in self.dataset_config:
-                        data_path = self.dataset_config.data_path
-                    else:
-                        data_path = self.formatter.format(i=i) if '{i}' in self.formatter else self.formatter
-                    
-                    # Get hetero_info for output_format if available
-                    output_format = 'json'  # default
-                    if self.args.data_config.hetero_info is not None:
-                        output_format = self.args.data_config.hetero_info.get('input_format', 'json')
-                    
-                    dataset = TimeMMD_Dataset(
-                        root_path=self.dataset_config.root_path,
-                        data_path=data_path,
-                        flag=flag,
-                        seq_len=self.args.input_len,
-                        pred_len=self.args.output_len,
-                        spliter=self.spliter,
-                        timestamp_col=self.dataset_config.timestamp_col,
-                        target=self.dataset_config.target,
-                        scale=self.args.scale,
-                        data_buffer=self.data_buffer,
-                        preload_hetero=self.args.preload_hetero,
-                        hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
-                        task=self.args.model_config.task,
-                        custom_input=self.args.model_config.custom_input,
-                        timezone=self.dataset_config.time_zone,
-                        downsample=self.dataset_config.downsample,
-                        entity_id=i,
-                        text_column=self.dataset_config.get('text_column', 'auto'),
-                        use_closedllm=self.dataset_config.get('use_closedllm', False),
-                        text_len=self.dataset_config.get('text_len', 4),
-                        output_format=output_format,
-                        general_info=self.dataset_config.get('general_info', ''),
-                        channel_info=self.dataset_config.get('channel_info', '')
-                    )
+                if self._is_time_mmd_dataset():
+                    dataset = self._create_time_mmd_dataset(i, flag)
                 else:
                     # Use standard Universal_Dataset
                     if self.args.data_config.hetero_info is not None:

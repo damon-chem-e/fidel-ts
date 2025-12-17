@@ -4,12 +4,12 @@ This directory contains configuration files for Time-MMD datasets (from MM-TSFli
 
 ## Dataset Structure
 
-Time-MMD datasets should be placed in `./data/time-mmd/{subdataset}/` with the CSV file directly in that directory.
+Time-MMD datasets should be placed in `./data/time_mmd/{subdataset}/` with the CSV file directly in that directory.
 
 Example structure:
 ```
 data/
-└── time-mmd/
+└── time_mmd/
     ├── Traffic/
     │   └── US_VMT_Month.csv
     ├── Public_Health/
@@ -20,11 +20,11 @@ data/
 
 ## Configuration Files
 
-Each subdataset should have a `config.yaml` file in `data_configs/time-mmd/{subdataset}/`.
+Each subdataset should have a `config.yaml` file in `data_configs/time_mmd/{subdataset}/`.
 
 ### Required Fields
 
-- `root_path`: Path to dataset directory (e.g., `./data/time-mmd/Traffic`)
+- `root_path`: Path to dataset directory (e.g., `./data/time_mmd/Traffic`)
 - `data_path`: CSV filename (e.g., `US_VMT_Month.csv`)
 - `dataset_type: time_mmd`: **Required** flag to use TimeMMD_Dataset
 - `timestamp_col`: Name of timestamp column (usually `date`)
@@ -50,7 +50,7 @@ Each subdataset should have a `config.yaml` file in `data_configs/time-mmd/{subd
 After setting up the data and config files, use the dataset in your experiment config:
 
 ```yaml
-data_config: data_configs/time-mmd/Traffic/config.yaml
+data_config: data_configs/time_mmd/Traffic/config.yaml
 ```
 
 The dataset will automatically:

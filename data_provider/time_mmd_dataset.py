@@ -6,9 +6,9 @@ their CSV format (with embedded text columns) to fidel-ts's expected data format
 """
 
 import os
+import re
 import numpy as np
 import pandas as pd
-from functools import partial
 from sklearn.preprocessing import StandardScaler
 from .data_loader import Universal_Dataset
 from .data_helper import ratio_spliter, data_buffer
@@ -49,23 +49,21 @@ class TimeMMD_HeteroGetter:
         # Create a mapping for fast lookup
         self.text_dict = text_data.to_dict()
     
-    def __call__(self, timestamps):
+    def _match_timestamps(self, timestamps):
         """
-        Get heterogeneous data for given timestamps.
+        Match timestamps to text data using backward matching.
         
-        Implements the hetero_data_getter interface expected by Universal_Dataset.
         Uses backward matching (text at or before timestamp) since MM-TSFlib
-        stores text at sequence end point.
+        stores text at sequence end point. This ensures text describes context
+        up to that point without lookahead bias.
         
         Args:
-            timestamps: Array of timestamps (int64 YYYYMMDDHHMMSS format)
+            timestamps: Array or list of timestamps (int64 YYYYMMDDHHMMSS format)
             
         Returns:
-            tuple: (matched_times, general_info, channel_info, output_dynamic)
+            tuple: (matched_times, matched_texts)
                 - matched_times: List of matched timestamps as strings
-                - general_info: General dataset info (string)
-                - channel_info: Channel-specific info (string)
-                - output_dynamic: Text data in requested format
+                - matched_texts: List of matched text strings
         """
         matched_times = []
         matched_texts = []
@@ -99,6 +97,28 @@ class TimeMMD_HeteroGetter:
                 matched_times.append(str(ts))
                 matched_texts.append('')
         
+        return matched_times, matched_texts
+    
+    def __call__(self, timestamps):
+        """
+        Get heterogeneous data for given timestamps.
+        
+        Implements the hetero_data_getter interface expected by Universal_Dataset.
+        Uses backward matching (text at or before timestamp) since MM-TSFlib
+        stores text at sequence end point.
+        
+        Args:
+            timestamps: Array of timestamps (int64 YYYYMMDDHHMMSS format)
+            
+        Returns:
+            tuple: (matched_times, general_info, channel_info, output_dynamic)
+                - matched_times: List of matched timestamps as strings
+                - general_info: General dataset info (string)
+                - channel_info: Channel-specific info (string)
+                - output_dynamic: Text data in requested format
+        """
+        matched_times, matched_texts = self._match_timestamps(timestamps)
+        
         # Format output according to output_format
         if self.output_format == 'json':
             import json
@@ -112,7 +132,17 @@ class TimeMMD_HeteroGetter:
         elif self.output_format == 'embedding':
             # For embedding format, return zero array (embeddings should be pre-computed)
             # Shape: (num_timesteps, embedding_dim)
-            # Note: This requires embedding_dim to be specified, defaulting to 768
+            # 
+            # Note: 'embedding' format expects pre-computed embeddings from files (.pkl).
+            # Time-MMD datasets have text in CSV columns, not pre-computed embeddings.
+            # 
+            # When embeddings are needed:
+            # - Use output_format='json' or 'dict' and let models handle text
+            # - Or use postemb (future enhancement) to create embeddings during initialization
+            # - Or pre-compute embeddings separately and use Heterogeneous_Dataset
+            #
+            # Returning zeros here is correct for the 'embedding' format expectation,
+            # but Time-MMD datasets should typically use 'json' or 'dict' format.
             embedding_dim = 768  # Default BERT dimension, should be configurable
             output_dynamic = np.zeros((len(matched_texts), embedding_dim), dtype=np.float32)
         else:
@@ -200,6 +230,11 @@ class TimeMMD_Dataset(Universal_Dataset):
         """
         Detect text column name from CSV.
         
+        Strict detection with no fallbacks:
+        - If text_column != 'auto', returns that column or None (no fallback)
+        - If text_column == 'auto', detects based on use_closedllm and text_len
+        - No fallback to different text_len values
+        
         Args:
             df_raw: Raw DataFrame loaded from CSV
             
@@ -207,28 +242,28 @@ class TimeMMD_Dataset(Universal_Dataset):
             str or None: Column name if found, None otherwise
         """
         if self.text_column != 'auto':
+            # Strict: return specified column or None
             if self.text_column in df_raw.columns:
                 return self.text_column
             else:
-                print(f'[ warning ] Specified text column "{self.text_column}" not found, trying auto-detect')
+                raise ValueError(f'Specified text column "{self.text_column}" not found in CSV columns: {list(df_raw.columns)}')
         
-        # Auto-detect logic
+        # Auto-detect logic (no fallbacks)
         if self.use_closedllm:
             if 'Final_Output' in df_raw.columns:
                 return 'Final_Output'
-        else:
-            # Look for Final_Search_{text_len} pattern
+            else:
+                return None
+        elif self.text_column == 'auto':
+            # Look for Final_Search_{text_len} pattern (strict, no fallback)
             pattern = f'Final_Search_{self.text_len}'
             if pattern in df_raw.columns:
                 return pattern
-            # Try common text_len values
-            for text_len in [2, 4, 6]:
-                pattern = f'Final_Search_{text_len}'
-                if pattern in df_raw.columns:
-                    print(f'[ info ] Found text column: {pattern} (requested: Final_Search_{self.text_len})')
-                    return pattern
-        
-        return None
+            else:
+                return None
+
+        else:
+            raise ValueError(f'Invalid text column detection logic: text_column={self.text_column}, use_closedllm={self.use_closedllm}, text_len={self.text_len}')
     
     def _setup_text_getter(self):
         """
@@ -292,6 +327,21 @@ class TimeMMD_Dataset(Universal_Dataset):
         # Detect and extract text column
         self._text_column_name = self._detect_text_column(df_raw)
         
+        # Columns to exclude from time series data
+        exclude_cols = [self.timestamp_col]
+        
+        # Exclude ALL Final_Search_* and Final_Output columns (even if not the one we're using)
+        for col in df_raw.columns:
+            if re.match(r'Final_Search_\d+', col) or col == 'Final_Output':
+                if col not in exclude_cols:
+                    exclude_cols.append(col)
+        
+        # Also exclude common metadata columns that shouldn't be in time series
+        metadata_cols = ['start_date', 'end_date']
+        for col in metadata_cols:
+            if col in df_raw.columns and col not in exclude_cols:
+                exclude_cols.append(col)
+        
         if self._text_column_name is not None:
             # Extract text data before splitting
             # Store text indexed by timestamp (will be converted to int64 format)
@@ -322,11 +372,12 @@ class TimeMMD_Dataset(Universal_Dataset):
         
         self.timestamp = self.data[self.timestamp_col].values.copy()
         
-        # Extract time series data
+        # Extract time series data (excluding text and metadata columns)
         if self.target == 'all':
-            self.data = self.data.drop(columns=[self.timestamp_col])
+            # Drop timestamp, text, and metadata columns
+            self.data = self.data.drop(columns=exclude_cols)
             self.data = self.data.values.astype(np.float32).copy()
-            train_data = train_data.drop(columns=[self.timestamp_col])
+            train_data = train_data.drop(columns=exclude_cols)
             train_data = train_data.values.astype(np.float32).copy()
         else:
             self.data = self.data[self.target].values.astype(np.float32).copy()
@@ -338,12 +389,17 @@ class TimeMMD_Dataset(Universal_Dataset):
             self.data = self.scaler.transform(self.data).astype(np.float32).copy()
         
         # Apply downsampling if requested
+        # Use simple indexing (no lookahead bias) - same as Universal_Dataset
         if self.downsample is not None:
             self.data = self.data[::self.downsample]
             self.timestamp = self.timestamp[::self.downsample]
             
             # Also downsample text data if it exists
+            # Use reindex with forward fill (ffill) to match downsampled timestamps
+            # ffill uses the last valid observation (backward in time, no lookahead bias)
             if hasattr(self, '_text_data') and self._text_data is not None:
-                # Reindex text data to match downsampled timestamps
-                self._text_data = self._text_data.reindex(self.timestamp, method='nearest')
-
+                # Reindex to downsampled timestamps, using forward fill (previous value)
+                # This ensures we use the most recent text value without lookahead bias
+                self._text_data = self._text_data.reindex(self.timestamp, method='ffill')
+                # Fill any remaining NaN values at the beginning with empty string
+                self._text_data = self._text_data.fillna('')
