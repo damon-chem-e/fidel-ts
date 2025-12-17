@@ -380,8 +380,14 @@ class TimeMMD_Dataset(Universal_Dataset):
             train_data = train_data.drop(columns=exclude_cols)
             train_data = train_data.values.astype(np.float32).copy()
         else:
+            # Single column target - extract as 1D array, then reshape to 2D for scaler
             self.data = self.data[self.target].values.astype(np.float32).copy()
             train_data = train_data[self.target].values.astype(np.float32).copy()
+            # Reshape to 2D (samples, features) for StandardScaler
+            if train_data.ndim == 1:
+                train_data = train_data.reshape(-1, 1)
+            if self.data.ndim == 1:
+                self.data = self.data.reshape(-1, 1)
         
         # Normalize if requested
         if self.scale:

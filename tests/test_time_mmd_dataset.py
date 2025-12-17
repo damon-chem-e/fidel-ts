@@ -133,6 +133,30 @@ def test_time_mmd_dataset(data_config_path, model_config_path=None):
                         print(f"   ✗ Error retrieving text: {e}")
                 else:
                     print(f"\n6. Text data getter: Not present (time-series-only mode)")
+                
+                # Print a couple training examples
+                print(f"\n7. Training examples:")
+                num_examples = min(2, len(first_dataset))
+                for idx in range(num_examples):
+                    example = first_dataset[idx]
+                    print(f"\n   Example {idx + 1}:")
+                    print(f"   - Sample ID: {example[0]}")
+                    print(f"   - Input sequence (seq_x) shape: {example[1].shape}")
+                    print(f"   - Output sequence (seq_y) shape: {example[2].shape}")
+                    print(f"   - Input timestamps (x_time): {example[3][:3].tolist()}... (showing first 3)")
+                    print(f"   - Output timestamps (y_time): {example[4][:3].tolist()}... (showing first 3)")
+                    print(f"   - Input values (seq_x) min/max: {example[1].min():.2f} / {example[1].max():.2f}")
+                    print(f"   - Output values (seq_y) min/max: {example[2].min():.2f} / {example[2].max():.2f}")
+                    if hasattr(first_dataset, 'hetero_data_getter') and first_dataset.hetero_data_getter is not None:
+                        # Get text for this example
+                        try:
+                            matched_times, gen_info, chan_info, text_data = first_dataset.hetero_data_getter(example[3])
+                            if isinstance(text_data, list) and len(text_data) > 0:
+                                print(f"   - Text data available: {len(text_data)} entries")
+                                if len(text_data) > 0:
+                                    print(f"   - First text: {str(text_data[0])[:80]}...")
+                        except Exception:
+                            pass
         else:
             print("⚠️  Warning: Train dataset is empty")
             
@@ -143,7 +167,7 @@ def test_time_mmd_dataset(data_config_path, model_config_path=None):
         return False
     
     # Test loading validation dataset
-    print("\n7. Loading validation dataset...")
+    print("\n8. Loading validation dataset...")
     try:
         val_dataset = data_provider.get_val(return_type='set')
         print(f"✓ Validation dataset loaded: {len(val_dataset)} items")
@@ -154,7 +178,7 @@ def test_time_mmd_dataset(data_config_path, model_config_path=None):
         return False
     
     # Test loading test dataset
-    print("\n8. Loading test dataset...")
+    print("\n9. Loading test dataset...")
     try:
         test_dataset = data_provider.get_test(return_type='set')
         print(f"✓ Test dataset loaded: {len(test_dataset)} items")
@@ -165,13 +189,13 @@ def test_time_mmd_dataset(data_config_path, model_config_path=None):
         return False
     
     # Test creating dataloader
-    print("\n9. Creating DataLoader...")
+    print("\n10. Creating DataLoader...")
     try:
         train_loader = data_provider.get_train(return_type='loader')
         print(f"✓ DataLoader created successfully")
         
         # Try to get one batch
-        print("\n10. Testing batch loading...")
+        print("\n11. Testing batch loading...")
         batch = next(iter(train_loader))
         print(f"✓ Batch loaded successfully")
         print(f"   Batch size: {len(batch[0])}")
