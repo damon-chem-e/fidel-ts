@@ -74,6 +74,7 @@ suite:
           config_path: "model_configs/general/lynx.yaml"
         model_config:
           pretrained_model_path: "/nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_pretraining_test_20251205_163130/20251205-163130_5ef325ab0162/checkpoints/best_checkpoint.pth"
+          input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
         data:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
@@ -108,9 +109,6 @@ suite:
         # Override data config settings for lynx (requires embeddings, not raw text)
         data_config:
           timemmd_text_output: embedding  # Use embeddings for lynx model
-        # Model config override: Set input_text_dim to match BERT output (768)
-        model_config:
-          input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
 
     # Test 3: lynx_film model
     - name: "lynx_film_time_mmd_traffic"
@@ -123,6 +121,7 @@ suite:
           config_path: "model_configs/general/lynx_film.yaml"
         model_config:
           pretrained_model_path: "/nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_pretraining_test_20251205_163130/20251205-163130_5ef325ab0162/checkpoints/best_checkpoint.pth"
+          input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
         data:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
@@ -157,9 +156,6 @@ suite:
         # Override data config settings for lynx_film (requires embeddings, not raw text)
         data_config:
           timemmd_text_output: embedding  # Use embeddings for lynx_film model
-        # Model config override: Set input_text_dim to match BERT output (768)
-        model_config:
-          input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
 
     # Test 4: lynx_film_raw model
     - name: "lynx_film_raw_time_mmd_traffic"
