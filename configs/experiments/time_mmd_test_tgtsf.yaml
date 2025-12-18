@@ -33,6 +33,10 @@ device:
   use_multi_gpu: false
   devices: "0"
 
+# Disable wandb for quick test runs
+wandb:
+  enabled: false
+
 # Optional: HuggingFace settings
 hf_mirror: false
 hf_offline: false
@@ -44,4 +48,9 @@ base_data_path: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/data/
 # Override data config settings for TGTSF (requires embeddings, not raw text)
 data_config:
   timemmd_text_output: embedding  # Override: use embeddings for TGTSF model
+
+# Model config override: Set input_text_dim to match BERT output (768)
+# The model will learn a projection from 768 -> 256 (text_dim) internally
+model_config:
+  input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
 

@@ -41,6 +41,20 @@ class Model(nn.Module):
         
         self.TS_encoder = TS_encoder(embedding_dim=d_model, layers=n_layers, num_heads=n_heads, dropout=dropout, patch_len=self.patch_len, stride=self.stride, causal=True, input_len=configs.seq_len)
         
+        # Text dimension handling:
+        # - input_text_dim: Dimension of input text embeddings (e.g., 768 for BERT)
+        # - text_dim: Operational dimension used internally by the model (e.g., 256)
+        # If input_text_dim != text_dim, a learned projection layer is added
+        self.input_text_dim = getattr(configs, 'input_text_dim', configs.text_dim)
+        self.text_dim = configs.text_dim
+        
+        # Learned projection layer if input dimension differs from operational dimension
+        if self.input_text_dim != self.text_dim:
+            self.text_projection = nn.Linear(self.input_text_dim, self.text_dim)
+            print(f'[ info ] TGTSF: Added learned projection layer {self.input_text_dim} -> {self.text_dim}')
+        else:
+            self.text_projection = None
+        
         self.text_encoder = text_encoder(cross_layer=configs.cross_layers, self_layer=configs.self_layers, embedding_dim=configs.text_dim, num_heads=configs.n_heads, dropout=configs.dropout, pred_len = configs.pred_len, stride=self.stride)
 
         # position embedding for text
@@ -64,6 +78,43 @@ class Model(nn.Module):
 
         # assert stride == patch_len, 'stride should be equal to patch_len for token_decoder head'
         self.head = nn.Linear(d_model, self.patch_len)
+    
+    def _project_text_embeddings(self, news, channel_description):
+        """
+        Project text embeddings from input_text_dim to text_dim if needed.
+        
+        Args:
+            news: News embeddings [B, l, news_num, input_text_dim]
+            channel_description: Channel descriptions [B, C, input_text_dim] or [B, 1, C, input_text_dim]
+            
+        Returns:
+            news: Projected news embeddings [B, l, news_num, text_dim]
+            channel_description: Projected channel descriptions [B, C, text_dim] or [B, 1, C, text_dim]
+        """
+        if self.text_projection is None:
+            return news, channel_description
+        
+        # Project news embeddings: [B, l, news_num, input_text_dim] -> [B, l, news_num, text_dim]
+        B, L, N, D = news.shape
+        news = news.reshape(B * L * N, D)  # Flatten for projection
+        news = self.text_projection(news)  # Project
+        news = news.reshape(B, L, N, self.text_dim)  # Reshape back
+        
+        # Project channel_description: [B, C, input_text_dim] or [B, 1, C, input_text_dim] -> [B, C, text_dim] or [B, 1, C, text_dim]
+        if channel_description.ndim == 3:
+            # [B, C, input_text_dim]
+            B_desc, C_desc, D_desc = channel_description.shape
+            channel_description = channel_description.reshape(B_desc * C_desc, D_desc)
+            channel_description = self.text_projection(channel_description)
+            channel_description = channel_description.reshape(B_desc, C_desc, self.text_dim)
+        elif channel_description.ndim == 4:
+            # [B, 1, C, input_text_dim]
+            B_desc, _, C_desc, D_desc = channel_description.shape
+            channel_description = channel_description.reshape(B_desc * C_desc, D_desc)
+            channel_description = self.text_projection(channel_description)
+            channel_description = channel_description.reshape(B_desc, 1, C_desc, self.text_dim)
+        
+        return news, channel_description
 
     def move_to_device(self, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel, device):
         # move data to device
@@ -186,12 +237,15 @@ class Model(nn.Module):
         
         return output
     
-    def forward(self, x, news, channel_description, **kwargs):           # x: [Batch, Input length, Channel] news: [Batch, l, news_num, text_dim] description: [b, 1, c, d]
+    def forward(self, x, news, channel_description, **kwargs):           # x: [Batch, Input length, Channel] news: [Batch, l, news_num, input_text_dim] description: [b, 1, c, input_text_dim]
+
+        # Project text embeddings if input dimension differs from operational dimension
+        news, channel_description = self._project_text_embeddings(news, channel_description)
 
         # convert description to [bs, l, nvars, d_model]
 
-        channel_description = channel_description.unsqueeze(1) # [bs, 1, nvars, d_model]
-        description = channel_description.repeat(1, news.shape[1], 1, 1) # [bs, l, nvars, d_model]
+        channel_description = channel_description.unsqueeze(1) # [bs, 1, nvars, text_dim]
+        description = channel_description.repeat(1, news.shape[1], 1, 1) # [bs, l, nvars, text_dim]
         
         
 

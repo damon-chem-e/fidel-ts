@@ -210,6 +210,8 @@ class Data_Provider(object):
         
         # Get embedding parameters from config (with defaults)
         embed_model_name = self.dataset_config.get('timemmd_embed_model', 'bert-base-uncased')
+        # For embedding format, use BERT's native dimension (768)
+        # Models will handle dimension conversion with learned projections if needed
         embed_dim = self.dataset_config.get('timemmd_embed_dim', 768)
         force_reembed = self.dataset_config.get('timemmd_force_reembed', False)
         # hf_cache_dir is data-agnostic; prefer global args.hf_cache_dir, fall back to dataset config, then default

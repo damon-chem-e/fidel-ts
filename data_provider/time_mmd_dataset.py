@@ -62,12 +62,13 @@ class TimeMMD_HeteroGetter:
         self.channel_info = channel_info if channel_info else ''
         self.output_format = output_format
         self.embed_model_name = embed_model_name
-        self.embed_dim = embed_dim
+        self.embed_dim = embed_dim  # Kept for backward compatibility, but actual dimension comes from model
         self.force_reembed = force_reembed
         self.hf_cache_dir = hf_cache_dir
         self.root_path = root_path
         self.data_path = data_path
         self.device = device
+        self.bert_dim = None  # Will be set when model is loaded
         
         # Create a mapping for fast lookup
         self.text_dict = text_data.to_dict()
@@ -151,6 +152,7 @@ class TimeMMD_HeteroGetter:
         
         Only loads once; subsequent calls reuse cached model.
         Logs whether model is loaded from cache or downloaded from cloud.
+        Models will handle dimension conversion with learned projections if needed.
         """
         if self.tokenizer is not None and self.model is not None:
             return  # Already loaded
@@ -190,7 +192,14 @@ class TimeMMD_HeteroGetter:
             print(f'[ info ] Model cached successfully to: {cache_model_path}')
         
         self.model.eval()
-        print(f'[ info ] {self.embed_model_name} loaded and ready for embedding')
+        
+        # Get BERT output dimension (typically 768 for bert-base-uncased)
+        # Check the model's config to get the hidden size
+        self.bert_dim = self.model.config.hidden_size
+        
+        # No projection layer here - models will handle dimension conversion with learned projections
+        # We just use BERT's native output dimension
+        print(f'[ info ] {self.embed_model_name} loaded and ready for embedding (output dim: {self.bert_dim})')
     
     def _embed_text_corpus(self):
         """
@@ -198,7 +207,8 @@ class TimeMMD_HeteroGetter:
         
         Returns:
             dict: Dictionary mapping timestamp strings to embedding arrays
-                Format: {"YYYYMMDDHHMMSS": np.ndarray(shape=(1, embed_dim), dtype=np.float32)}
+                Format: {"YYYYMMDDHHMMSS": np.ndarray(shape=(1, bert_dim), dtype=np.float32)}
+                where bert_dim is BERT's output dimension (typically 768)
         """
         # Load model if not already loaded
         self._load_embedding_model()
@@ -245,11 +255,12 @@ class TimeMMD_HeteroGetter:
                 with torch.no_grad():
                     outputs = self.model(input_ids, attention_mask=attention_mask)
                     # Use [CLS] token embedding (first token)
+                    # Output in BERT's native dimension (768) - models will project if needed
                     batch_embeddings = outputs.last_hidden_state[:, 0, :].cpu().numpy()
                 
                 # Store embeddings with timestamp keys
                 for ts, emb in zip(batch_timestamps, batch_embeddings):
-                    # Reshape to (1, embed_dim) for consistency with expected format
+                    # Reshape to (1, bert_dim) for consistency with expected format
                     embeddings_dict[str(ts)] = emb.reshape(1, -1).astype(np.float32)
                 
                 # Update progress
@@ -286,9 +297,10 @@ class TimeMMD_HeteroGetter:
         with torch.no_grad():
             outputs = self.model(input_ids, attention_mask=attention_mask)
             # Use [CLS] token embedding (first token)
+            # Output in BERT's native dimension (768) - models will project if needed
             embedding = outputs.last_hidden_state[:, 0, :].cpu().numpy()
         
-        # Reshape to (1, embed_dim) for consistency
+        # Reshape to (1, bert_dim) for consistency
         return embedding.reshape(1, -1).astype(np.float32)
     
     def _load_or_create_embeddings(self):
@@ -375,16 +387,18 @@ class TimeMMD_HeteroGetter:
             for ts in matched_times:
                 # ts is string 'YYYYMMDDHHMMSS'
                 if ts in self.embeddings:
-                    emb = self.embeddings[ts]  # shape: (1, embed_dim)
+                    emb = self.embeddings[ts]  # shape: (1, bert_dim) where bert_dim is BERT's output (typically 768)
                 else:
                     # No embedding found, use zero vector
-                    emb = np.zeros((1, self.embed_dim), dtype=np.float32)
+                    # Use BERT's native dimension (768) - models will project if needed
+                    emb = np.zeros((1, self.bert_dim), dtype=np.float32)
                 embedding_list.append(emb)
             
-            # Stack to shape: (num_timesteps, 1, embed_dim)
-            # This matches expected format: (seq_len, news_num, embed_dim)
+            # Stack to shape: (num_timesteps, 1, bert_dim)
+            # This matches expected format: (seq_len, news_num, bert_dim)
             # where news_num=1 for Time-MMD (single text per timestamp)
-            output_dynamic = np.stack(embedding_list, axis=0)  # (num_timesteps, 1, embed_dim)
+            # Models will project bert_dim -> text_dim if needed
+            output_dynamic = np.stack(embedding_list, axis=0)  # (num_timesteps, 1, bert_dim)
             # Squeeze middle dimension to match expected shape: (num_timesteps, embed_dim)
             # But we need to keep it as (num_timesteps, 1, embed_dim) for compatibility
             # Actually, let's keep it as (num_timesteps, 1, embed_dim) to match TGTSF expectation

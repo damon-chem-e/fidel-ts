@@ -88,6 +88,20 @@ class Model(nn.Module):
 
         self.dropout = dropout
 
+        # Text dimension handling:
+        # - input_text_dim: Dimension of input text embeddings (e.g., 768 for BERT)
+        # - text_dim: Operational dimension used internally by the model (e.g., 256)
+        # If input_text_dim != text_dim, a learned projection layer is added
+        self.input_text_dim = getattr(configs, 'input_text_dim', configs.text_dim)
+        self.text_dim = configs.text_dim
+        
+        # Learned projection layer if input dimension differs from operational dimension
+        if self.input_text_dim != self.text_dim:
+            self.text_projection = nn.Linear(self.input_text_dim, self.text_dim)
+            print(f'[ info ] LYNX: Added learned projection layer {self.input_text_dim} -> {self.text_dim}')
+        else:
+            self.text_projection = None
+
         self.mixer = text_temp_cross_block(
             text_embedding_dim=configs.text_dim, 
             temp_embedding_dim=d_model, 
@@ -109,6 +123,43 @@ class Model(nn.Module):
         
         # Load and wrap pretrained unimodal model
         self.unimodal_wrapper = UnimodalModelWrapper.from_config(configs)
+    
+    def _project_text_embeddings(self, news, channel_description):
+        """
+        Project text embeddings from input_text_dim to text_dim if needed.
+        
+        Args:
+            news: News embeddings [B, l, news_num, input_text_dim]
+            channel_description: Channel descriptions [B, C, input_text_dim] or [B, 1, C, input_text_dim]
+            
+        Returns:
+            news: Projected news embeddings [B, l, news_num, text_dim]
+            channel_description: Projected channel descriptions [B, C, text_dim] or [B, 1, C, text_dim]
+        """
+        if self.text_projection is None:
+            return news, channel_description
+        
+        # Project news embeddings: [B, l, news_num, input_text_dim] -> [B, l, news_num, text_dim]
+        B, L, N, D = news.shape
+        news = news.reshape(B * L * N, D)  # Flatten for projection
+        news = self.text_projection(news)  # Project
+        news = news.reshape(B, L, N, self.text_dim)  # Reshape back
+        
+        # Project channel_description: [B, C, input_text_dim] or [B, 1, C, input_text_dim] -> [B, C, text_dim] or [B, 1, C, text_dim]
+        if channel_description.ndim == 3:
+            # [B, C, input_text_dim]
+            B_desc, C_desc, D_desc = channel_description.shape
+            channel_description = channel_description.reshape(B_desc * C_desc, D_desc)
+            channel_description = self.text_projection(channel_description)
+            channel_description = channel_description.reshape(B_desc, C_desc, self.text_dim)
+        elif channel_description.ndim == 4:
+            # [B, 1, C, input_text_dim]
+            B_desc, _, C_desc, D_desc = channel_description.shape
+            channel_description = channel_description.reshape(B_desc * C_desc, D_desc)
+            channel_description = self.text_projection(channel_description)
+            channel_description = channel_description.reshape(B_desc, 1, C_desc, self.text_dim)
+        
+        return news, channel_description
         
         # Configure RevIN based on wrapper's normalization scheme
         if self.unimodal_wrapper.norm_scheme == 'use_norm':
@@ -132,9 +183,12 @@ class Model(nn.Module):
         Returns:
             output: TGTSF prediction [B, pred_len, C]
         """
+        # Project text embeddings if input dimension differs from operational dimension
+        news, channel_description = self._project_text_embeddings(news, channel_description)
+        
         # Convert description to [bs, l, nvars, d_model]
-        channel_description = channel_description.unsqueeze(1)  # [bs, 1, nvars, d_model]
-        description = channel_description.repeat(1, news.shape[1], 1, 1)  # [bs, l, nvars, d_model]
+        channel_description = channel_description.unsqueeze(1)  # [bs, 1, nvars, text_dim]
+        description = channel_description.repeat(1, news.shape[1], 1, 1)  # [bs, l, nvars, text_dim]
         
         # Apply RevIN normalization only if not disabled and RevIN is enabled
         if self.revin and not disable_revin:

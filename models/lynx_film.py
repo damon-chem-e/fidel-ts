@@ -21,6 +21,20 @@ class Model(nn.Module):
         # 1. Unimodal Wrapper (Frozen Baseline)
         self.unimodal_wrapper = UnimodalModelWrapper.from_config(configs)
         
+        # Text dimension handling:
+        # - input_text_dim: Dimension of input text embeddings (e.g., 768 for BERT)
+        # - text_dim: Operational dimension used internally by the model (e.g., 256)
+        # If input_text_dim != text_dim, a learned projection layer is added
+        self.input_text_dim = getattr(configs, 'input_text_dim', configs.text_dim)
+        self.text_dim = configs.text_dim
+        
+        # Learned projection layer if input dimension differs from operational dimension
+        if self.input_text_dim != self.text_dim:
+            self.text_projection = nn.Linear(self.input_text_dim, self.text_dim)
+            print(f'[ info ] LYNX-FiLM: Added learned projection layer {self.input_text_dim} -> {self.text_dim}')
+        else:
+            self.text_projection = None
+        
         # 2. Text Encoder (from TGTSF)
         # Used to get text embeddings for FiLM
         self.text_encoder = text_encoder(
@@ -38,6 +52,43 @@ class Model(nn.Module):
         residual_configs = copy.deepcopy(configs)
         residual_configs.use_norm = False 
         self.residual_model = iTransformerFilm(residual_configs)
+    
+    def _project_text_embeddings(self, news, channel_description):
+        """
+        Project text embeddings from input_text_dim to text_dim if needed.
+        
+        Args:
+            news: News embeddings [B, l, news_num, input_text_dim]
+            channel_description: Channel descriptions [B, C, input_text_dim] or [B, 1, C, input_text_dim]
+            
+        Returns:
+            news: Projected news embeddings [B, l, news_num, text_dim]
+            channel_description: Projected channel descriptions [B, C, text_dim] or [B, 1, C, text_dim]
+        """
+        if self.text_projection is None:
+            return news, channel_description
+        
+        # Project news embeddings: [B, l, news_num, input_text_dim] -> [B, l, news_num, text_dim]
+        B, L, N, D = news.shape
+        news = news.reshape(B * L * N, D)  # Flatten for projection
+        news = self.text_projection(news)  # Project
+        news = news.reshape(B, L, N, self.text_dim)  # Reshape back
+        
+        # Project channel_description: [B, C, input_text_dim] or [B, 1, C, input_text_dim] -> [B, C, text_dim] or [B, 1, C, text_dim]
+        if channel_description.ndim == 3:
+            # [B, C, input_text_dim]
+            B_desc, C_desc, D_desc = channel_description.shape
+            channel_description = channel_description.reshape(B_desc * C_desc, D_desc)
+            channel_description = self.text_projection(channel_description)
+            channel_description = channel_description.reshape(B_desc, C_desc, self.text_dim)
+        elif channel_description.ndim == 4:
+            # [B, 1, C, input_text_dim]
+            B_desc, _, C_desc, D_desc = channel_description.shape
+            channel_description = channel_description.reshape(B_desc * C_desc, D_desc)
+            channel_description = self.text_projection(channel_description)
+            channel_description = channel_description.reshape(B_desc, 1, C_desc, self.text_dim)
+        
+        return news, channel_description
         
     def forward(self, x, news, channel_description, **kwargs):
         """
@@ -58,7 +109,10 @@ class Model(nn.Module):
         # Step 2: Get unimodal prediction (wrapper handles all normalization logic)
         unimodal_pred_norm = self.unimodal_wrapper.predict(x, norm_params)
         
-        # Step 3: Get Text Embeddings
+        # Step 3: Project text embeddings if input dimension differs from operational dimension
+        news, channel_description = self._project_text_embeddings(news, channel_description)
+        
+        # Step 4: Get Text Embeddings
         # text_encoder returns [B, L, C, text_dim] (L=time segments, C=channels)
         # Note: TGTSF text_encoder output shape logic:
         # It reshapes news and description, passes through transformer.
