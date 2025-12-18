@@ -257,6 +257,40 @@ class TimeMMD_HeteroGetter:
         
         return embeddings_dict
     
+    def _embed_single_text(self, text):
+        """
+        Embed a single text string using the embedding model.
+        
+        Args:
+            text: Text string to embed
+            
+        Returns:
+            np.ndarray: Embedding vector of shape (1, embed_dim)
+        """
+        # Load model if not already loaded
+        self._load_embedding_model()
+        
+        # Tokenize
+        encoded = self.tokenizer(
+            text if text else '',  # Handle empty strings
+            padding=True,
+            truncation=True,
+            max_length=512,
+            return_tensors='pt'
+        )
+        
+        input_ids = encoded['input_ids'].to(self.device)
+        attention_mask = encoded['attention_mask'].to(self.device)
+        
+        # Get embedding
+        with torch.no_grad():
+            outputs = self.model(input_ids, attention_mask=attention_mask)
+            # Use [CLS] token embedding (first token)
+            embedding = outputs.last_hidden_state[:, 0, :].cpu().numpy()
+        
+        # Reshape to (1, embed_dim) for consistency
+        return embedding.reshape(1, -1).astype(np.float32)
+    
     def _load_or_create_embeddings(self):
         """
         Load embeddings from .pkl file or create them on-the-fly.
@@ -285,46 +319,20 @@ class TimeMMD_HeteroGetter:
             # Save to .pkl
             # BEGIN DEBUG
             pkl_dir = os.path.dirname(pkl_path)
-            print(f'[ debug ] Target directory: {pkl_dir}')
-            print(f'[ debug ] Directory exists: {os.path.exists(pkl_dir)}')
-            if os.path.exists(pkl_dir):
-                print(f'[ debug ] Directory is writable: {os.access(pkl_dir, os.W_OK)}')
-            
             try:
                 # Ensure directory exists
                 os.makedirs(pkl_dir, exist_ok=True)
-                print(f'[ debug ] Directory created/verified: {pkl_dir}')
-                print(f'[ debug ] Directory is writable after creation: {os.access(pkl_dir, os.W_OK)}')
-                
-                # Try to write a test file first
-                test_file = os.path.join(pkl_dir, '.test_write')
-                try:
-                    with open(test_file, 'w') as f:
-                        f.write('test')
-                    os.remove(test_file)
-                    print(f'[ debug ] Test write successful in {pkl_dir}')
-                except Exception as test_e:
-                    print(f'[ error ] Test write failed in {pkl_dir}: {test_e}')
-                    raise
-                
-                # Now try to save the actual embeddings
-                print(f'[ debug ] Attempting to save embeddings to {pkl_path}')
-                # END DEBUG
+                    
                 joblib.dump(self.embeddings, pkl_path)
                 print(f'[ info ] Saved embeddings to {pkl_path}')
-            # BEGIN DEBUG
             except PermissionError as e:
                 print(f'[ error ] Permission denied saving embeddings to {pkl_path}')
                 print(f'[ error ] Error details: {e}')
                 print(f'[ error ] Current working directory: {os.getcwd()}')
                 print(f'[ error ] Directory permissions: {oct(os.stat(pkl_dir).st_mode) if os.path.exists(pkl_dir) else "N/A"}')
                 print('[ info ] Embeddings will be recomputed on next run')
-            # END DEBUG
             except Exception as e:
-                # BEGIN DEBUG
                 print(f'[ error ] Could not save embeddings to {pkl_path}: {type(e).__name__}: {e}')
-                print(f'[ error ] Current working directory: {os.getcwd()}')
-                # END DEBUG
                 print('[ info ] Embeddings will be recomputed on next run')
     
     def __call__(self, timestamps):
@@ -383,7 +391,32 @@ class TimeMMD_HeteroGetter:
         else:
             raise ValueError(f"Unsupported output_format: {self.output_format}")
         
-        return matched_times, self.general_info, self.channel_info, output_dynamic
+        # Handle general_info and channel_info based on output_format
+        # When output_format='embedding', these should also be embeddings for models like TGTSF
+        if self.output_format == 'embedding':
+            # Embed general_info and channel_info if they're strings
+            # TGTSF expects channel_description: [bs, nvars, d_model] (before unsqueeze in forward)
+            # So per sample: [nvars, d_model], which collates to [batch_size, nvars, d_model]
+            # For Time-MMD with single channel: [1, embed_dim] per sample
+            if isinstance(self.general_info, str):
+                general_info_emb = self._embed_single_text(self.general_info)  # (1, embed_dim)
+            else:
+                general_info_emb = self.general_info
+            
+            if isinstance(self.channel_info, str):
+                channel_info_emb = self._embed_single_text(self.channel_info)  # (1, embed_dim)
+                # Reshape to [nvars, embed_dim] format expected by TGTSF
+                # For single channel: (1, embed_dim) is correct
+                # DataLoader will collate to [batch_size, 1, embed_dim]
+                # TGTSF forward expects [bs, nvars, d_model] before unsqueeze
+                # So we need (nvars, d_model) = (1, embed_dim) per sample ✓
+            else:
+                channel_info_emb = self.channel_info
+            
+            return matched_times, general_info_emb, channel_info_emb, output_dynamic
+        else:
+            # For text formats, return strings as-is
+            return matched_times, self.general_info, self.channel_info, output_dynamic
 
 
 class TimeMMD_Dataset(Universal_Dataset):
