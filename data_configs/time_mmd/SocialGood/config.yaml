@@ -1,22 +1,22 @@
-root_path: ./data/time_mmd/Energy
-data_path: US_GasolinePrice_Week.csv
+root_path: ./data/time_mmd/SocialGood
+data_path: Unadj_UnemploymentRate_ALL_processed.csv
 spliter: ratio
-split_info: [7, 1, 2]
+split_info: [7, 1, 2]  # Match MM-TSFlib default: 70% train, 10% val, 20% test
 timestamp_col: date
 target: OT
 id: all
-formatter: US_GasolinePrice_Week.csv
+formatter: Unadj_UnemploymentRate_ALL_processed.csv
 id_info: id_info.json  # Minimal id_info.json will be auto-created if not present
-dataset_type: time_mmd
-text_column: auto
-use_closedllm: false
-text_len: 4
-general_info: "US Gasoline Price weekly time series data"
-channel_info: ""
+dataset_type: time_mmd  # Flag to use TimeMMD_Dataset
+text_column: auto  # Auto-detect Final_Search_* or Final_Output
+use_closedllm: false  # Whether to use Final_Output column
+text_len: 4  # For Final_Search_{text_len} detection
+general_info: "US Unadjusted Unemployment Rate time series data"
+channel_info: ""  # Empty string for single-entity datasets
 time_zone: null
 downsample: null
-sampling_rate: 1week
-base_T: 52
+sampling_rate: 1month
+base_T: 12
 
 # Text embedding configuration (for models like TGTSF, LYNX)
 # Set timemmd_text_output to 'text' for ChatTime (uses raw text)

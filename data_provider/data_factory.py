@@ -191,10 +191,34 @@ class Data_Provider(object):
         else:
             data_path = self.formatter.format(i=i) if '{i}' in self.formatter else self.formatter
         
-        # Get hetero_info for output_format if available
-        output_format = 'json'  # default
-        if self.args.data_config.hetero_info is not None:
-            output_format = self.args.data_config.hetero_info.get('input_format', 'json')
+        # Determine output_format based on timemmd_text_output config
+        # Priority: timemmd_text_output > hetero_info.input_format > default 'json'
+        timemmd_text_output = self.dataset_config.get('timemmd_text_output', None)
+        if timemmd_text_output is not None:
+            # Map timemmd_text_output to output_format
+            if timemmd_text_output == 'text':
+                output_format = 'json'  # Use JSON format for text mode
+            elif timemmd_text_output == 'embedding':
+                output_format = 'embedding'
+            else:
+                raise ValueError(f"Invalid timemmd_text_output: {timemmd_text_output}. Must be 'text' or 'embedding'")
+        else:
+            # Fall back to hetero_info if available
+            output_format = 'json'  # default
+            if self.args.data_config.hetero_info is not None:
+                output_format = self.args.data_config.hetero_info.get('input_format', 'json')
+        
+        # Get embedding parameters from config (with defaults)
+        embed_model_name = self.dataset_config.get('timemmd_embed_model', 'bert-base-uncased')
+        embed_dim = self.dataset_config.get('timemmd_embed_dim', 768)
+        force_reembed = self.dataset_config.get('timemmd_force_reembed', False)
+        # hf_cache_dir is data-agnostic; prefer global args.hf_cache_dir, fall back to dataset config, then default
+        hf_cache_dir = getattr(self.args, 'hf_cache_dir', None) or self.dataset_config.get('hf_cache_dir', './HF_cache/')
+        
+        # Get device from args (default to 'cpu' if not available)
+        device = getattr(self.args, 'device', 'cpu')
+        if hasattr(self.args, 'gpu') and self.args.gpu is not None:
+            device = f'cuda:{int(self.args.gpu)}'
         
         return TimeMMD_Dataset(
             root_path=self.dataset_config.root_path,
@@ -219,7 +243,12 @@ class Data_Provider(object):
             text_len=self.dataset_config.get('text_len', 4),
             output_format=output_format,
             general_info=self.dataset_config.get('general_info', ''),
-            channel_info=self.dataset_config.get('channel_info', '')
+            channel_info=self.dataset_config.get('channel_info', ''),
+            embed_model_name=embed_model_name,
+            embed_dim=embed_dim,
+            force_reembed=force_reembed,
+            hf_cache_dir=hf_cache_dir,
+            device=device
         )
     
     def get_train(self, return_type='loader'):

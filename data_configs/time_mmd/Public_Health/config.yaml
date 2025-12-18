@@ -18,3 +18,12 @@ downsample: null
 sampling_rate: 1week
 base_T: 52
 
+# Text embedding configuration (for models like TGTSF, LYNX)
+# Set timemmd_text_output to 'text' for ChatTime (uses raw text)
+# Set timemmd_text_output to 'embedding' for TGTSF/LYNX (uses embeddings)
+timemmd_text_output: text  # 'text' | 'embedding'
+timemmd_embed_model: bert-base-uncased  # HuggingFace model for embedding (default: bert-base-uncased)
+timemmd_embed_dim: 768  # Embedding dimension (default: 768 for BERT)
+timemmd_force_reembed: false  # If true, recompute embeddings even if .pkl exists
+hf_cache_dir: ./HF_cache/  # Local cache for HF models (default: ./HF_cache/)
+

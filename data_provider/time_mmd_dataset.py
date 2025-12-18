@@ -9,7 +9,10 @@ import os
 import re
 import numpy as np
 import pandas as pd
+import torch
+import joblib
 from sklearn.preprocessing import StandardScaler
+from transformers import AutoTokenizer, AutoModel
 from .data_loader import Universal_Dataset
 from .data_helper import ratio_spliter, data_buffer
 
@@ -29,7 +32,10 @@ class TimeMMD_HeteroGetter:
         output_format (str): Output format for text ('json', 'dict', 'csv', 'embedding')
     """
     
-    def __init__(self, text_data, timestamps, general_info='', channel_info='', output_format='json'):
+    def __init__(self, text_data, timestamps, general_info='', channel_info='', 
+                 output_format='json', embed_model_name='bert-base-uncased', 
+                 embed_dim=768, force_reembed=False, hf_cache_dir='./HF_cache/',
+                 root_path=None, data_path=None, device='cpu'):
         """
         Initialize TimeMMD_HeteroGetter.
         
@@ -39,15 +45,34 @@ class TimeMMD_HeteroGetter:
             general_info: General dataset description (empty string if not provided)
             channel_info: Channel-specific description (empty string if not provided)
             output_format: Format for output_dynamic ('json', 'dict', 'csv', 'embedding')
+            embed_model_name: HuggingFace model name for text embedding (default: bert-base-uncased)
+            embed_dim: Embedding dimension (default: 768 for BERT)
+            force_reembed: If True, recompute embeddings even if .pkl exists
+            hf_cache_dir: Local directory for caching HF models (default: ./HF_cache/)
+            root_path: Dataset root path (for embedding file location)
+            data_path: Data file path (for embedding file location)
+            device: Device for embedding model (default: 'cpu')
         """
         self.text_data = text_data
         self.timestamps = timestamps
         self.general_info = general_info if general_info else ''
         self.channel_info = channel_info if channel_info else ''
         self.output_format = output_format
+        self.embed_model_name = embed_model_name
+        self.embed_dim = embed_dim
+        self.force_reembed = force_reembed
+        self.hf_cache_dir = hf_cache_dir
+        self.root_path = root_path
+        self.data_path = data_path
+        self.device = device
         
         # Create a mapping for fast lookup
         self.text_dict = text_data.to_dict()
+        
+        # Initialize embedding-related attributes (lazy loading)
+        self.embeddings = None
+        self.tokenizer = None
+        self.model = None
     
     def _match_timestamps(self, timestamps):
         """
@@ -99,6 +124,120 @@ class TimeMMD_HeteroGetter:
         
         return matched_times, matched_texts
     
+    def _get_embedding_path(self):
+        """
+        Get the path to the embedding .pkl file.
+        
+        Returns:
+            str: Path to embedding file
+        """
+        if self.root_path is None or self.data_path is None:
+            raise ValueError("root_path and data_path must be provided for embedding mode")
+        
+        # Get base filename without extension
+        base_name = os.path.splitext(os.path.basename(self.data_path))[0]
+        pkl_path = os.path.join(self.root_path, f"{base_name}.pkl")
+        return pkl_path
+    
+    def _load_embedding_model(self):
+        """
+        Load tokenizer and model, using local cache if available.
+        
+        Only loads once; subsequent calls reuse cached model.
+        """
+        if self.tokenizer is not None and self.model is not None:
+            return  # Already loaded
+        
+        # Ensure cache directory exists
+        os.makedirs(self.hf_cache_dir, exist_ok=True)
+        
+        # Use cache_dir parameter to store models locally
+        # First call downloads and caches; subsequent calls use cache
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.embed_model_name,
+            cache_dir=self.hf_cache_dir
+        )
+        self.model = AutoModel.from_pretrained(
+            self.embed_model_name,
+            cache_dir=self.hf_cache_dir
+        ).to(self.device)
+        self.model.eval()
+    
+    def _embed_text_corpus(self):
+        """
+        Embed all text in text_data using the embedding model.
+        
+        Returns:
+            dict: Dictionary mapping timestamp strings to embedding arrays
+                Format: {"YYYYMMDDHHMMSS": np.ndarray(shape=(1, embed_dim), dtype=np.float32)}
+        """
+        # Load model if not already loaded
+        self._load_embedding_model()
+        
+        embeddings_dict = {}
+        batch_size = 32  # Process in batches for efficiency
+        
+        # Get all timestamps and texts
+        all_timestamps = list(self.text_data.index)
+        all_texts = list(self.text_data.values)
+        
+        # Process in batches
+        for i in range(0, len(all_texts), batch_size):
+            batch_texts = all_texts[i:i+batch_size]
+            batch_timestamps = all_timestamps[i:i+batch_size]
+            
+            # Tokenize batch
+            encoded = self.tokenizer(
+                batch_texts,
+                padding=True,
+                truncation=True,
+                max_length=512,
+                return_tensors='pt'
+            )
+            
+            input_ids = encoded['input_ids'].to(self.device)
+            attention_mask = encoded['attention_mask'].to(self.device)
+            
+            # Get embeddings
+            with torch.no_grad():
+                outputs = self.model(input_ids, attention_mask=attention_mask)
+                # Use [CLS] token embedding (first token)
+                batch_embeddings = outputs.last_hidden_state[:, 0, :].cpu().numpy()
+            
+            # Store embeddings with timestamp keys
+            for ts, emb in zip(batch_timestamps, batch_embeddings):
+                # Reshape to (1, embed_dim) for consistency with expected format
+                embeddings_dict[str(ts)] = emb.reshape(1, -1).astype(np.float32)
+        
+        return embeddings_dict
+    
+    def _load_or_create_embeddings(self):
+        """
+        Load embeddings from .pkl file or create them on-the-fly.
+        
+        If .pkl exists and force_reembed=False, loads from file.
+        Otherwise, computes embeddings and saves to .pkl.
+        """
+        pkl_path = self._get_embedding_path()
+        
+        if os.path.exists(pkl_path) and not self.force_reembed:
+            # Load precomputed embeddings
+            print(f'[ info ] Loading embeddings from {pkl_path}')
+            self.embeddings = joblib.load(pkl_path)
+        else:
+            # Compute embeddings on-the-fly
+            print(f'[ info ] Computing embeddings on-the-fly (this may take a while)...')
+            self.embeddings = self._embed_text_corpus()
+            
+            # Save to .pkl
+            try:
+                os.makedirs(os.path.dirname(pkl_path), exist_ok=True)
+                joblib.dump(self.embeddings, pkl_path)
+                print(f'[ info ] Saved embeddings to {pkl_path}')
+            except Exception as e:
+                print(f'[ warning ] Could not save embeddings to {pkl_path}: {e}')
+                print('[ info ] Embeddings will be recomputed on next run')
+    
     def __call__(self, timestamps):
         """
         Get heterogeneous data for given timestamps.
@@ -130,21 +269,28 @@ class TimeMMD_HeteroGetter:
             df = pd.DataFrame({'text': matched_texts})
             output_dynamic = df.to_csv(index=False)
         elif self.output_format == 'embedding':
-            # For embedding format, return zero array (embeddings should be pre-computed)
-            # Shape: (num_timesteps, embedding_dim)
-            # 
-            # Note: 'embedding' format expects pre-computed embeddings from files (.pkl).
-            # Time-MMD datasets have text in CSV columns, not pre-computed embeddings.
-            # 
-            # When embeddings are needed:
-            # - Use output_format='json' or 'dict' and let models handle text
-            # - Or use postemb (future enhancement) to create embeddings during initialization
-            # - Or pre-compute embeddings separately and use Heterogeneous_Dataset
-            #
-            # Returning zeros here is correct for the 'embedding' format expectation,
-            # but Time-MMD datasets should typically use 'json' or 'dict' format.
-            embedding_dim = 768  # Default BERT dimension, should be configurable
-            output_dynamic = np.zeros((len(matched_texts), embedding_dim), dtype=np.float32)
+            # Ensure embeddings are loaded/created
+            if self.embeddings is None:
+                self._load_or_create_embeddings()
+            
+            # Fetch embeddings for matched timestamps
+            embedding_list = []
+            for ts in matched_times:
+                # ts is string 'YYYYMMDDHHMMSS'
+                if ts in self.embeddings:
+                    emb = self.embeddings[ts]  # shape: (1, embed_dim)
+                else:
+                    # No embedding found, use zero vector
+                    emb = np.zeros((1, self.embed_dim), dtype=np.float32)
+                embedding_list.append(emb)
+            
+            # Stack to shape: (num_timesteps, 1, embed_dim)
+            # This matches expected format: (seq_len, news_num, embed_dim)
+            # where news_num=1 for Time-MMD (single text per timestamp)
+            output_dynamic = np.stack(embedding_list, axis=0)  # (num_timesteps, 1, embed_dim)
+            # Squeeze middle dimension to match expected shape: (num_timesteps, embed_dim)
+            # But we need to keep it as (num_timesteps, 1, embed_dim) for compatibility
+            # Actually, let's keep it as (num_timesteps, 1, embed_dim) to match TGTSF expectation
         else:
             raise ValueError(f"Unsupported output_format: {self.output_format}")
         
@@ -179,7 +325,9 @@ class TimeMMD_Dataset(Universal_Dataset):
                  preload_hetero=False, hetero_stride=1, task=None, custom_input=None,
                  timezone=None, downsample=None, entity_id=None,
                  text_column='auto', use_closedllm=False, text_len=4,
-                 output_format='json', general_info='', channel_info=''):
+                 output_format='json', general_info='', channel_info='',
+                 embed_model_name='bert-base-uncased', embed_dim=768,
+                 force_reembed=False, hf_cache_dir='./HF_cache/', device='cpu'):
         """
         Initialize TimeMMD_Dataset.
         
@@ -199,6 +347,11 @@ class TimeMMD_Dataset(Universal_Dataset):
         self.output_format = output_format
         self.general_info = general_info
         self.channel_info = channel_info
+        self.embed_model_name = embed_model_name
+        self.embed_dim = embed_dim
+        self.force_reembed = force_reembed
+        self.hf_cache_dir = hf_cache_dir
+        self.device = device
         
         # Initialize parent class with hetero_data_getter=None initially
         # We'll set it up after reading data
@@ -286,7 +439,14 @@ class TimeMMD_Dataset(Universal_Dataset):
             timestamps=self.timestamp,
             general_info=self.general_info,
             channel_info=self.channel_info,
-            output_format=self.output_format
+            output_format=self.output_format,
+            embed_model_name=self.embed_model_name,
+            embed_dim=self.embed_dim,
+            force_reembed=self.force_reembed,
+            hf_cache_dir=self.hf_cache_dir,
+            root_path=self.root_path,
+            data_path=self.data_path,
+            device=self.device
         )
         
         # Set as hetero_data_getter
