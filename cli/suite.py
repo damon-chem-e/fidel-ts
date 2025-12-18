@@ -172,11 +172,11 @@ def validate(
         
         # Validate experiments
         experiments = suite_info.get('experiments', [])
-        if not isinstance(experiments, list):
+        if not isinstance(experiments, builtins.list):
             errors.append("suite.experiments must be a list")
         else:
             for i, exp in enumerate(experiments):
-                if not isinstance(exp, dict):
+                if not isinstance(exp, builtins.dict):
                     errors.append(f"Experiment {i} must be a dictionary")
                     continue
                 
