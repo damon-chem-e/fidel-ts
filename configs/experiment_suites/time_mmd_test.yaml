@@ -1,0 +1,205 @@
+# Experiment Suite: Time-MMD Test Suite
+# Description: Test run for multiple models (lynx, lynx_film, lynx_film_raw, TGTSF) on Time-MMD dataset
+# This suite verifies that all models work correctly with the Time-MMD dataset format
+# Usage: python -m cli.suite run configs/experiment_suites/time_mmd_test.yaml
+
+suite:
+  name: "time_mmd_test"
+  description: "Test suite: Verify all models (lynx, lynx_film, lynx_film_raw, TGTSF) work with Time-MMD dataset"
+  tags: ["time_mmd", "multimodal", "pytorch", "test", "lynx", "tgtsf"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/time_mmd_test"
+  
+  # Experiments in this suite
+  experiments:
+    # Test 1: TGTSF model
+    - name: "tgtsf_time_mmd_traffic"
+      description: "TGTSF on Time-MMD Traffic dataset (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          experiment_output: "./output"
+          epochs: 1  # Single epoch for testing
+          batch_size: 4  # Small batch size for testing
+          learning_rate: 5e-4
+          patience: 3
+          loss: mse
+          lradj: type3
+          scale: true
+          disable_buffer: false
+          preload_hetero: false
+          prefetch_factor: 2
+          noise: 0.0
+          input_len: 96
+          output_len: 24
+          num_workers: 0
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false  # Disable wandb for quick test runs
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/time_mmd_test"
+        # Base data path override (replaces './data' in data config paths)
+        base_data_path: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/data/
+        # Override data config settings for TGTSF (requires embeddings, not raw text)
+        data_config:
+          timemmd_text_output: embedding  # Use embeddings for TGTSF model
+        # Model config override: Set input_text_dim to match BERT output (768)
+        model_config:
+          input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
+
+    # Test 2: lynx model
+    - name: "lynx_time_mmd_traffic"
+      description: "lynx on Time-MMD Traffic dataset (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx"
+          config_path: "model_configs/general/lynx.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          experiment_output: "./output"
+          epochs: 1  # Single epoch for testing
+          batch_size: 4  # Small batch size for testing
+          learning_rate: 5e-4
+          patience: 3
+          loss: mse
+          lradj: type3
+          scale: true
+          disable_buffer: false
+          preload_hetero: false
+          prefetch_factor: 2
+          noise: 0.0
+          input_len: 96
+          output_len: 24
+          num_workers: 0
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false  # Disable wandb for quick test runs
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/time_mmd_test"
+        # Base data path override
+        base_data_path: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/data/
+        # Override data config settings for lynx (requires embeddings, not raw text)
+        data_config:
+          timemmd_text_output: embedding  # Use embeddings for lynx model
+        # Model config override: Set input_text_dim to match BERT output (768)
+        model_config:
+          input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
+
+    # Test 3: lynx_film model
+    - name: "lynx_film_time_mmd_traffic"
+      description: "lynx_film on Time-MMD Traffic dataset (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film"
+          config_path: "model_configs/general/lynx_film.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          experiment_output: "./output"
+          epochs: 1  # Single epoch for testing
+          batch_size: 4  # Small batch size for testing
+          learning_rate: 5e-4
+          patience: 3
+          loss: mse
+          lradj: type3
+          scale: true
+          disable_buffer: false
+          preload_hetero: false
+          prefetch_factor: 2
+          noise: 0.0
+          input_len: 96
+          output_len: 24
+          num_workers: 0
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false  # Disable wandb for quick test runs
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/time_mmd_test"
+        # Base data path override
+        base_data_path: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/data/
+        # Override data config settings for lynx_film (requires embeddings, not raw text)
+        data_config:
+          timemmd_text_output: embedding  # Use embeddings for lynx_film model
+        # Model config override: Set input_text_dim to match BERT output (768)
+        model_config:
+          input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
+
+    # Test 4: lynx_film_raw model
+    - name: "lynx_film_raw_time_mmd_traffic"
+      description: "lynx_film_raw on Time-MMD Traffic dataset (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          experiment_output: "./output"
+          epochs: 1  # Single epoch for testing
+          batch_size: 4  # Small batch size for testing
+          learning_rate: 5e-4
+          patience: 3
+          loss: mse
+          lradj: type3
+          scale: true
+          disable_buffer: false
+          preload_hetero: false
+          prefetch_factor: 2
+          noise: 0.0
+          input_len: 96
+          output_len: 24
+          num_workers: 0
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false  # Disable wandb for quick test runs
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/time_mmd_test"
+        # Base data path override
+        base_data_path: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/data/
+        # Override data config settings for lynx_film_raw (requires embeddings, not raw text)
+        data_config:
+          timemmd_text_output: embedding  # Use embeddings for lynx_film_raw model
+        # Model config override: Set input_text_dim to match BERT output (768)
+        model_config:
+          input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
