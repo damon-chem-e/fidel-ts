@@ -91,7 +91,7 @@ suite:
           preload_hetero: false
           prefetch_factor: 2
           noise: 0.0
-          input_len: 96
+          input_len: 360  # Must match pretrained checkpoint (trained with input_len=360)
           output_len: 24
           num_workers: 0
         device:
@@ -138,7 +138,7 @@ suite:
           preload_hetero: false
           prefetch_factor: 2
           noise: 0.0
-          input_len: 96
+          input_len: 360  # Must match pretrained checkpoint (trained with input_len=360)
           output_len: 24
           num_workers: 0
         device:
