@@ -6,6 +6,7 @@ This module provides commands for running, listing, and validating experiment su
 
 import typer
 import builtins
+import traceback
 from pathlib import Path
 from typing import Optional, List
 from rich.console import Console
@@ -183,6 +184,8 @@ def validate(
                     errors.append(f"Experiment {i} missing required field: name")
                 if 'template' not in exp:
                     errors.append(f"Experiment {i} missing required field: template")
+                elif not isinstance(exp['template'], str):
+                    errors.append(f"Experiment {i} template must be a string, got {type(exp['template']).__name__}")
                 elif not Path(exp['template']).exists():
                     warnings.append(f"Experiment {i} template file not found: {exp['template']}")
         
@@ -209,6 +212,8 @@ def validate(
         
     except Exception as e:
         console.print(f"[red]Error validating suite config: {str(e)}[/red]")
+        console.print("\n[red]Full traceback:[/red]")
+        console.print(traceback.format_exc())
         raise typer.Exit(code=1)
 
 

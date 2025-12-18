@@ -450,15 +450,30 @@ def load_suite_config(suite_config_path: str) -> Dict[str, Any]:
     
     Returns:
         Suite configuration dictionary
+    
+    Raises:
+        ValueError: If config file is empty or invalid
+        FileNotFoundError: If config file doesn't exist
+        yaml.YAMLError: If YAML parsing fails
     """
-    resolved_path = resolve_config_path(suite_config_path)
-    with open(resolved_path, 'r', encoding='utf-8') as f:
-        suite_config = yaml.safe_load(f)
-    
-    if suite_config is None:
-        raise ValueError(f"Suite config file is empty: {suite_config_path}")
-    
-    return suite_config
+    try:
+        resolved_path = resolve_config_path(suite_config_path)
+        with open(resolved_path, 'r', encoding='utf-8') as f:
+            suite_config = yaml.safe_load(f)
+        
+        if suite_config is None:
+            raise ValueError(f"Suite config file is empty: {suite_config_path}")
+        
+        if not isinstance(suite_config, dict):
+            raise ValueError(f"Suite config must be a dictionary, got {type(suite_config).__name__}")
+        
+        return suite_config
+    except FileNotFoundError:
+        raise
+    except yaml.YAMLError as e:
+        raise ValueError(f"Failed to parse YAML in suite config: {str(e)}")
+    except Exception as e:
+        raise ValueError(f"Error loading suite config: {str(e)}")
 
 
 def execute_suite(suite_config_path: str, init_only: bool = False) -> None:
