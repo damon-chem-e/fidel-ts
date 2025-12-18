@@ -37,3 +37,7 @@ device:
 hf_mirror: false
 hf_offline: false
 
+# Override data config settings for TGTSF (requires embeddings, not raw text)
+data_config:
+  timemmd_text_output: embedding  # Override: use embeddings for TGTSF model
+
