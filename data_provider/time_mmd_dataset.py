@@ -266,6 +266,13 @@ class TimeMMD_HeteroGetter:
         """
         pkl_path = self._get_embedding_path()
         
+        # BEGIN DEBUG
+        print(f'[ debug ] Embedding path: {pkl_path}')
+        print(f'[ debug ] root_path: {self.root_path}')
+        print(f'[ debug ] data_path: {self.data_path}')
+        print(f'[ debug ] Absolute pkl_path: {os.path.abspath(pkl_path)}')
+        # END DEBUG
+
         if os.path.exists(pkl_path) and not self.force_reembed:
             # Load precomputed embeddings
             print(f'[ info ] Loading embeddings from {pkl_path}')
@@ -276,12 +283,48 @@ class TimeMMD_HeteroGetter:
             self.embeddings = self._embed_text_corpus()
             
             # Save to .pkl
+            # BEGIN DEBUG
+            pkl_dir = os.path.dirname(pkl_path)
+            print(f'[ debug ] Target directory: {pkl_dir}')
+            print(f'[ debug ] Directory exists: {os.path.exists(pkl_dir)}')
+            if os.path.exists(pkl_dir):
+                print(f'[ debug ] Directory is writable: {os.access(pkl_dir, os.W_OK)}')
+            
             try:
-                os.makedirs(os.path.dirname(pkl_path), exist_ok=True)
+                # Ensure directory exists
+                os.makedirs(pkl_dir, exist_ok=True)
+                print(f'[ debug ] Directory created/verified: {pkl_dir}')
+                print(f'[ debug ] Directory is writable after creation: {os.access(pkl_dir, os.W_OK)}')
+                
+                # Try to write a test file first
+                test_file = os.path.join(pkl_dir, '.test_write')
+                try:
+                    with open(test_file, 'w') as f:
+                        f.write('test')
+                    os.remove(test_file)
+                    print(f'[ debug ] Test write successful in {pkl_dir}')
+                except Exception as test_e:
+                    print(f'[ error ] Test write failed in {pkl_dir}: {test_e}')
+                    raise
+                
+                # Now try to save the actual embeddings
+                print(f'[ debug ] Attempting to save embeddings to {pkl_path}')
+                # END DEBUG
                 joblib.dump(self.embeddings, pkl_path)
                 print(f'[ info ] Saved embeddings to {pkl_path}')
+            # BEGIN DEBUG
+            except PermissionError as e:
+                print(f'[ error ] Permission denied saving embeddings to {pkl_path}')
+                print(f'[ error ] Error details: {e}')
+                print(f'[ error ] Current working directory: {os.getcwd()}')
+                print(f'[ error ] Directory permissions: {oct(os.stat(pkl_dir).st_mode) if os.path.exists(pkl_dir) else "N/A"}')
+                print('[ info ] Embeddings will be recomputed on next run')
+            # END DEBUG
             except Exception as e:
-                print(f'[ warning ] Could not save embeddings to {pkl_path}: {e}')
+                # BEGIN DEBUG
+                print(f'[ error ] Could not save embeddings to {pkl_path}: {type(e).__name__}: {e}')
+                print(f'[ error ] Current working directory: {os.getcwd()}')
+                # END DEBUG
                 print('[ info ] Embeddings will be recomputed on next run')
     
     def __call__(self, timestamps):
