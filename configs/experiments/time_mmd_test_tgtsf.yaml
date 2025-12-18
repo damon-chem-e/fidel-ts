@@ -37,6 +37,10 @@ device:
 hf_mirror: false
 hf_offline: false
 
+# Base data path override (replaces './data' in data config paths)
+# Set this to an absolute path if running from a different working directory
+base_data_path: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/data/
+
 # Override data config settings for TGTSF (requires embeddings, not raw text)
 data_config:
   timemmd_text_output: embedding  # Override: use embeddings for TGTSF model

@@ -11,10 +11,13 @@ import numpy as np
 import pandas as pd
 import torch
 import joblib
+from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 from transformers import AutoTokenizer, AutoModel
 from .data_loader import Universal_Dataset
 from .data_helper import ratio_spliter, data_buffer
+
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
 
 
 class TimeMMD_HeteroGetter:
@@ -128,8 +131,10 @@ class TimeMMD_HeteroGetter:
         """
         Get the path to the embedding .pkl file.
         
+        Returns absolute path to ensure proper file access regardless of working directory.
+        
         Returns:
-            str: Path to embedding file
+            str: Absolute path to embedding file
         """
         if self.root_path is None or self.data_path is None:
             raise ValueError("root_path and data_path must be provided for embedding mode")
@@ -137,13 +142,15 @@ class TimeMMD_HeteroGetter:
         # Get base filename without extension
         base_name = os.path.splitext(os.path.basename(self.data_path))[0]
         pkl_path = os.path.join(self.root_path, f"{base_name}.pkl")
-        return pkl_path
+        # Convert to absolute path to avoid permission issues with relative paths
+        return os.path.abspath(pkl_path)
     
     def _load_embedding_model(self):
         """
         Load tokenizer and model, using local cache if available.
         
         Only loads once; subsequent calls reuse cached model.
+        Logs whether model is loaded from cache or downloaded from cloud.
         """
         if self.tokenizer is not None and self.model is not None:
             return  # Already loaded
@@ -151,17 +158,39 @@ class TimeMMD_HeteroGetter:
         # Ensure cache directory exists
         os.makedirs(self.hf_cache_dir, exist_ok=True)
         
+        # Check if model exists in cache before loading
+        # HuggingFace stores models in: {cache_dir}/models--{model_name_sanitized}/
+        model_name_sanitized = self.embed_model_name.replace('/', '--')
+        cache_model_path = Path(self.hf_cache_dir) / f"models--{model_name_sanitized}"
+        model_in_cache = cache_model_path.exists() and any(cache_model_path.iterdir())
+        
+        if model_in_cache:
+            print(f'[ info ] Loading {self.embed_model_name} from local cache: {cache_model_path}')
+        else:
+            print(f'[ info ] Downloading {self.embed_model_name} from HuggingFace (will cache to: {cache_model_path})')
+        
         # Use cache_dir parameter to store models locally
         # First call downloads and caches; subsequent calls use cache
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.embed_model_name,
             cache_dir=self.hf_cache_dir
         )
+        
+        # Check again after tokenizer load to see if it was actually cached
+        if not model_in_cache and cache_model_path.exists() and any(cache_model_path.iterdir()):
+            print('[ info ] Tokenizer cached successfully')
+        
         self.model = AutoModel.from_pretrained(
             self.embed_model_name,
             cache_dir=self.hf_cache_dir
         ).to(self.device)
+        
+        # Check again after model load
+        if not model_in_cache and cache_model_path.exists() and any(cache_model_path.iterdir()):
+            print(f'[ info ] Model cached successfully to: {cache_model_path}')
+        
         self.model.eval()
+        print(f'[ info ] {self.embed_model_name} loaded and ready for embedding')
     
     def _embed_text_corpus(self):
         """
@@ -180,34 +209,51 @@ class TimeMMD_HeteroGetter:
         # Get all timestamps and texts
         all_timestamps = list(self.text_data.index)
         all_texts = list(self.text_data.values)
+        total_batches = (len(all_texts) + batch_size - 1) // batch_size
         
-        # Process in batches
-        for i in range(0, len(all_texts), batch_size):
-            batch_texts = all_texts[i:i+batch_size]
-            batch_timestamps = all_timestamps[i:i+batch_size]
-            
-            # Tokenize batch
-            encoded = self.tokenizer(
-                batch_texts,
-                padding=True,
-                truncation=True,
-                max_length=512,
-                return_tensors='pt'
+        # Use Rich progress bar for embedding computation
+        with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("[progress.completed]{task.completed}/{task.total} batches"),
+            TimeElapsedColumn(),
+        ) as progress:
+            task = progress.add_task(
+                f"Computing embeddings for {len(all_texts)} texts",
+                total=total_batches
             )
             
-            input_ids = encoded['input_ids'].to(self.device)
-            attention_mask = encoded['attention_mask'].to(self.device)
-            
-            # Get embeddings
-            with torch.no_grad():
-                outputs = self.model(input_ids, attention_mask=attention_mask)
-                # Use [CLS] token embedding (first token)
-                batch_embeddings = outputs.last_hidden_state[:, 0, :].cpu().numpy()
-            
-            # Store embeddings with timestamp keys
-            for ts, emb in zip(batch_timestamps, batch_embeddings):
-                # Reshape to (1, embed_dim) for consistency with expected format
-                embeddings_dict[str(ts)] = emb.reshape(1, -1).astype(np.float32)
+            # Process in batches
+            for i in range(0, len(all_texts), batch_size):
+                batch_texts = all_texts[i:i+batch_size]
+                batch_timestamps = all_timestamps[i:i+batch_size]
+                
+                # Tokenize batch
+                encoded = self.tokenizer(
+                    batch_texts,
+                    padding=True,
+                    truncation=True,
+                    max_length=512,
+                    return_tensors='pt'
+                )
+                
+                input_ids = encoded['input_ids'].to(self.device)
+                attention_mask = encoded['attention_mask'].to(self.device)
+                
+                # Get embeddings
+                with torch.no_grad():
+                    outputs = self.model(input_ids, attention_mask=attention_mask)
+                    # Use [CLS] token embedding (first token)
+                    batch_embeddings = outputs.last_hidden_state[:, 0, :].cpu().numpy()
+                
+                # Store embeddings with timestamp keys
+                for ts, emb in zip(batch_timestamps, batch_embeddings):
+                    # Reshape to (1, embed_dim) for consistency with expected format
+                    embeddings_dict[str(ts)] = emb.reshape(1, -1).astype(np.float32)
+                
+                # Update progress
+                progress.update(task, advance=1)
         
         return embeddings_dict
     
@@ -226,7 +272,7 @@ class TimeMMD_HeteroGetter:
             self.embeddings = joblib.load(pkl_path)
         else:
             # Compute embeddings on-the-fly
-            print(f'[ info ] Computing embeddings on-the-fly (this may take a while)...')
+            print('[ info ] Computing embeddings on-the-fly (this may take a while)...')
             self.embeddings = self._embed_text_corpus()
             
             # Save to .pkl
