@@ -196,10 +196,6 @@ class TimeMMD_HeteroGetter:
         # Get BERT output dimension (typically 768 for bert-base-uncased)
         # Check the model's config to get the hidden size
         self.bert_dim = self.model.config.hidden_size
-        
-        # No projection layer here - models will handle dimension conversion with learned projections
-        # We just use BERT's native output dimension
-        print(f'[ info ] {self.embed_model_name} loaded and ready for embedding (output dim: {self.bert_dim})')
     
     def _embed_text_corpus(self):
         """
@@ -210,7 +206,7 @@ class TimeMMD_HeteroGetter:
                 Format: {"YYYYMMDDHHMMSS": np.ndarray(shape=(1, bert_dim), dtype=np.float32)}
                 where bert_dim is BERT's output dimension (typically 768)
         """
-        # Load model if not already loaded
+        # Load model only when we need to compute embeddings
         self._load_embedding_model()
         
         embeddings_dict = {}
@@ -276,10 +272,11 @@ class TimeMMD_HeteroGetter:
             text: Text string to embed
             
         Returns:
-            np.ndarray: Embedding vector of shape (1, embed_dim)
+            np.ndarray: Embedding vector of shape (1, bert_dim) where bert_dim is BERT's output dimension (typically 768)
         """
-        # Load model if not already loaded
-        self._load_embedding_model()
+        # Only load model if we need to compute embeddings (not if embeddings already exist)
+        if self.tokenizer is None or self.model is None:
+            self._load_embedding_model()
         
         # Tokenize
         encoded = self.tokenizer(
@@ -307,29 +304,26 @@ class TimeMMD_HeteroGetter:
         """
         Load embeddings from .pkl file or create them on-the-fly.
         
-        If .pkl exists and force_reembed=False, loads from file.
-        Otherwise, computes embeddings and saves to .pkl.
+        If .pkl exists and force_reembed=False, loads from file (no need to load BERT model).
+        Otherwise, computes embeddings and saves to .pkl (loads BERT model only when needed).
         """
         pkl_path = self._get_embedding_path()
-        
-        # BEGIN DEBUG
-        print(f'[ debug ] Embedding path: {pkl_path}')
-        print(f'[ debug ] root_path: {self.root_path}')
-        print(f'[ debug ] data_path: {self.data_path}')
-        print(f'[ debug ] Absolute pkl_path: {os.path.abspath(pkl_path)}')
-        # END DEBUG
 
         if os.path.exists(pkl_path) and not self.force_reembed:
-            # Load precomputed embeddings
-            print(f'[ info ] Loading embeddings from {pkl_path}')
+            # Load precomputed embeddings (no need to load BERT model)
             self.embeddings = joblib.load(pkl_path)
+            # Set bert_dim from a sample embedding if not already set
+            if self.bert_dim is None and self.embeddings:
+                sample_key = next(iter(self.embeddings.keys()))
+                sample_emb = self.embeddings[sample_key]
+                if hasattr(sample_emb, 'shape'):
+                    self.bert_dim = sample_emb.shape[-1]
         else:
-            # Compute embeddings on-the-fly
+            # Compute embeddings on-the-fly (load BERT model only when needed)
             print('[ info ] Computing embeddings on-the-fly (this may take a while)...')
             self.embeddings = self._embed_text_corpus()
             
             # Save to .pkl
-            # BEGIN DEBUG
             pkl_dir = os.path.dirname(pkl_path)
             try:
                 # Ensure directory exists
@@ -379,6 +373,7 @@ class TimeMMD_HeteroGetter:
             output_dynamic = df.to_csv(index=False)
         elif self.output_format == 'embedding':
             # Ensure embeddings are loaded/created
+            # Only load/create if not already loaded (avoids loading BERT if embeddings exist)
             if self.embeddings is None:
                 self._load_or_create_embeddings()
             
@@ -562,7 +557,6 @@ class TimeMMD_Dataset(Universal_Dataset):
         """
         # Check if text column was found and text data exists
         if not hasattr(self, '_text_column_name') or self._text_column_name is None:
-            print('[ info ] No text column found, dataset will work as time-series-only')
             return
         
         if not hasattr(self, '_text_data') or self._text_data is None:
@@ -647,10 +641,8 @@ class TimeMMD_Dataset(Universal_Dataset):
             # Handle NaN values
             text_series = text_series.fillna('')
             self._text_data = text_series
-            print(f'[ info ] Found text column: {self._text_column_name} with {len(text_series)} entries')
         else:
             self._text_data = None
-            print('[ info ] No text column found in CSV')
         
         # Apply data splitting
         train_data, val_data, test_data = self.spliter(df=df_raw)
