@@ -127,6 +127,11 @@ class ExperimentConfig(BaseModel):
     plotting: Optional[str] = Field(default=None, description="Path to plotting config")
     evaluation: Optional[str] = Field(default=None, description="Path to evaluation config")
     
+    # Model config overrides (optional, allows overriding parameters from model config YAML)
+    # These override values in the model config file specified by model.config_path
+    # Example: {"enc_in": 4, "input_text_dim": 768} to override enc_in and input_text_dim
+    model_config_overrides: Optional[Dict[str, Any]] = Field(default=None, description="Model configuration parameter overrides (e.g., enc_in, input_text_dim)")
+    
     # Experiment metadata (optional, can be set by ExperimentManager)
     experiment_name: Optional[str] = Field(default=None, description="Experiment name")
     job_id: Optional[str] = Field(default=None, description="Job ID for cluster/scheduler")

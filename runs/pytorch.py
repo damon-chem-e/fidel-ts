@@ -82,15 +82,19 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
         model_config = yaml.safe_load(f)
     
     # Merge model_config overrides if present (from experiment suite)
-    # Pydantic models with extra="allow" store extra fields that can be accessed via model_dump()
-    # Note: model_config overrides are merged into the base model config YAML to override parameters like enc_in
-    if hasattr(config, 'model_dump'):
-        config_dict = config.model_dump(mode='python')  # mode='python' ensures all fields including extra are included
+    # Supports both explicit model_config_overrides field and legacy model_config extra field
+    # Explicit field takes precedence for clarity and type safety
+    # Note: model_config_overrides is at top level of config (flattened from overrides by merge_configs)
+    if hasattr(config, 'model_config_overrides') and config.model_config_overrides is not None:
+        model_config.update(config.model_config_overrides)
+    # Fallback: check legacy 'model_config' extra field (for backward compatibility)
+    elif hasattr(config, 'model_config') and isinstance(getattr(config, 'model_config', None), dict):
+        model_config.update(getattr(config, 'model_config'))
+    # Final fallback: check model_dump() which should include extra fields
+    elif hasattr(config, 'model_dump'):
+        config_dict = config.model_dump(mode='python')
         if 'model_config' in config_dict and isinstance(config_dict['model_config'], dict):
             model_config.update(config_dict['model_config'])
-    # Also check if model_config is directly accessible as an attribute (for backwards compatibility)
-    elif hasattr(config, 'model_config') and isinstance(config.model_config, dict):
-        model_config.update(config.model_config)
     
     args.model_config = dotdict(model_config)
     
