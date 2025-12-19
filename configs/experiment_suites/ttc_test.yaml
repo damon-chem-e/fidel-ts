@@ -36,6 +36,11 @@ suite:
           epochs: 1
           track_per_sample: false  # Disable per-sample tracking for initial training
           evaluate_test_during_training: false  # Only evaluate test at final epoch
+        wandb:
+          enabled: false  # Disable wandb for test runs
+        # Model config override: Set input_text_dim to match BERT output (768)
+        model_config:
+          input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/ttc_test"
@@ -61,6 +66,11 @@ suite:
           epochs: 1
           track_per_sample: false  # Disable per-sample tracking for initial training
           evaluate_test_during_training: false  # Only evaluate test at final epoch
+        wandb:
+          enabled: false  # Disable wandb for test runs
+        # Model config override: Set input_text_dim to match BERT output (768)
+        model_config:
+          input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/ttc_test"
@@ -86,6 +96,11 @@ suite:
           epochs: 1
           track_per_sample: false  # Disable per-sample tracking for initial training
           evaluate_test_during_training: false  # Only evaluate test at final epoch
+        wandb:
+          enabled: false  # Disable wandb for test runs
+        # Model config override: Set input_text_dim to match BERT output (768)
+        model_config:
+          input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/ttc_test"
@@ -111,6 +126,11 @@ suite:
           epochs: 1
           track_per_sample: false  # Disable per-sample tracking for initial training
           evaluate_test_during_training: false  # Only evaluate test at final epoch
+        wandb:
+          enabled: false  # Disable wandb for test runs
+        # Model config override: Set input_text_dim to match BERT output (768)
+        model_config:
+          input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/ttc_test"
