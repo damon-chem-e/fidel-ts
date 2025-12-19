@@ -38,7 +38,7 @@ class TimeMMD_HeteroGetter:
     def __init__(self, text_data, timestamps, general_info='', channel_info='', 
                  output_format='json', embed_model_name='bert-base-uncased', 
                  embed_dim=768, force_reembed=False, hf_cache_dir='./HF_cache/',
-                 root_path=None, data_path=None, device='cpu'):
+                 root_path=None, data_path=None, device='cpu', num_channels=None, channel_names=None):
         """
         Initialize TimeMMD_HeteroGetter.
         
@@ -55,6 +55,10 @@ class TimeMMD_HeteroGetter:
             root_path: Dataset root path (for embedding file location)
             data_path: Data file path (for embedding file location)
             device: Device for embedding model (default: 'cpu')
+            num_channels: Number of channels/variables in the dataset (for expanding channel_info embedding)
+            channel_names: List of actual channel/column names from CSV (for per-channel embeddings).
+                If provided and multiple channels exist, each channel gets a unique embedding combining
+                channel_info with its name (e.g., "Weather variables: temperature" for channel "temperature")
         """
         self.text_data = text_data
         self.timestamps = timestamps
@@ -69,6 +73,8 @@ class TimeMMD_HeteroGetter:
         self.data_path = data_path
         self.device = device
         self.bert_dim = None  # Will be set when model is loaded
+        self.num_channels = num_channels  # Number of channels for expanding channel_info embedding
+        self.channel_names = channel_names  # List of channel/column names for per-channel embeddings
         
         # Create a mapping for fast lookup
         self.text_dict = text_data.to_dict()
@@ -413,13 +419,36 @@ class TimeMMD_HeteroGetter:
                 general_info_emb = self.general_info
             
             if isinstance(self.channel_info, str):
-                channel_info_emb = self._embed_single_text(self.channel_info)  # (1, embed_dim)
-                # Reshape to [nvars, embed_dim] format expected by TGTSF
-                # For single channel: (1, embed_dim) is correct
-                # DataLoader will collate to [batch_size, 1, embed_dim]
+                # Create per-channel embeddings based on actual channel names if available
+                # This allows each channel (e.g., 'temperature', 'humidity', 'pressure') to have
+                # its own unique embedding derived from its name, rather than repeating the same
+                # generic channel_info string for all channels
+                
+                if self.channel_names is not None and len(self.channel_names) > 1:
+                    # Create unique embedding for each channel using its name
+                    # Format: combine channel_info (dataset-level description) with channel name
+                    channel_info_emb_list = []
+                    for channel_name in self.channel_names:
+                        # Combine dataset-level channel_info with per-channel name
+                        # e.g., "Weather variables: temperature" if channel_info="Weather variables:" and channel_name="temperature"
+                        combined_text = f"{self.channel_info} {channel_name}" if self.channel_info else channel_name
+                        channel_emb = self._embed_single_text(combined_text)  # (1, embed_dim)
+                        channel_info_emb_list.append(channel_emb)
+                    # Stack to create (num_channels, embed_dim) array
+                    channel_info_emb = np.vstack(channel_info_emb_list)  # (num_channels, embed_dim)
+                elif self.num_channels is not None and self.num_channels > 1:
+                    # Fallback: if we have num_channels but not channel names, repeat the embedding
+                    # This happens when channel names aren't available (shouldn't happen for TTC)
+                    channel_info_emb = self._embed_single_text(self.channel_info)  # (1, embed_dim)
+                    channel_info_emb = np.repeat(channel_info_emb, self.num_channels, axis=0)  # (num_channels, embed_dim)
+                else:
+                    # Single channel case: (1, embed_dim) is correct as-is
+                    channel_info_emb = self._embed_single_text(self.channel_info)  # (1, embed_dim)
+                
+                # DataLoader will collate to [batch_size, nvars, embed_dim]
                 # TGTSF forward expects [bs, nvars, d_model] before unsqueeze
-                # So we need (nvars, d_model) = (1, embed_dim) per sample ✓
             else:
+                # channel_info is already an array/list - use as-is (should already have correct shape)
                 channel_info_emb = self.channel_info
             
             return matched_times, general_info_emb, channel_info_emb, output_dynamic
@@ -523,7 +552,7 @@ class TimeMMD_Dataset(Universal_Dataset):
             entity_id=entity_id
         )
         
-        # Setup text getter after data is loaded
+        # Setup text getter after data is loaded (after parent.__init__ which loads data)
         self._setup_text_getter()
     
     def _detect_text_column(self, df_raw):
@@ -594,7 +623,15 @@ class TimeMMD_Dataset(Universal_Dataset):
             print('[ info ] No text data available, dataset will work as time-series-only')
             return
         
-        # Create text getter
+        # Get channel information for per-channel embeddings
+        # Note: self.data is already filtered at this point (text/metadata columns excluded in __read_data__)
+        # The filtering happens in __read_data__() at lines 720-721 (for target='all') or 726-732 (for single target)
+        # After filtering, self.data is a numpy array with shape (num_samples, num_channels)
+        # where num_channels is the number of actual time series channels (excluding text/metadata)
+        num_channels = self.data.shape[1] if hasattr(self, 'data') and self.data is not None else None
+        channel_names = getattr(self, '_channel_names', None)  # Per-channel names from CSV columns
+        
+        # Create text getter with channel info for per-channel embedding creation
         text_getter = TimeMMD_HeteroGetter(
             text_data=self._text_data,
             timestamps=self.timestamp,
@@ -607,7 +644,9 @@ class TimeMMD_Dataset(Universal_Dataset):
             hf_cache_dir=self.hf_cache_dir,
             root_path=self.root_path,
             data_path=self.data_path,
-            device=self.device
+            device=self.device,
+            num_channels=num_channels,
+            channel_names=channel_names  # Pass actual channel names for per-channel embeddings
         )
         
         # Set as hetero_data_getter
@@ -702,7 +741,11 @@ class TimeMMD_Dataset(Universal_Dataset):
         self.timestamp = self.data[self.timestamp_col].values.copy()
         
         # Extract time series data (excluding text and metadata columns)
+        # Store channel names BEFORE filtering (needed for per-channel embeddings)
         if self.target == 'all':
+            # Get column names that will become channels (exclude text/metadata/timestamp columns)
+            channel_columns = [col for col in self.data.columns if col not in exclude_cols]
+            self._channel_names = channel_columns  # Store for per-channel embedding creation
             # Drop timestamp, text, and metadata columns
             self.data = self.data.drop(columns=exclude_cols)
             self.data = self.data.values.astype(np.float32).copy()
@@ -710,6 +753,7 @@ class TimeMMD_Dataset(Universal_Dataset):
             train_data = train_data.values.astype(np.float32).copy()
         else:
             # Single column target - extract as 1D array, then reshape to 2D for scaler
+            self._channel_names = [self.target]  # Store channel name for single-target case
             self.data = self.data[self.target].values.astype(np.float32).copy()
             train_data = train_data[self.target].values.astype(np.float32).copy()
             # Reshape to 2D (samples, features) for StandardScaler
