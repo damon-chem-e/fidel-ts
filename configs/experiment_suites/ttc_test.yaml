@@ -90,8 +90,8 @@ suite:
           name: "ttc_medical"
           config_path: "data_configs/ttc/medical/config.yaml"
         training:
-          input_len: 96
-          output_len: 24
+          input_len: 7
+          output_len: 7
           batch_size: 32
           learning_rate: 8.66e-4
           patience: 5
@@ -121,8 +121,8 @@ suite:
           name: "ttc_medical"
           config_path: "data_configs/ttc/medical/config.yaml"
         training:
-          input_len: 96
-          output_len: 24
+          input_len: 7
+          output_len: 7
           batch_size: 32
           learning_rate: 8.66e-4
           patience: 5

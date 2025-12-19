@@ -479,6 +479,18 @@ class Data_Provider(object):
                                dict of DataLoaders mapped by ID if concat=False
         """
         if concat:
+            # Check for datasets with invalid length before concatenation
+            for i in datasets.keys():
+                dataset = datasets[i]
+                dataset_len = len(dataset)
+                if dataset_len <= 0:
+                    raise ValueError(
+                        f"Dataset '{i}' has invalid length {dataset_len}. "
+                        f"Dataset must have at least seq_len ({getattr(dataset, 'seq_len', '?')}) + "
+                        f"pred_len ({getattr(dataset, 'pred_len', '?')}) data points to create valid sequences. "
+                        f"Current dataset has {len(getattr(dataset, 'data', []))} data points."
+                    )
+            
             data_set = torch.utils.data.ConcatDataset([datasets[i] for i in datasets.keys()])
             data_loader = DataLoader(data_set,
                                     batch_size=self.batch_size,
