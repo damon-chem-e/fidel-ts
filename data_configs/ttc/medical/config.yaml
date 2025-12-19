@@ -1,0 +1,25 @@
+root_path: ./data/ttc/medical
+data_path: null  # Not used, will use formatter with {i} placeholder
+spliter: ratio
+split_info: [7, 1, 2]  # 70% train, 10% val, 20% test
+timestamp_col: date
+target: all  # Use all columns (Respiratory_Rate, Heart_Rate, SaO2, FiO2)
+id: all  # Process all patient files
+formatter: patient_{i}.csv  # Pattern for patient files
+id_info: id_info.json  # Required: lists all patient IDs
+dataset_type: time_mmd  # Use TimeMMD_Dataset
+text_column: text  # Explicitly specify text column (TTC format)
+use_closedllm: false  # Not using Final_Output
+text_len: 4  # Not relevant for 'text' column
+general_info: "Medical patient data with health metrics and text notes"
+channel_info: ""  # Will be set per patient if needed
+time_zone: null
+downsample: null
+
+# Text embedding configuration (for models like TGTSF, LYNX)
+# Set timemmd_text_output to 'embedding' for TGTSF/LYNX (uses embeddings)
+timemmd_text_output: embedding  # 'text' | 'embedding'
+timemmd_embed_model: bert-base-uncased  # HuggingFace model for embedding
+timemmd_embed_dim: 768  # Embedding dimension (default: 768 for BERT)
+timemmd_force_reembed: false  # If true, recompute embeddings even if .pkl exists
+hf_cache_dir: ./HF_cache/  # Local cache for HF models

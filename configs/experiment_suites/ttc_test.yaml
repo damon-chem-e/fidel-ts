@@ -1,0 +1,116 @@
+# Experiment Suite: TTC Datasets Test
+# Description: Test TGTSF and lynx_film_raw on TTC climate and medical datasets
+# Usage: python -m cli.suite run configs/experiment_suites/ttc_test.yaml
+
+suite:
+  name: "ttc_test"
+  description: "Test TGTSF and lynx_film_raw models on TTC climate and medical datasets with 24-step prediction"
+  tags: ["ttc", "multimodal", "pytorch", "test", "tgtsf", "lynx_film_raw"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/ttc_test"
+    
+  # Experiments in this suite
+  experiments:
+    # TTC Climate - TGTSF
+    - name: "tgtsf_ttc_climate_24"
+      description: "TGTSF on TTC Climate dataset with 24-step prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        data:
+          name: "ttc_climate"
+          config_path: "data_configs/ttc/climate/config.yaml"
+        training:
+          input_len: 96
+          output_len: 24
+          batch_size: 32
+          learning_rate: 8.66e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false  # Disable per-sample tracking for initial training
+          evaluate_test_during_training: false  # Only evaluate test at final epoch
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/ttc_test"
+    
+    # TTC Climate - lynx_film_raw
+    - name: "lynx_film_raw_ttc_climate_24"
+      description: "lynx_film_raw on TTC Climate dataset with 24-step prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        data:
+          name: "ttc_climate"
+          config_path: "data_configs/ttc/climate/config.yaml"
+        training:
+          input_len: 96
+          output_len: 24
+          batch_size: 32
+          learning_rate: 8.66e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false  # Disable per-sample tracking for initial training
+          evaluate_test_during_training: false  # Only evaluate test at final epoch
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/ttc_test"
+    
+    # TTC Medical - TGTSF
+    - name: "tgtsf_ttc_medical_24"
+      description: "TGTSF on TTC Medical dataset with 24-step prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        data:
+          name: "ttc_medical"
+          config_path: "data_configs/ttc/medical/config.yaml"
+        training:
+          input_len: 96
+          output_len: 24
+          batch_size: 32
+          learning_rate: 8.66e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false  # Disable per-sample tracking for initial training
+          evaluate_test_during_training: false  # Only evaluate test at final epoch
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/ttc_test"
+    
+    # TTC Medical - lynx_film_raw
+    - name: "lynx_film_raw_ttc_medical_24"
+      description: "lynx_film_raw on TTC Medical dataset with 24-step prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        data:
+          name: "ttc_medical"
+          config_path: "data_configs/ttc/medical/config.yaml"
+        training:
+          input_len: 96
+          output_len: 24
+          batch_size: 32
+          learning_rate: 8.66e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false  # Disable per-sample tracking for initial training
+          evaluate_test_during_training: false  # Only evaluate test at final epoch
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/ttc_test"

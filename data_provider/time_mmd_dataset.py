@@ -430,20 +430,36 @@ class TimeMMD_HeteroGetter:
 
 class TimeMMD_Dataset(Universal_Dataset):
     """
-    Dataset adapter for MM-TSFlib (Time-MMD) format.
+    Dataset adapter for MM-TSFlib (Time-MMD) and TTC (Time Text Corpus) formats.
     
     Loads CSV files containing time series data with embedded text columns
     and adapts them to fidel-ts's Universal_Dataset interface.
     
+    Supports two dataset formats:
+    1. **Time-MMD format** (MM-TSFlib): Uses Final_Search_{text_len} or Final_Output columns
+    2. **TTC format**: Uses a simpler 'text' column name for embedded text descriptions
+    
     Key differences from standard Universal_Dataset:
-    - Text data is stored in CSV columns (Final_Search_* or Final_Output)
+    - Text data is stored in CSV columns (Final_Search_*, Final_Output, or 'text')
     - Text is aligned to sequence end point (s_end) rather than individual timestamps
     - Provides text via hetero_data_getter interface compatible with fidel-ts
     
+    TTC Support:
+    This class was extended to support TTC datasets (climate and medical data) which use
+    a simple 'text' column instead of the more complex Final_Search_* naming convention.
+    The modifications include:
+    - Text column detection: When text_column='auto', falls back to checking for 'text'
+      column after trying Time-MMD patterns (Final_Search_*, Final_Output)
+    - Column exclusion: The 'text' column is automatically excluded from time series data,
+      similar to how Final_Search_* and Final_Output columns are handled
+    - Backward compatibility: All existing Time-MMD datasets continue to work without changes
+    
     Args:
         text_column (str): Text column name, or 'auto' to auto-detect
-        use_closedllm (bool): Whether to use Final_Output column (closed-source LLM)
-        text_len (int): Text length for Final_Search_{text_len} detection
+            - For Time-MMD: 'auto' detects Final_Search_{text_len} or Final_Output
+            - For TTC: Specify 'text' explicitly or use 'auto' (which will detect 'text' as fallback)
+        use_closedllm (bool): Whether to use Final_Output column (closed-source LLM, Time-MMD only)
+        text_len (int): Text length for Final_Search_{text_len} detection (Time-MMD only)
         output_format (str): Format for text output ('json', 'dict', 'csv', 'embedding')
         general_info (str): General dataset description
         channel_info (str): Channel-specific description
@@ -514,10 +530,18 @@ class TimeMMD_Dataset(Universal_Dataset):
         """
         Detect text column name from CSV.
         
-        Strict detection with no fallbacks:
-        - If text_column != 'auto', returns that column or None (no fallback)
-        - If text_column == 'auto', detects based on use_closedllm and text_len
-        - No fallback to different text_len values
+        Supports multiple text column formats:
+        - Explicit specification: If text_column != 'auto', returns that column (or raises error)
+        - Time-MMD auto-detection: Detects Final_Search_{text_len} or Final_Output columns
+        - TTC fallback: When text_column='auto' and no Time-MMD columns found, checks for 'text' column
+        
+        Detection priority (when text_column='auto'):
+        1. Final_Output (if use_closedllm=True)
+        2. Final_Search_{text_len} (Time-MMD format)
+        3. 'text' column (TTC format fallback)
+        
+        This priority order maintains backward compatibility with Time-MMD datasets while
+        adding support for TTC datasets that use the simpler 'text' column name.
         
         Args:
             df_raw: Raw DataFrame loaded from CSV
@@ -525,29 +549,36 @@ class TimeMMD_Dataset(Universal_Dataset):
         Returns:
             str or None: Column name if found, None otherwise
         """
+        # If explicitly specified, use that column (or raise error if not found)
         if self.text_column != 'auto':
-            # Strict: return specified column or None
             if self.text_column in df_raw.columns:
                 return self.text_column
             else:
-                raise ValueError(f'Specified text column "{self.text_column}" not found in CSV columns: {list(df_raw.columns)}')
+                raise ValueError(
+                    f'Specified text column "{self.text_column}" not found in CSV columns: '
+                    f'{list(df_raw.columns)}'
+                )
         
-        # Auto-detect logic (no fallbacks)
+        # Auto-detect logic: Try Time-MMD patterns first, then TTC 'text' column as fallback
         if self.use_closedllm:
             if 'Final_Output' in df_raw.columns:
                 return 'Final_Output'
             else:
-                return None
-        elif self.text_column == 'auto':
-            # Look for Final_Search_{text_len} pattern (strict, no fallback)
-            pattern = f'Final_Search_{self.text_len}'
-            if pattern in df_raw.columns:
-                return pattern
-            else:
-                return None
-
-        else:
-            raise ValueError(f'Invalid text column detection logic: text_column={self.text_column}, use_closedllm={self.use_closedllm}, text_len={self.text_len}')
+                # No Final_Output found, fall through to check for 'text' column (TTC format)
+                pass
+        
+        # Look for Final_Search_{text_len} pattern (Time-MMD format)
+        pattern = f'Final_Search_{self.text_len}'
+        if pattern in df_raw.columns:
+            return pattern
+        
+        # Fallback: Check for 'text' column (TTC format support)
+        # This allows TTC datasets to work with text_column='auto' without explicit specification
+        if 'text' in df_raw.columns:
+            return 'text'
+        
+        # No text column found
+        return None
     
     def _setup_text_getter(self):
         """
@@ -584,10 +615,17 @@ class TimeMMD_Dataset(Universal_Dataset):
     
     def __read_data__(self):
         """
-        Override __read_data__ to handle MM-TSFlib CSV format.
+        Override __read_data__ to handle MM-TSFlib (Time-MMD) and TTC CSV formats.
         
         Loads CSV with embedded text columns and extracts both time series
         and text data, then calls parent's data processing logic.
+        
+        Supports:
+        - Time-MMD format: Final_Search_{text_len} or Final_Output columns
+        - TTC format: 'text' column (climate and medical datasets)
+        
+        Both formats are handled identically: text columns are excluded from
+        time series data and extracted for use via the hetero_data_getter interface.
         """
         self.scaler = StandardScaler()
         
@@ -620,9 +658,12 @@ class TimeMMD_Dataset(Universal_Dataset):
         # Columns to exclude from time series data
         exclude_cols = [self.timestamp_col]
         
-        # Exclude ALL Final_Search_* and Final_Output columns (even if not the one we're using)
+        # Exclude text columns from time series data
+        # Supports both Time-MMD format (Final_Search_*, Final_Output) and TTC format ('text')
         for col in df_raw.columns:
-            if re.match(r'Final_Search_\d+', col) or col == 'Final_Output':
+            if (re.match(r'Final_Search_\d+', col) or 
+                col == 'Final_Output' or 
+                col == 'text'):  # TTC format support
                 if col not in exclude_cols:
                     exclude_cols.append(col)
         

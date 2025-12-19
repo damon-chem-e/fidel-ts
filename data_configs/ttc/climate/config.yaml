@@ -1,0 +1,25 @@
+root_path: ./data/ttc/climate
+data_path: climate_2014_2023_final.csv
+spliter: ratio
+split_info: [7, 1, 2]  # 70% train, 10% val, 20% test
+timestamp_col: date
+target: all  # Use all columns (temp, precip, humidity, windspeed)
+id: all
+formatter: climate_2014_2023_final.csv
+id_info: id_info.json  # Will be auto-created if not present
+dataset_type: time_mmd  # Use TimeMMD_Dataset
+text_column: text  # Explicitly specify text column (TTC format)
+use_closedllm: false  # Not using Final_Output
+text_len: 4  # Not relevant for 'text' column, but required for compatibility
+general_info: "Climate data with weather forecasts and text descriptions"
+channel_info: ""  # Single entity dataset
+time_zone: null
+downsample: null
+
+# Text embedding configuration (for models like TGTSF, LYNX)
+# Set timemmd_text_output to 'embedding' for TGTSF/LYNX (uses embeddings)
+timemmd_text_output: embedding  # 'text' | 'embedding'
+timemmd_embed_model: bert-base-uncased  # HuggingFace model for embedding
+timemmd_embed_dim: 768  # Embedding dimension (default: 768 for BERT)
+timemmd_force_reembed: false  # If true, recompute embeddings even if .pkl exists
+hf_cache_dir: ./HF_cache/  # Local cache for HF models
