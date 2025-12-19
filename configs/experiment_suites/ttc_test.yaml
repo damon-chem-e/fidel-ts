@@ -101,7 +101,7 @@ suite:
         wandb:
           enabled: false  # Disable wandb for test runs
         # Model config override: Set input_text_dim to match BERT output (768) and enc_in for multivariate data
-        model_config:
+        model_config_overrides:
           input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
           enc_in: 4  # Number of features: Respiratory_Rate, Heart_Rate, SaO2, FiO2
         experiment:
@@ -132,7 +132,7 @@ suite:
         wandb:
           enabled: false  # Disable wandb for test runs
         # Model config override: Set input_text_dim to match BERT output (768) and enc_in for multivariate data
-        model_config:
+        model_config_overrides:
           input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
           enc_in: 4  # Number of features: Respiratory_Rate, Heart_Rate, SaO2, FiO2
         experiment:

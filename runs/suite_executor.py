@@ -69,12 +69,6 @@ def merge_configs(template: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[s
     """
     result = template.copy()
     
-    # BEGIN DEBUG
-    print(f"[DEBUG] merge_configs: overrides keys: {list(overrides.keys())}")
-    if 'model_config_overrides' in overrides:
-        print(f"[DEBUG] merge_configs: model_config_overrides in overrides: {overrides['model_config_overrides']}")
-    # END DEBUG
-    
     for key, value in overrides.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
             # Recursively merge nested dictionaries
@@ -82,16 +76,6 @@ def merge_configs(template: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[s
         else:
             # Override with new value
             result[key] = value
-            # BEGIN DEBUG
-            if key == 'model_config_overrides':
-                print(f"[DEBUG] merge_configs: Added model_config_overrides to result: {value}")
-            # END DEBUG
-    
-    # BEGIN DEBUG
-    print(f"[DEBUG] merge_configs: result keys: {list(result.keys())}")
-    if 'model_config_overrides' in result:
-        print(f"[DEBUG] merge_configs: model_config_overrides in result: {result['model_config_overrides']}")
-    # END DEBUG
     
     return result
 
@@ -343,22 +327,8 @@ class SuiteExecutor:
         # Load template
         template = load_template(template_path)
         
-        # BEGIN DEBUG
-        print(f"[DEBUG] SuiteExecutor._execute_experiment: Overrides keys: {list(overrides.keys())}")
-        if 'model_config_overrides' in overrides:
-            print(f"[DEBUG] SuiteExecutor._execute_experiment: model_config_overrides in overrides: {overrides['model_config_overrides']}")
-        # END DEBUG
-        
         # Merge template with overrides
         final_config = merge_configs(template, overrides)
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] SuiteExecutor._execute_experiment: final_config keys after merge: {list(final_config.keys())}")
-        if 'model_config_overrides' in final_config:
-            print(f"[DEBUG] SuiteExecutor._execute_experiment: model_config_overrides in final_config: {final_config['model_config_overrides']}")
-        else:
-            print(f"[DEBUG] SuiteExecutor._execute_experiment: model_config_overrides NOT in final_config")
-        # END DEBUG
         
         # Extract values for placeholder substitution from merged config
         # This ensures we get the actual values after merging
@@ -376,14 +346,6 @@ class SuiteExecutor:
             data_name=data_name,
             data_config_path=data_config_path
         )
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] SuiteExecutor._execute_experiment: final_config keys after placeholder substitution: {list(final_config.keys())}")
-        if 'model_config_overrides' in final_config:
-            print(f"[DEBUG] SuiteExecutor._execute_experiment: model_config_overrides in final_config after substitution: {final_config['model_config_overrides']}")
-        else:
-            print(f"[DEBUG] SuiteExecutor._execute_experiment: model_config_overrides NOT in final_config after substitution")
-        # END DEBUG
         
         # Handle multiple output_lens if specified
         training_overrides = overrides.get('training', {})
@@ -450,30 +412,10 @@ class SuiteExecutor:
                 evaluate_standard(eval_config)
         else:
             # Convert dict to ExperimentConfig for training experiments
-            # BEGIN DEBUG
-            print(f"[DEBUG] SuiteExecutor._run_single_experiment: config dict keys before ExperimentConfig: {list(config.keys())}")
-            if 'model_config_overrides' in config:
-                print(f"[DEBUG] SuiteExecutor._run_single_experiment: model_config_overrides in config dict: {config['model_config_overrides']}")
-            else:
-                print(f"[DEBUG] SuiteExecutor._run_single_experiment: model_config_overrides NOT in config dict")
-            # END DEBUG
-            
             try:
                 experiment_config = ExperimentConfig(**config)
             except Exception as e:
                 raise ValueError(f"Invalid experiment configuration: {str(e)}")
-            
-            # BEGIN DEBUG
-            print(f"[DEBUG] SuiteExecutor._run_single_experiment: After ExperimentConfig creation")
-            print(f"[DEBUG] SuiteExecutor._run_single_experiment: hasattr(model_config_overrides): {hasattr(experiment_config, 'model_config_overrides')}")
-            if hasattr(experiment_config, 'model_config_overrides'):
-                print(f"[DEBUG] SuiteExecutor._run_single_experiment: experiment_config.model_config_overrides: {experiment_config.model_config_overrides}")
-            # Check model_dump
-            config_dict = experiment_config.model_dump(mode='python')
-            print(f"[DEBUG] SuiteExecutor._run_single_experiment: model_dump keys: {list(config_dict.keys())}")
-            if 'model_config_overrides' in config_dict:
-                print(f"[DEBUG] SuiteExecutor._run_single_experiment: model_config_overrides in model_dump: {config_dict['model_config_overrides']}")
-            # END DEBUG
             
             # Set experiment name
             experiment_config.experiment_name = experiment_name
@@ -481,10 +423,6 @@ class SuiteExecutor:
             # Execute based on experiment type
             # Pass the timestamped suite name so experiments are saved in the correct directory
             if exp_type == 'pytorch':
-                # BEGIN DEBUG
-                print(f"[DEBUG] SuiteExecutor._run_single_experiment: About to call run_pytorch")
-                print(f"[DEBUG] SuiteExecutor._run_single_experiment: experiment_config.model_config_overrides: {getattr(experiment_config, 'model_config_overrides', 'ATTRIBUTE NOT FOUND')}")
-                # END DEBUG
                 run_pytorch(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only)
             elif exp_type == 'lightning':
                 run_lightning(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only)
