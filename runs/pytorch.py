@@ -34,6 +34,17 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     Returns:
         dotdict object compatible with Experiment class
     """
+    # BEGIN DEBUG
+    print(f"[DEBUG] config_to_args: Entry point")
+    print(f"[DEBUG] config_to_args: hasattr(config, 'model_config_overrides'): {hasattr(config, 'model_config_overrides')}")
+    if hasattr(config, 'model_config_overrides'):
+        print(f"[DEBUG] config_to_args: config.model_config_overrides: {config.model_config_overrides}")
+    config_dict = config.model_dump(mode='python')
+    print(f"[DEBUG] config_to_args: model_dump keys: {list(config_dict.keys())}")
+    if 'model_config_overrides' in config_dict:
+        print(f"[DEBUG] config_to_args: model_config_overrides in model_dump: {config_dict['model_config_overrides']}")
+    # END DEBUG
+    
     args = dotdict()
     
     # Model config
@@ -81,20 +92,58 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     with open(args.model_config, 'r') as f:
         model_config = yaml.safe_load(f)
     
+    # BEGIN DEBUG
+    print(f"[DEBUG] config_to_args: Loaded base model_config keys: {list(model_config.keys())}")
+    print(f"[DEBUG] config_to_args: Base model_config['enc_in']: {model_config.get('enc_in', 'NOT FOUND')}")
+    # END DEBUG
+    
     # Merge model_config overrides if present (from experiment suite)
     # Supports both explicit model_config_overrides field and legacy model_config extra field
     # Explicit field takes precedence for clarity and type safety
     # Note: model_config_overrides is at top level of config (flattened from overrides by merge_configs)
+    # BEGIN DEBUG
+    print(f"[DEBUG] config_to_args: Checking for model_config_overrides...")
+    print(f"[DEBUG] config_to_args: hasattr(config, 'model_config_overrides'): {hasattr(config, 'model_config_overrides')}")
+    if hasattr(config, 'model_config_overrides'):
+        print(f"[DEBUG] config_to_args: config.model_config_overrides value: {config.model_config_overrides}")
+        print(f"[DEBUG] config_to_args: config.model_config_overrides is not None: {config.model_config_overrides is not None}")
+    # END DEBUG
+    
     if hasattr(config, 'model_config_overrides') and config.model_config_overrides is not None:
+        # BEGIN DEBUG
+        print(f"[DEBUG] config_to_args: Using model_config_overrides field, updating with: {config.model_config_overrides}")
+        # END DEBUG
         model_config.update(config.model_config_overrides)
     # Fallback: check legacy 'model_config' extra field (for backward compatibility)
     elif hasattr(config, 'model_config') and isinstance(getattr(config, 'model_config', None), dict):
+        # BEGIN DEBUG
+        print(f"[DEBUG] config_to_args: Using legacy model_config extra field: {getattr(config, 'model_config', None)}")
+        # END DEBUG
         model_config.update(getattr(config, 'model_config'))
     # Final fallback: check model_dump() which should include extra fields
     elif hasattr(config, 'model_dump'):
+        # BEGIN DEBUG
+        print(f"[DEBUG] config_to_args: Checking model_dump() for model_config...")
+        # END DEBUG
         config_dict = config.model_dump(mode='python')
         if 'model_config' in config_dict and isinstance(config_dict['model_config'], dict):
+            # BEGIN DEBUG
+            print(f"[DEBUG] config_to_args: Found model_config in model_dump: {config_dict['model_config']}")
+            # END DEBUG
             model_config.update(config_dict['model_config'])
+        else:
+            # BEGIN DEBUG
+            print(f"[DEBUG] config_to_args: model_config NOT found in model_dump")
+            # END DEBUG
+    else:
+        # BEGIN DEBUG
+        print(f"[DEBUG] config_to_args: No model_config overrides found (all checks failed)")
+        # END DEBUG
+    
+    # BEGIN DEBUG
+    print(f"[DEBUG] config_to_args: Final model_config after merge keys: {list(model_config.keys())}")
+    print(f"[DEBUG] config_to_args: Final model_config['enc_in']: {model_config.get('enc_in', 'NOT FOUND')}")
+    # END DEBUG
     
     args.model_config = dotdict(model_config)
     
@@ -157,6 +206,12 @@ def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: 
         >>> config = load_config("configs/experiments/dlinear_solar.yaml")
         >>> run(config)
     """
+    # BEGIN DEBUG
+    print(f"[DEBUG] run_pytorch: Entry point")
+    print(f"[DEBUG] run_pytorch: hasattr(config, 'model_config_overrides'): {hasattr(config, 'model_config_overrides')}")
+    if hasattr(config, 'model_config_overrides'):
+        print(f"[DEBUG] run_pytorch: config.model_config_overrides: {config.model_config_overrides}")
+    # END DEBUG
     # Detect SLURM job ID from environment if available
     slurm_job_id = os.environ.get('SLURM_JOB_ID', config.job_id)
     slurm_job_name = os.environ.get('SLURM_JOB_NAME', config.job_name)
@@ -183,6 +238,11 @@ def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: 
     if config.hf_offline:
         os.environ['TRANSFORMERS_OFFLINE'] = '1'
         os.environ['HF_DATASETS_OFFLINE'] = '1'
+    
+    # BEGIN DEBUG
+    print(f"[DEBUG] run_pytorch: About to call config_to_args")
+    print(f"[DEBUG] run_pytorch: config.model_config_overrides: {getattr(config, 'model_config_overrides', 'ATTRIBUTE NOT FOUND')}")
+    # END DEBUG
     
     # Convert config to args format
     args = config_to_args(config, exp_manager)
