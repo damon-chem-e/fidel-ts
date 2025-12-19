@@ -51,6 +51,6 @@ data_config:
 
 # Model config override: Set input_text_dim to match BERT output (768)
 # The model will learn a projection from 768 -> 256 (text_dim) internally
-model_config:
+model_config_overrides:
   input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
 

@@ -62,7 +62,7 @@ suite:
         data_config:
           timemmd_text_output: embedding  # Use embeddings for TGTSF model
         # Model config override: Set input_text_dim to match BERT output (768)
-        model_config:
+        model_config_overrides:
           input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
 
     # Test 2: lynx_film_raw model
@@ -109,5 +109,5 @@ suite:
         data_config:
           timemmd_text_output: embedding  # Use embeddings for lynx_film_raw model
         # Model config override: Set input_text_dim to match BERT output (768)
-        model_config:
+        model_config_overrides:
           input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)

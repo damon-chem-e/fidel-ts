@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 import json
 import torch
 import os
+import re
 from utils.tools import dotdict
 from functools import partial
 from .data_helper import timestamp_spliter, ratio_spliter, data_buffer
@@ -137,33 +138,102 @@ class Data_Provider(object):
         """
         Load or create id_info.json for the dataset.
         
-        For Time-MMD datasets, creates a minimal id_info.json if it doesn't exist.
+        For Time-MMD datasets, creates id_info.json by scanning directory for files
+        matching the formatter pattern if it doesn't exist.
         For standard datasets, loads the specified id_info.json file.
         
         Returns:
             dict: id_info dictionary
         """
         if self._is_time_mmd_dataset():
-            # For Time-MMD, create a minimal id_info with a single 'all' entry
-            # This allows the dataset to work with the existing Data_Provider structure
+            # For Time-MMD, handle two cases:
+            # 1. Single-file: data_path is set -> create simple id_info with 'all'
+            # 2. Multi-file (TTC medical): data_path is null and formatter has {i} -> scan directory
             id_info_filename = getattr(self.dataset_config, 'id_info', 'id_info.json')
             id_info_path = os.path.join(self.dataset_config.root_path, id_info_filename)
             
             if os.path.exists(id_info_path):
                 # Load existing id_info if present
                 return json.load(open(id_info_path))
-            else:
-                # Create minimal id_info if file doesn't exist
-                id_info = {'all': {'description': 'Time-MMD dataset'}}
+            
+            # Check if this is a single-file dataset (data_path is set)
+            data_path = self.dataset_config.get('data_path', None)
+            if data_path is not None:
+                # Single-file Time-MMD dataset: create minimal id_info with 'all'
+                id_info = {'all': {'description': 'Time-MMD single-file dataset'}}
                 # Optionally create the file for future use
                 try:
                     with open(id_info_path, 'w') as f:
                         json.dump(id_info, f, indent=2)
-                    print(f'[ info ] Created minimal id_info.json at {id_info_path}')
+                    print(f'[ info ] Created id_info.json at {id_info_path} for single-file dataset')
                 except Exception as e:
                     print(f'[ warning ] Could not create id_info.json file: {e}')
                     print('[ info ] Using in-memory id_info (this is OK)')
                 return id_info
+            
+            # Multi-file case (TTC): data_path is null, scan directory for files matching formatter
+            # Only scan if formatter has {i} placeholder (indicating multi-file pattern)
+            formatter = self.dataset_config.get('formatter', 'id_{i}.parquet')
+            if '{i}' not in formatter:
+                # Formatter doesn't have {i}, treat as single-file case
+                id_info = {'all': {'description': 'Time-MMD dataset (no {i} in formatter)'}}
+                try:
+                    with open(id_info_path, 'w') as f:
+                        json.dump(id_info, f, indent=2)
+                    print(f'[ info ] Created id_info.json at {id_info_path} (formatter has no {{i}} placeholder)')
+                except Exception as e:
+                    print(f'[ warning ] Could not create id_info.json file: {e}')
+                return id_info
+            
+            # Multi-file case: scan directory for files matching the formatter pattern
+            # Extract IDs from filenames (e.g., patient_10576.csv -> 10576)
+            id_info = {}
+            
+            # Extract pattern from formatter (e.g., 'patient_{i}.csv' -> 'patient_*.csv')
+            # Replace {i} with * for glob pattern matching (for display purposes)
+            pattern = formatter.replace('{i}', '*')
+            
+            # Convert formatter to regex pattern, escaping special regex characters
+            # Example: 'patient_{i}.csv' -> r'^patient_(\d+)\.csv$'
+            # Escape all regex special characters (this will escape {, }, and .)
+            regex_escaped = re.escape(formatter)
+            # Replace the escaped {i} placeholder (which is now \{i\}) with a capture group for digits
+            # re.escape turns {i} into \{i\}, so we need to match the escaped version
+            regex_escaped = regex_escaped.replace('\\{i\\}', r'(\d+)')
+            # Anchor the pattern to match the entire filename
+            regex_pattern = '^' + regex_escaped + '$'
+            
+            if os.path.exists(self.dataset_config.root_path):
+                # List all files in the directory
+                for filename in os.listdir(self.dataset_config.root_path):
+                    # Skip directories, only process files
+                    file_path = os.path.join(self.dataset_config.root_path, filename)
+                    if not os.path.isfile(file_path):
+                        continue
+                    # Check if filename matches the pattern
+                    match = re.match(regex_pattern, filename)
+                    if match:
+                        # Extract the ID (the number part)
+                        patient_id = match.group(1)
+                        id_info[patient_id] = {'description': f'Time-MMD dataset entry: {filename}'}
+            
+            if not id_info:
+                # Fallback: if no files found, create minimal entry
+                # This should not happen in normal operation
+                id_info = {'all': {'description': 'Time-MMD dataset (no files found)'}}
+                print(f'[ warning ] No files matching pattern "{pattern}" found in {self.dataset_config.root_path}')
+            else:
+                print(f'[ info ] Discovered {len(id_info)} files matching pattern "{pattern}"')
+            
+            # Optionally create the file for future use
+            try:
+                with open(id_info_path, 'w') as f:
+                    json.dump(id_info, f, indent=2)
+                print(f'[ info ] Created id_info.json at {id_info_path} with {len(id_info)} entries')
+            except Exception as e:
+                print(f'[ warning ] Could not create id_info.json file: {e}')
+                print('[ info ] Using in-memory id_info (this is OK)')
+            return id_info
         else:
             # Standard datasets require id_info
             id_info_path = os.path.join(self.dataset_config.root_path, self.dataset_config.id_info)

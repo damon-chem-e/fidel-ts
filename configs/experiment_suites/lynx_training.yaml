@@ -24,7 +24,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_nyc_traffic_speed_24/checkpoint.ckpt"
         data:
           name: "NYC_traffic_speed"
@@ -47,7 +47,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_nyc_traffic_speed_168/checkpoint.ckpt"
         data:
           name: "NYC_traffic_speed"
@@ -70,7 +70,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_nyc_traffic_speed_336/checkpoint.ckpt"
         data:
           name: "NYC_traffic_speed"
@@ -94,7 +94,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_california_iso_24/checkpoint.ckpt"
         data:
           name: "California_ISO"
@@ -117,7 +117,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_california_iso_168/checkpoint.ckpt"
         data:
           name: "California_ISO"
@@ -140,7 +140,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_california_iso_336/checkpoint.ckpt"
         data:
           name: "California_ISO"
@@ -164,7 +164,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_canada_photovoltaics_plants_24/checkpoint.ckpt"
         data:
           name: "Canada_photovoltaics_plants"
@@ -187,7 +187,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_canada_photovoltaics_plants_168/checkpoint.ckpt"
         data:
           name: "Canada_photovoltaics_plants"
@@ -210,7 +210,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_canada_photovoltaics_plants_336/checkpoint.ckpt"
         data:
           name: "Canada_photovoltaics_plants"
@@ -234,7 +234,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_germany_renewable_power_grid_24/checkpoint.ckpt"
         data:
           name: "Germany_Renewable_Power_Grid"
@@ -257,7 +257,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_germany_renewable_power_grid_168/checkpoint.ckpt"
         data:
           name: "Germany_Renewable_Power_Grid"
@@ -280,7 +280,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_germany_renewable_power_grid_336/checkpoint.ckpt"
         data:
           name: "Germany_Renewable_Power_Grid"
@@ -304,7 +304,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_jena_atmospheric_physics_24/checkpoint.ckpt"
         data:
           name: "Jena_Atmospheric_Physics"
@@ -327,7 +327,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_jena_atmospheric_physics_168/checkpoint.ckpt"
         data:
           name: "Jena_Atmospheric_Physics"
@@ -350,7 +350,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_jena_atmospheric_physics_336/checkpoint.ckpt"
         data:
           name: "Jena_Atmospheric_Physics"
@@ -374,7 +374,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_bear_room_24/checkpoint.ckpt"
         data:
           name: "Bear_room"
@@ -397,7 +397,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "outputs/suites/itransformer_pretraining/itransformer_bear_room_168/checkpoint.ckpt"
         data:
           name: "Bear_room"
@@ -420,7 +420,7 @@ suite:
         model:
           name: "lynx"
           config_path: "model_configs/general/lynx.yaml"
-        model_config:
+        model_config_overrides:
           pretrained_model_path: "output/experiment_suites/itransformer_pretraining_test_20251205_163130/20251205-163130_5ef325ab0162/checkpoints/best_checkpoint.pth"
         data:
           name: "Bear_room"

@@ -86,16 +86,20 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     # Explicit field takes precedence for clarity and type safety
     # Note: model_config_overrides is at top level of config (flattened from overrides by merge_configs)
     
+    # Check explicit model_config_overrides field first (preferred)
     if hasattr(config, 'model_config_overrides') and config.model_config_overrides is not None:
         model_config.update(config.model_config_overrides)
-    # Fallback: check legacy 'model_config' extra field (for backward compatibility)
-    elif hasattr(config, 'model_config') and isinstance(getattr(config, 'model_config', None), dict):
-        model_config.update(getattr(config, 'model_config'))
-    # Final fallback: check model_dump() which should include extra fields
-    elif hasattr(config, 'model_dump'):
-        config_dict = config.model_dump(mode='python')
-        if 'model_config' in config_dict and isinstance(config_dict['model_config'], dict):
-            model_config.update(config_dict['model_config'])
+    else:
+        # Fallback: check for legacy 'model_config' extra field (for backward compatibility)
+        # Extra fields in Pydantic v2 may not be accessible as attributes, so check model_dump() first
+        if hasattr(config, 'model_dump'):
+            config_dict = config.model_dump(mode='python')
+            # Check for model_config in dumped dict (handles extra fields)
+            if 'model_config' in config_dict and isinstance(config_dict['model_config'], dict):
+                model_config.update(config_dict['model_config'])
+            # Also try direct attribute access as fallback (may work in some Pydantic versions)
+            elif hasattr(config, 'model_config') and isinstance(getattr(config, 'model_config', None), dict):
+                model_config.update(getattr(config, 'model_config'))
     
     args.model_config = dotdict(model_config)
     
