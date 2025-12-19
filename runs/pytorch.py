@@ -82,12 +82,13 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
         model_config = yaml.safe_load(f)
     
     # Merge model_config overrides if present (from experiment suite)
-    # Pydantic models with extra="allow" store extra fields in model_extra or model_dump()
+    # Pydantic models with extra="allow" store extra fields that can be accessed via model_dump()
+    # Note: model_config overrides are merged into the base model config YAML to override parameters like enc_in
     if hasattr(config, 'model_dump'):
-        config_dict = config.model_dump()
+        config_dict = config.model_dump(mode='python')  # mode='python' ensures all fields including extra are included
         if 'model_config' in config_dict and isinstance(config_dict['model_config'], dict):
             model_config.update(config_dict['model_config'])
-    # Also check if model_config is directly accessible (for backwards compatibility)
+    # Also check if model_config is directly accessible as an attribute (for backwards compatibility)
     elif hasattr(config, 'model_config') and isinstance(config.model_config, dict):
         model_config.update(config.model_config)
     
