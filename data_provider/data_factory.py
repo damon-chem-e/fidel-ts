@@ -185,8 +185,8 @@ class Data_Provider(object):
         """
         from data_provider.time_mmd_dataset import TimeMMD_Dataset
         
-        # For Time-MMD, use data_path if specified, otherwise formatter
-        if 'data_path' in self.dataset_config:
+        # For Time-MMD, use data_path if specified and not None, otherwise formatter
+        if 'data_path' in self.dataset_config and self.dataset_config.data_path is not None:
             data_path = self.dataset_config.data_path
         else:
             data_path = self.formatter.format(i=i) if '{i}' in self.formatter else self.formatter
