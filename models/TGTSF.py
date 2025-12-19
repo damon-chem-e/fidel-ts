@@ -18,8 +18,29 @@ class Model(nn.Module):
         
         super().__init__()
         
+        # BEGIN DEBUG
+        print(f"[DEBUG] TGTSF.Model.__init__: Entry point")
+        print(f"[DEBUG] TGTSF.Model.__init__: configs type: {type(configs)}")
+        print(f"[DEBUG] TGTSF.Model.__init__: hasattr(configs, 'enc_in'): {hasattr(configs, 'enc_in')}")
+        if hasattr(configs, 'enc_in'):
+            print(f"[DEBUG] TGTSF.Model.__init__: configs.enc_in: {configs.enc_in}")
+        # Check if it's a dict-like object
+        if hasattr(configs, '__dict__'):
+            print(f"[DEBUG] TGTSF.Model.__init__: configs.__dict__ keys: {list(configs.__dict__.keys())[:10]}")  # First 10 keys
+            if 'enc_in' in configs.__dict__:
+                print(f"[DEBUG] TGTSF.Model.__init__: configs.__dict__['enc_in']: {configs.__dict__['enc_in']}")
+        elif isinstance(configs, dict):
+            print(f"[DEBUG] TGTSF.Model.__init__: configs dict keys: {list(configs.keys())[:10]}")  # First 10 keys
+            if 'enc_in' in configs:
+                print(f"[DEBUG] TGTSF.Model.__init__: configs['enc_in']: {configs['enc_in']}")
+        # END DEBUG
+        
         # load parameters
-        c_in = configs.enc_in 
+        c_in = configs.enc_in
+        
+        # BEGIN DEBUG
+        print(f"[DEBUG] TGTSF.Model.__init__: After reading configs.enc_in, c_in = {c_in}")
+        # END DEBUG 
         context_window = configs.seq_len
         self.pred_len = configs.pred_len
         

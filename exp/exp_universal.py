@@ -114,6 +114,21 @@ class Experiment(Exp_Basic):
         Returns:
             torch.nn.Module: Configured model (potentially wrapped with DataParallel)
         """
+        # BEGIN DEBUG
+        print(f"[DEBUG] exp_universal._build_model: About to call model_init")
+        print(f"[DEBUG] exp_universal._build_model: self.args.model: {self.args.model}")
+        print(f"[DEBUG] exp_universal._build_model: self.args.model_config type: {type(self.args.model_config)}")
+        print(f"[DEBUG] exp_universal._build_model: hasattr(self.args.model_config, 'enc_in'): {hasattr(self.args.model_config, 'enc_in')}")
+        if hasattr(self.args.model_config, 'enc_in'):
+            print(f"[DEBUG] exp_universal._build_model: self.args.model_config.enc_in: {self.args.model_config.enc_in}")
+        # Also check as dict
+        if isinstance(self.args.model_config, dict) or hasattr(self.args.model_config, '__dict__'):
+            model_config_dict = self.args.model_config.__dict__ if hasattr(self.args.model_config, '__dict__') else self.args.model_config
+            print(f"[DEBUG] exp_universal._build_model: model_config dict keys: {list(model_config_dict.keys())}")
+            if 'enc_in' in model_config_dict:
+                print(f"[DEBUG] exp_universal._build_model: model_config['enc_in']: {model_config_dict['enc_in']}")
+        # END DEBUG
+        
         model = model_init(self.args.model, self.args.model_config, self.args)
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)

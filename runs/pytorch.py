@@ -147,6 +147,15 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     
     args.model_config = dotdict(model_config)
     
+    # BEGIN DEBUG
+    print(f"[DEBUG] config_to_args: After creating dotdict")
+    print(f"[DEBUG] config_to_args: args.model_config type: {type(args.model_config)}")
+    print(f"[DEBUG] config_to_args: args.model_config.enc_in: {getattr(args.model_config, 'enc_in', 'ATTRIBUTE NOT FOUND')}")
+    print(f"[DEBUG] config_to_args: hasattr(args.model_config, 'enc_in'): {hasattr(args.model_config, 'enc_in')}")
+    if hasattr(args.model_config, 'enc_in'):
+        print(f"[DEBUG] config_to_args: args.model_config.enc_in value: {args.model_config.enc_in}")
+    # END DEBUG
+    
     with open(args.data_config, 'r') as f:
         data_configs = yaml.safe_load(f)
     
