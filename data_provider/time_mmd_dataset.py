@@ -519,6 +519,7 @@ class TimeMMD_Dataset(Universal_Dataset):
         
         # Initialize parent class with hetero_data_getter=None initially
         # We'll set it up after reading data
+        # IMPORTANT: Pass required_indicators to parent so it's available in __read_data__()
         super().__init__(
             root_path=root_path,
             flag=flag,
@@ -538,7 +539,8 @@ class TimeMMD_Dataset(Universal_Dataset):
             timezone=timezone,
             downsample=downsample,
             entity_id=entity_id,
-            missing_value_strategy=missing_value_strategy
+            missing_value_strategy=missing_value_strategy,
+            required_indicators=required_indicators  # Pass required_indicators to parent
         )
         
         # Setup text getter after data is loaded (after parent.__init__ which loads data)
