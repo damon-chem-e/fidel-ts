@@ -53,13 +53,13 @@ def calculate_split_sizes(
     val_split_idx = int(total_rows * val_ratio)
     
     # Calculate actual split lengths (accounting for seq_len overlap)
-    # This matches the logic in ratio_spliter:
-    # train_data = df[0:train_split]
-    # val_data = df[train_split-seq_len:val_split]
-    # test_data = df[val_split-seq_len:]
+    # This matches the logic in ratio_spliter and analyze_medical_files.py:
+    # train_data = df[0:train_split] → length = train_split_idx
+    # val_data = df[train_split-seq_len:val_split] → length = val_split_idx - (train_split_idx - seq_len)
+    # test_data = df[val_split-seq_len:] → length = total_rows - (val_split_idx - seq_len)
     train_len = train_split_idx
-    val_len = val_split_idx - (train_split_idx - seq_len)
-    test_len = total_rows - (val_split_idx - seq_len)
+    val_len = val_split_idx - (train_split_idx - seq_len)  # val_split_idx - train_start + seq_len
+    test_len = total_rows - (val_split_idx - seq_len)  # total - val_start + seq_len
     
     return {
         'train_len': train_len,
@@ -186,15 +186,13 @@ def get_entity_data_size(
             return len(df), file_path
     
     # Read file to count rows
-    # Use lightweight reading: just count lines (subtract 1 for header if CSV)
+    # Use pandas to match how the actual dataset loader counts rows
     try:
-        # For CSV files, we can count lines more efficiently
+        # For CSV files, use pandas to get accurate row count (matches dataset loading)
         if file_path.endswith('.csv'):
-            # Quick line count (approximate, doesn't handle quoted newlines)
-            with open(file_path, 'r', encoding='utf-8') as f:
-                line_count = sum(1 for _ in f)
-            # Subtract header
-            num_rows = max(0, line_count - 1)
+            # Use pandas to count rows (matches how datasets are loaded)
+            df = pd.read_csv(file_path)
+            num_rows = len(df)
         elif file_path.endswith('.parquet'):
             # For parquet, we need to read metadata or use pandas
             # Use pandas for reliability
