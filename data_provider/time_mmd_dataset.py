@@ -16,6 +16,7 @@ from sklearn.preprocessing import StandardScaler
 from transformers import AutoTokenizer, AutoModel
 from .data_loader import Universal_Dataset
 from .data_helper import ratio_spliter, data_buffer
+from utils.embedding_model_registry import EmbeddingModelRegistry
 
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
 
@@ -154,50 +155,29 @@ class TimeMMD_HeteroGetter:
     
     def _load_embedding_model(self):
         """
-        Load tokenizer and model, using local cache if available.
+        Load tokenizer and model using shared registry.
         
-        Only loads once; subsequent calls reuse cached model.
-        Logs whether model is loaded from cache or downloaded from cloud.
-        Models will handle dimension conversion with learned projections if needed.
+        Uses EmbeddingModelRegistry to ensure only one model instance exists
+        per (model_name, device, hf_cache_dir) combination, preventing
+        multiple copies from being loaded into GPU memory.
+        
+        Thread-safe: Safe to call from multiple DataLoader workers.
         """
         if self.tokenizer is not None and self.model is not None:
             return  # Already loaded
         
-        # Ensure cache directory exists
-        os.makedirs(self.hf_cache_dir, exist_ok=True)
-        
-        # Check if model exists in cache before loading
-        # HuggingFace stores models in: {cache_dir}/models--{model_name_sanitized}/
-        model_name_sanitized = self.embed_model_name.replace('/', '--')
-        cache_model_path = Path(self.hf_cache_dir) / f"models--{model_name_sanitized}"
-        model_in_cache = cache_model_path.exists() and any(cache_model_path.iterdir())
-        
-        if model_in_cache:
-            print(f'[ info ] Loading {self.embed_model_name} from local cache: {cache_model_path}')
-        else:
-            print(f'[ info ] Downloading {self.embed_model_name} from HuggingFace (will cache to: {cache_model_path})')
-        
-        # Use cache_dir parameter to store models locally
-        # First call downloads and caches; subsequent calls use cache
-        self.tokenizer = AutoTokenizer.from_pretrained(
+        # Get shared tokenizer and model from registry
+        # Registry handles caching, device placement, and thread safety
+        self.tokenizer = EmbeddingModelRegistry.get_tokenizer(
             self.embed_model_name,
-            cache_dir=self.hf_cache_dir
+            self.hf_cache_dir
         )
         
-        # Check again after tokenizer load to see if it was actually cached
-        if not model_in_cache and cache_model_path.exists() and any(cache_model_path.iterdir()):
-            print('[ info ] Tokenizer cached successfully')
-        
-        self.model = AutoModel.from_pretrained(
+        self.model = EmbeddingModelRegistry.get_model(
             self.embed_model_name,
-            cache_dir=self.hf_cache_dir
-        ).to(self.device)
-        
-        # Check again after model load
-        if not model_in_cache and cache_model_path.exists() and any(cache_model_path.iterdir()):
-            print(f'[ info ] Model cached successfully to: {cache_model_path}')
-        
-        self.model.eval()
+            self.device,
+            self.hf_cache_dir
+        )
         
         # Get BERT output dimension (typically 768 for bert-base-uncased)
         # Check the model's config to get the hidden size
