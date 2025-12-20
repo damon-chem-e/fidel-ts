@@ -704,6 +704,15 @@ class TimeMMD_Dataset(Universal_Dataset):
         # Handle missing values before splitting (ensures consistent processing across train/val/test)
         # Exclude timestamp, text, and metadata columns from missing value processing
         # Pass required_indicators to ensure consistent feature dimensions across all entities
+        
+        # Debug: Print columns before processing (only for first few entities to avoid spam)
+        if self.entity_id is not None and int(self.entity_id) % 10 == 0:  # Print every 10th entity
+            numeric_cols_before = [col for col in df_raw.columns 
+                                  if col not in exclude_cols and pd.api.types.is_numeric_dtype(df_raw[col])]
+            print(f'[ DEBUG ] Entity {self.entity_id} BEFORE: {len(numeric_cols_before)} numeric columns: {numeric_cols_before}')
+            print(f'[ DEBUG ] Entity {self.entity_id} required_indicators: {self.required_indicators}')
+        # END DEBUG
+        
         df_raw, missing_indicators = handle_missing_values(
             df_raw,
             strategy=self.missing_value_strategy,
@@ -713,6 +722,13 @@ class TimeMMD_Dataset(Universal_Dataset):
         
         # Store indicator column names (needed for target column tracking)
         self.missing_indicators = missing_indicators
+        
+        # Debug: Print columns after processing
+        if self.entity_id is not None and int(self.entity_id) % 10 == 0:  # Print every 10th entity
+            numeric_cols_after = [col for col in df_raw.columns 
+                                 if col not in exclude_cols and pd.api.types.is_numeric_dtype(df_raw[col])]
+            print(f'[ DEBUG ] Entity {self.entity_id} AFTER: {len(numeric_cols_after)} numeric columns, {len(missing_indicators)} indicators: {missing_indicators}')
+        # END DEBUG
         
         # Note: Logging is now aggregated in data_factory.py get_datasets() method
         # Individual entity logging is suppressed to reduce clutter

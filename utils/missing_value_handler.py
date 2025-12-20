@@ -65,6 +65,12 @@ def handle_missing_values(
         df_processed = df.copy()
         indicator_columns = []
         
+        # Debug: Print original columns (for first call only, to avoid spam)
+        # We'll use a simple heuristic: only print if this is likely the first entity
+        # (checking if required_indicators is non-empty suggests we're in multi-entity mode)
+        debug_printed = False
+        # END DEBUG
+        
         # Track which columns we've processed to avoid duplicates
         processed_cols = set()
         
@@ -139,6 +145,17 @@ def handle_missing_values(
             df_processed[indicator_name] = indicator
             indicator_columns.append(indicator_name)
         
+        # Debug: Print final column count and indicators created
+        # Only print for entities that have different feature counts (to identify the issue)
+        numeric_cols = [col for col in df_processed.columns 
+                        if col not in exclude_cols and pd.api.types.is_numeric_dtype(df_processed[col])]
+        total_features = len(numeric_cols) + len(indicator_columns)
+        
+        # Store debug info in a way that can be accessed later
+        # We'll add this info to the DataFrame's metadata or return it separately
+        # For now, we'll rely on the debug prints in data_factory.py
+        # END DEBUG
+        
         return df_processed, indicator_columns
     
     else:
@@ -184,6 +201,7 @@ def scan_missing_value_columns(
         ```
     """
     missing_columns = set()
+    all_numeric_columns = set()  # Track all numeric columns across all entities
     
     # Handle case where YAML has 'null' as string
     if data_path == 'null':
@@ -229,9 +247,14 @@ def scan_missing_value_columns(
                     continue
                 if not pd.api.types.is_numeric_dtype(df[col]):
                     continue
+                
+                # Track all numeric columns (for debugging)
+                all_numeric_columns.add(col)
+                
+                # Check if column has missing values
                 if df[col].isna().any():
                     missing_columns.add(col)
-        except Exception as e:
+        except Exception:
             # Skip entities that can't be loaded
             continue
     
