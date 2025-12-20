@@ -10,6 +10,7 @@ from functools import partial
 from .data_helper import timestamp_spliter, ratio_spliter, data_buffer
 from typing import Optional, Any
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
+from utils.entity_data_check import check_entity_sufficient, get_entity_data_size
 
 class Data_Provider(object):
     """
@@ -66,7 +67,7 @@ class Data_Provider(object):
         self.id_info = self._load_or_create_id_info()
 
         if self.dataset_config.id == 'all':
-            self.id_list = self.id_info.keys()
+            self.id_list = list(self.id_info.keys())
         else:
             self.id_list = self.dataset_config.id
             # check if all the id in the list is in the id_info
@@ -75,6 +76,11 @@ class Data_Provider(object):
 
         self.formatter = self.dataset_config.get('formatter', 'id_{i}.parquet')
         self.spliter = self.get_spliter()
+        
+        # Filter entities with insufficient data if enabled
+        filter_insufficient = self.dataset_config.get('filter_insufficient_entities', False)
+        if filter_insufficient:
+            self._filter_insufficient_entities()
 
         if buffer:
             self.data_buffer = data_buffer()
@@ -124,6 +130,92 @@ class Data_Provider(object):
             print('no split method specified, use ratio of 7:1:2 as default')
             spliter = partial(ratio_spliter, split=(7,1,2), seq_len=self.args.input_len)
         return spliter
+    
+    def _filter_insufficient_entities(self):
+        """
+        Filter out entities that don't have sufficient data for train/val/test splits.
+        
+        Checks each entity's data file size and removes entities that don't have
+        enough data points for the required sequence lengths and split ratios.
+        Logs a warning for each filtered entity.
+        """
+        # Get split parameters
+        seq_len = self.args.input_len
+        pred_len = self.args.output_len
+        split_type = self.dataset_config.spliter if hasattr(self.dataset_config, 'spliter') else 'ratio'
+        
+        # Get split ratios from config
+        if hasattr(self.dataset_config, 'split_info') and self.dataset_config.split_info is not None:
+            split_ratios = self.dataset_config.split_info
+            if isinstance(split_ratios, str):
+                # Handle string format "x:y:z"
+                split_ratios = [int(x) for x in split_ratios.split(':')]
+        else:
+            # Default to 7:1:2
+            split_ratios = (7, 1, 2)
+        
+        # Get data_path (may be None or 'null' for multi-file datasets)
+        data_path = self.dataset_config.get('data_path', None)
+        # Handle case where YAML has 'null' as string
+        if data_path == 'null':
+            data_path = None
+        
+        # Filter entities
+        filtered_ids = []
+        sufficient_ids = []
+        
+        for entity_id in self.id_list:
+            # Get entity data size
+            num_rows, file_path = get_entity_data_size(
+                root_path=self.dataset_config.root_path,
+                data_path=data_path,
+                formatter=self.formatter,
+                entity_id=entity_id,
+                data_buffer=self.data_buffer
+            )
+            
+            # Check if file exists and has data
+            if num_rows is None:
+                print(f"[ warning ] Filtered entity '{entity_id}': file not found or error reading ({file_path})")
+                filtered_ids.append(entity_id)
+                continue
+            
+            # Check if entity has sufficient data
+            is_sufficient, details = check_entity_sufficient(
+                total_rows=num_rows,
+                seq_len=seq_len,
+                pred_len=pred_len,
+                split_ratios=split_ratios,
+                split_type=split_type,
+                require_all_splits=True
+            )
+            
+            if not is_sufficient:
+                # Build issue description
+                issues = []
+                if not details['train_ok']:
+                    issues.append(f"train({details['train_len']})")
+                if not details['val_ok']:
+                    issues.append(f"val({details['val_len']})")
+                if not details['test_ok']:
+                    issues.append(f"test({details['test_len']})")
+                
+                issue_str = ', '.join(issues)
+                print(f"[ warning ] Filtered entity '{entity_id}': insufficient data ({num_rows} rows, need {details['min_needed']} for seq_len={seq_len}, pred_len={pred_len}, missing: {issue_str})")
+                filtered_ids.append(entity_id)
+            else:
+                sufficient_ids.append(entity_id)
+        
+        # Update id_list to only include sufficient entities
+        original_count = len(self.id_list)
+        self.id_list = sufficient_ids
+        filtered_count = len(filtered_ids)
+        
+        # Log summary
+        if filtered_count > 0:
+            print(f"[ info ] Entity filtering: removed {filtered_count} entities, using {len(sufficient_ids)} entities")
+        else:
+            print(f"[ info ] Entity filtering: all {original_count} entities have sufficient data")
     
     def _is_time_mmd_dataset(self):
         """
