@@ -211,17 +211,24 @@ class Data_Provider(object):
             )
             
             if not is_sufficient:
-                # Build issue description
-                issues = []
+                # Build list of insufficient splits
+                insufficient_splits = []
                 if not details['train_ok']:
-                    issues.append(f"train({details['train_len']})")
+                    insufficient_splits.append('train')
                 if not details['val_ok']:
-                    issues.append(f"val({details['val_len']})")
+                    insufficient_splits.append('val')
                 if not details['test_ok']:
-                    issues.append(f"test({details['test_len']})")
+                    insufficient_splits.append('test')
                 
-                issue_str = ', '.join(issues)
-                print(f"[ warning ] Filtered entity '{entity_id}': insufficient data ({num_rows} rows, need {details['min_needed']} for seq_len={seq_len}, pred_len={pred_len}, missing: {issue_str})")
+                # Format split names (e.g., "train", "train and val", "train, val, and test")
+                if len(insufficient_splits) == 1:
+                    split_str = insufficient_splits[0]
+                elif len(insufficient_splits) == 2:
+                    split_str = f"{insufficient_splits[0]} and {insufficient_splits[1]}"
+                else:
+                    split_str = ', '.join(insufficient_splits[:-1]) + f', and {insufficient_splits[-1]}'
+                
+                print(f"[ warning ] Filtered entity '{entity_id}': insufficient data in {split_str} split")
                 filtered_ids.append(entity_id)
             else:
                 sufficient_ids.append(entity_id)
