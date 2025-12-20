@@ -158,6 +158,10 @@ def scan_missing_value_columns(
     if data_path == 'null':
         data_path = None
     
+    # Debug: Print scan start
+    print(f'[ DEBUG ] Scanning {len(id_list)} entities for missing value columns...')
+    # END DEBUG
+    
     # Scan all entities to find columns with missing values
     for entity_id in id_list:
         # Determine file path for this entity
@@ -205,8 +209,14 @@ def scan_missing_value_columns(
                 # Check if column has missing values
                 if df[col].isna().any():
                     missing_columns.add(col)
-        except Exception:
+                    print(f'[ DEBUG ] Found missing values in column "{col}" for entity {entity_id}')
+        except Exception as e:
             # Skip entities that can't be loaded
+            print(f'[ DEBUG ] Error loading entity {entity_id}: {e}')
             continue
+    
+    # Debug: Print scan results
+    print(f'[ DEBUG ] Scan complete: Found {len(missing_columns)} columns with missing values: {sorted(list(missing_columns))}')
+    print(f'[ DEBUG ] All numeric columns found: {sorted(list(all_numeric_columns))}')
     
     return sorted(list(missing_columns))
