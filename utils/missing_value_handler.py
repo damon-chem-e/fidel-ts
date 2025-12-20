@@ -179,11 +179,8 @@ def scan_missing_value_columns(
         try:
             # Load DataFrame
             if data_buffer is not None:
-                # Use buffer if available
-                df = data_buffer.get(file_path)
-                if df is None:
-                    df = pd.read_csv(file_path)
-                    data_buffer.set(file_path, df)
+                # Use buffer if available (data_buffer is callable, takes file_path)
+                df = data_buffer(file_path)
             else:
                 df = pd.read_csv(file_path)
             
