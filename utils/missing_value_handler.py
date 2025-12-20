@@ -65,71 +65,13 @@ def handle_missing_values(
         df_processed = df.copy()
         indicator_columns = []
         
-        # Debug: Print original columns (for first call only, to avoid spam)
-        # We'll use a simple heuristic: only print if this is likely the first entity
-        # (checking if required_indicators is non-empty suggests we're in multi-entity mode)
-        debug_printed = False
-        # END DEBUG
-        
-        # Track which columns we've processed to avoid duplicates
-        processed_cols = set()
-        
-        # First, process columns that have missing values in this DataFrame
-        for col in df.columns:
+        # Process only the required indicator columns (already identified via scan)
+        # No need to search for columns with missing values - we already know which ones need indicators
+        for col in required_indicators:
             if col in exclude_cols:
                 continue  # Skip explicitly excluded columns (timestamp, text, metadata)
             
-            # Only process numeric columns - skip text/object columns
-            if not pd.api.types.is_numeric_dtype(df[col]):
-                continue  # Skip non-numeric columns (text, object, etc.)
-            
-            # Check if column has any missing values
-            if df[col].isna().any():
-                # Create indicator column: 1 where original was NaN, 0 otherwise
-                indicator_name = f'missing_{col}'
-                
-                # Ensure indicator name doesn't conflict with existing columns
-                if indicator_name in df_processed.columns:
-                    # If conflict, append number
-                    counter = 1
-                    while f'{indicator_name}_{counter}' in df_processed.columns:
-                        counter += 1
-                    indicator_name = f'{indicator_name}_{counter}'
-                
-                # Create indicator: 1 where original was NaN, 0 otherwise
-                indicator = df[col].isna().astype(np.float32)
-                df_processed[indicator_name] = indicator
-                indicator_columns.append(indicator_name)
-                processed_cols.add(col)
-                
-                # Forward fill missing values in original column
-                # Use ffill() which propagates last valid observation forward
-                df_processed[col] = df_processed[col].ffill()
-                
-                # Handle case where first value(s) are NaN (forward fill can't fill these)
-                # Fill remaining leading NaNs with 0 (or could use backward fill, but 0 is safer)
-                if df_processed[col].isna().any():
-                    df_processed[col] = df_processed[col].fillna(0)
-        
-        # Second, create indicators for required columns (even if this DataFrame doesn't have missing values)
-        # This ensures consistent feature dimensions across all entities
-        for col in required_indicators:
-            if col in exclude_cols:
-                continue  # Skip explicitly excluded columns
-            
-            # Skip if we already processed this column above
-            if col in processed_cols:
-                continue
-            
-            # Skip if column doesn't exist in this DataFrame
-            if col not in df.columns:
-                continue
-            
-            # Only process numeric columns
-            if not pd.api.types.is_numeric_dtype(df[col]):
-                continue
-            
-            # Create indicator column: 0 everywhere (no missing values in this entity)
+            # Create indicator column name
             indicator_name = f'missing_{col}'
             
             # Ensure indicator name doesn't conflict with existing columns
@@ -140,21 +82,30 @@ def handle_missing_values(
                     counter += 1
                 indicator_name = f'{indicator_name}_{counter}'
             
-            # Create indicator: all zeros (no missing values in this entity for this column)
-            indicator = np.zeros(len(df), dtype=np.float32)
-            df_processed[indicator_name] = indicator
-            indicator_columns.append(indicator_name)
-        
-        # Debug: Print final column count and indicators created
-        # Only print for entities that have different feature counts (to identify the issue)
-        numeric_cols = [col for col in df_processed.columns 
-                        if col not in exclude_cols and pd.api.types.is_numeric_dtype(df_processed[col])]
-        total_features = len(numeric_cols) + len(indicator_columns)
-        
-        # Store debug info in a way that can be accessed later
-        # We'll add this info to the DataFrame's metadata or return it separately
-        # For now, we'll rely on the debug prints in data_factory.py
-        # END DEBUG
+            # Check if the column exists in this DataFrame
+            if col in df.columns:
+                # Column exists: forward fill missing values and create indicator
+                # Verify it's numeric before processing
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    # Create indicator: 1 where original was NaN, 0 otherwise
+                    indicator = df[col].isna().astype(np.float32)
+                    df_processed[indicator_name] = indicator
+                    indicator_columns.append(indicator_name)
+                    
+                    # Forward fill missing values in original column
+                    # Use ffill() which propagates last valid observation forward
+                    df_processed[col] = df_processed[col].ffill()
+                    
+                    # Handle case where first value(s) are NaN (forward fill can't fill these)
+                    # Fill remaining leading NaNs with 0 (or could use backward fill, but 0 is safer)
+                    if df_processed[col].isna().any():
+                        df_processed[col] = df_processed[col].fillna(0)
+            else:
+                # Column doesn't exist in this DataFrame: create indicator with all zeros
+                # This ensures consistent feature dimensions across all entities
+                indicator = np.zeros(len(df), dtype=np.float32)
+                df_processed[indicator_name] = indicator
+                indicator_columns.append(indicator_name)
         
         return df_processed, indicator_columns
     
