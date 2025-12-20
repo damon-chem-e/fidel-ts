@@ -385,6 +385,9 @@ class Data_Provider(object):
         if hasattr(self.args, 'gpu') and self.args.gpu is not None:
             device = f'cuda:{int(self.args.gpu)}'
         
+        # Get missing value strategy from config (default: 'none')
+        missing_value_strategy = self.dataset_config.get('missing_value_strategy', 'none')
+        
         return TimeMMD_Dataset(
             root_path=self.dataset_config.root_path,
             data_path=data_path,
@@ -413,7 +416,8 @@ class Data_Provider(object):
             embed_dim=embed_dim,
             force_reembed=force_reembed,
             hf_cache_dir=hf_cache_dir,
-            device=device
+            device=device,
+            missing_value_strategy=missing_value_strategy
         )
     
     def get_train(self, return_type='loader'):
@@ -519,6 +523,8 @@ class Data_Provider(object):
                             get_hetero_data = None
 
                         data_path = self.formatter.format(i=i)
+                        # Get missing value strategy from config (default: 'none')
+                        missing_value_strategy = self.dataset_config.get('missing_value_strategy', 'none')
                         dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path, 
                                                     flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len, 
                                                     spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col, 
@@ -527,7 +533,7 @@ class Data_Provider(object):
                                                     hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
                                                     task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
                                                     timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample,
-                                                    entity_id=i)  # Pass entity_id for sample_id generation
+                                                    entity_id=i, missing_value_strategy=missing_value_strategy)  # Pass entity_id and missing_value_strategy
                     datasets[i] = dataset
                     progress.update(task, advance=1)
         else:
@@ -543,7 +549,9 @@ class Data_Provider(object):
                         get_hetero_data = None
 
                     data_path = self.formatter.format(i=i)
-                    dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path, 
+                    # Get missing value strategy from config (default: 'none')
+                    missing_value_strategy = self.dataset_config.get('missing_value_strategy', 'none')
+                    dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path,
                                                 flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len, 
                                                 spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col, 
                                                 target=self.dataset_config.target, scale=self.args.scale, 
@@ -551,7 +559,7 @@ class Data_Provider(object):
                                                 hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
                                                 task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
                                                 timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample,
-                                                entity_id=i)  # Pass entity_id for sample_id generation
+                                                entity_id=i, missing_value_strategy=missing_value_strategy)  # Pass entity_id and missing_value_strategy
                 datasets[i] = dataset
         
         return datasets

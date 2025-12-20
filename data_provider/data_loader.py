@@ -1,21 +1,19 @@
 import os
 import numpy as np
 import pandas as pd
-import os
 import torch
 from torch.utils.data import Dataset
 from sklearn.preprocessing import StandardScaler
 from transformers import AutoTokenizer, AutoModel
 import warnings
-from .data_helper import timestamp_spliter, ratio_spliter, data_buffer
+from .data_helper import ratio_spliter, data_buffer
 import multiprocessing as mp
 from time import time
 from tqdm import tqdm
 import json
-from datetime import datetime
 from functools import partial
 import glob
-import joblib, torch
+import joblib
 import logging
 
 warnings.filterwarnings('ignore')
@@ -73,7 +71,10 @@ class Universal_Dataset(Dataset):
     """
     def __init__(self, root_path, flag='train', data_path='ETTh1.csv',
                  seq_len=24, pred_len=24, spliter=ratio_spliter, timestamp_col='date',
-                 target='OT', scale=True, data_buffer=None, hetero_data_getter=None, preload_hetero=False, hetero_stride=1, task=None, custom_input=None, timezone=None, downsample=None, entity_id=None):
+                 target='OT', scale=True, data_buffer=None, hetero_data_getter=None, 
+                 preload_hetero=False, hetero_stride=1, task=None, custom_input=None, 
+                 timezone=None, downsample=None, entity_id=None, 
+                 missing_value_strategy='none'):
         # size [seq_len, label_len, pred_len]
         # info
         self.seq_len = seq_len
@@ -85,6 +86,7 @@ class Universal_Dataset(Dataset):
         self.target = target
         self.scale = scale
         self.data_buffer = data_buffer
+        self.missing_value_strategy = missing_value_strategy
 
         self.timestamp_col = timestamp_col
 
@@ -93,6 +95,10 @@ class Universal_Dataset(Dataset):
         
         # Store entity_id for sample_id generation
         self.entity_id = str(entity_id) if entity_id is not None else None
+        
+        # Initialize missing value indicator tracking
+        self.missing_indicators = []  # Will be populated in __read_data__ if indicators are created
+        self.target_columns = None  # Will be set to track which columns are targets (excludes indicators)
 
         self.hetero_data_getter = (lambda x: x) if hetero_data_getter is None else hetero_data_getter # return the timestamp
         self.timezone = timezone
@@ -190,11 +196,19 @@ class Universal_Dataset(Dataset):
 
         self.timestamp = self.data[self.timestamp_col].values.copy()
         if self.target == 'all':
+            # Store column names before converting to numpy array
+            # This allows tracking which columns are targets vs indicators
+            all_columns = [col for col in self.data.columns if col != self.timestamp_col]
+            # Target columns exclude indicator columns (indicators are covariates, not targets)
+            self.target_columns = [col for col in all_columns if col not in self.missing_indicators]
+            
             self.data = self.data.drop(columns=[self.timestamp_col])
             self.data = self.data.values.astype(np.float32).copy()
             train_data = train_data.drop(columns=[self.timestamp_col])
             train_data = train_data.values.astype(np.float32).copy()
         else:
+            # Single target case: target column is the specified column
+            self.target_columns = [self.target] if isinstance(self.target, str) else self.target
             self.data = self.data[self.target].values.astype(np.float32).copy()
             train_data = train_data[self.target].values.astype(np.float32).copy()
 

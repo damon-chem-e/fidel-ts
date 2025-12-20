@@ -17,6 +17,7 @@ from transformers import AutoTokenizer, AutoModel
 from .data_loader import Universal_Dataset
 from .data_helper import ratio_spliter, data_buffer
 from utils.embedding_model_registry import EmbeddingModelRegistry
+from utils.missing_value_handler import handle_missing_values
 
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
 
@@ -483,7 +484,8 @@ class TimeMMD_Dataset(Universal_Dataset):
                  text_column='auto', use_closedllm=False, text_len=4,
                  output_format='json', general_info='', channel_info='',
                  embed_model_name='bert-base-uncased', embed_dim=768,
-                 force_reembed=False, hf_cache_dir='./HF_cache/', device='cpu'):
+                 force_reembed=False, hf_cache_dir='./HF_cache/', device='cpu',
+                 missing_value_strategy='none'):
         """
         Initialize TimeMMD_Dataset.
         
@@ -508,6 +510,11 @@ class TimeMMD_Dataset(Universal_Dataset):
         self.force_reembed = force_reembed
         self.hf_cache_dir = hf_cache_dir
         self.device = device
+        self.missing_value_strategy = missing_value_strategy
+        
+        # Initialize missing value indicator tracking (will be populated in __read_data__)
+        self.missing_indicators = []
+        self.target_columns = None
         
         # Initialize parent class with hetero_data_getter=None initially
         # We'll set it up after reading data
@@ -529,7 +536,8 @@ class TimeMMD_Dataset(Universal_Dataset):
             custom_input=custom_input,
             timezone=timezone,
             downsample=downsample,
-            entity_id=entity_id
+            entity_id=entity_id,
+            missing_value_strategy=missing_value_strategy
         )
         
         # Setup text getter after data is loaded (after parent.__init__ which loads data)
@@ -692,6 +700,22 @@ class TimeMMD_Dataset(Universal_Dataset):
             if col in df_raw.columns and col not in exclude_cols:
                 exclude_cols.append(col)
         
+        # Handle missing values before splitting (ensures consistent processing across train/val/test)
+        # Exclude timestamp, text, and metadata columns from missing value processing
+        df_raw, missing_indicators = handle_missing_values(
+            df_raw,
+            strategy=self.missing_value_strategy,
+            exclude_cols=exclude_cols
+        )
+        
+        # Store indicator column names (needed for target column tracking)
+        self.missing_indicators = missing_indicators
+        
+        if missing_indicators:
+            print(f'[ info ] Created {len(missing_indicators)} missing value indicator columns: {missing_indicators[:5]}{"..." if len(missing_indicators) > 5 else ""}')
+            # Note: Indicators are scaled along with other data. Performance may improve if indicators
+            # are left unscaled (they're binary 0/1 by design), but scaling is simpler for now.
+        
         if self._text_column_name is not None:
             # Extract text data before splitting
             # Store text indexed by timestamp (will be converted to int64 format)
@@ -726,6 +750,12 @@ class TimeMMD_Dataset(Universal_Dataset):
             # Get column names that will become channels (exclude text/metadata/timestamp columns)
             channel_columns = [col for col in self.data.columns if col not in exclude_cols]
             self._channel_names = channel_columns  # Store for per-channel embedding creation
+            
+            # Track target columns (exclude indicator columns - indicators are covariates, not targets)
+            # Note: missing_indicators is set in parent class, but we need to filter them here
+            all_data_columns = [col for col in self.data.columns if col not in exclude_cols]
+            self.target_columns = [col for col in all_data_columns if col not in self.missing_indicators]
+            
             # Drop timestamp, text, and metadata columns
             self.data = self.data.drop(columns=exclude_cols)
             self.data = self.data.values.astype(np.float32).copy()
@@ -734,6 +764,7 @@ class TimeMMD_Dataset(Universal_Dataset):
         else:
             # Single column target - extract as 1D array, then reshape to 2D for scaler
             self._channel_names = [self.target]  # Store channel name for single-target case
+            self.target_columns = [self.target] if isinstance(self.target, str) else self.target
             self.data = self.data[self.target].values.astype(np.float32).copy()
             train_data = train_data[self.target].values.astype(np.float32).copy()
             # Reshape to 2D (samples, features) for StandardScaler
