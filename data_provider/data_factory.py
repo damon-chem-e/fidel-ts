@@ -76,16 +76,17 @@ class Data_Provider(object):
 
         self.formatter = self.dataset_config.get('formatter', 'id_{i}.parquet')
         self.spliter = self.get_spliter()
-        
-        # Filter entities with insufficient data if enabled
-        filter_insufficient = self.dataset_config.get('filter_insufficient_entities', False)
-        if filter_insufficient:
-            self._filter_insufficient_entities()
 
         if buffer:
             self.data_buffer = data_buffer()
         else:
             self.data_buffer = None
+        
+        # Filter entities with insufficient data if enabled
+        # Must be called after data_buffer is initialized
+        filter_insufficient = self.dataset_config.get('filter_insufficient_entities', False)
+        if filter_insufficient:
+            self._filter_insufficient_entities()
 
         if args.data_config.hetero_info is not None:
             hetero_info = dotdict(args.data_config.hetero_info)
