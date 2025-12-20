@@ -606,13 +606,6 @@ class Data_Provider(object):
                 if hasattr(dataset, 'missing_indicators') and dataset.missing_indicators:
                     all_indicator_columns.update(dataset.missing_indicators)
         
-        # Print aggregated summary of missing value indicators
-        if all_indicator_columns:
-            indicator_list = sorted(list(all_indicator_columns))
-            print(f'[ info ] Created {len(indicator_list)} missing value indicator columns across all {len(datasets)} entities: {indicator_list[:5]}{"..." if len(indicator_list) > 5 else ""}')
-            # Note: Indicators are scaled along with other data. Performance may improve if indicators
-            # are left unscaled (they're binary 0/1 by design), but scaling is simpler for now.
-        
         return datasets
 
     def get_dataloader(self, datasets, shuffle, drop_last, concat=False):
