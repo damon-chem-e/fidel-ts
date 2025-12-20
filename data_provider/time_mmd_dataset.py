@@ -485,7 +485,7 @@ class TimeMMD_Dataset(Universal_Dataset):
                  output_format='json', general_info='', channel_info='',
                  embed_model_name='bert-base-uncased', embed_dim=768,
                  force_reembed=False, hf_cache_dir='./HF_cache/', device='cpu',
-                 missing_value_strategy='none'):
+                 missing_value_strategy='none', required_indicators=None):
         """
         Initialize TimeMMD_Dataset.
         
@@ -511,6 +511,7 @@ class TimeMMD_Dataset(Universal_Dataset):
         self.hf_cache_dir = hf_cache_dir
         self.device = device
         self.missing_value_strategy = missing_value_strategy
+        self.required_indicators = required_indicators if required_indicators is not None else []
         
         # Initialize missing value indicator tracking (will be populated in __read_data__)
         self.missing_indicators = []
@@ -702,19 +703,19 @@ class TimeMMD_Dataset(Universal_Dataset):
         
         # Handle missing values before splitting (ensures consistent processing across train/val/test)
         # Exclude timestamp, text, and metadata columns from missing value processing
+        # Pass required_indicators to ensure consistent feature dimensions across all entities
         df_raw, missing_indicators = handle_missing_values(
             df_raw,
             strategy=self.missing_value_strategy,
-            exclude_cols=exclude_cols
+            exclude_cols=exclude_cols,
+            required_indicators=self.required_indicators
         )
         
         # Store indicator column names (needed for target column tracking)
         self.missing_indicators = missing_indicators
         
-        if missing_indicators:
-            print(f'[ info ] Created {len(missing_indicators)} missing value indicator columns: {missing_indicators[:5]}{"..." if len(missing_indicators) > 5 else ""}')
-            # Note: Indicators are scaled along with other data. Performance may improve if indicators
-            # are left unscaled (they're binary 0/1 by design), but scaling is simpler for now.
+        # Note: Logging is now aggregated in data_factory.py get_datasets() method
+        # Individual entity logging is suppressed to reduce clutter
         
         if self._text_column_name is not None:
             # Extract text data before splitting

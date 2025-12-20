@@ -11,6 +11,7 @@ from .data_helper import timestamp_spliter, ratio_spliter, data_buffer
 from typing import Optional, Any
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
 from utils.entity_data_check import check_entity_sufficient, get_entity_data_size
+from utils.missing_value_handler import scan_missing_value_columns
 
 class Data_Provider(object):
     """
@@ -87,6 +88,24 @@ class Data_Provider(object):
         filter_insufficient = self.dataset_config.get('filter_insufficient_entities', False)
         if filter_insufficient:
             self._filter_insufficient_entities()
+        
+        # Scan entities to determine which columns need missing value indicators
+        # This ensures consistent feature dimensions across all entities
+        # Only do this if missing value strategy is enabled
+        missing_value_strategy = self.dataset_config.get('missing_value_strategy', 'none')
+        if missing_value_strategy == 'forward_fill_indicators':
+            # Get data_path (may be None or 'null' for multi-file datasets)
+            data_path = self.dataset_config.get('data_path', None)
+            self.required_indicator_columns = scan_missing_value_columns(
+                id_list=self.id_list,
+                root_path=self.dataset_config.root_path,
+                timestamp_col=self.dataset_config.timestamp_col,
+                data_path=data_path,
+                formatter=self.formatter,
+                data_buffer=self.data_buffer
+            )
+        else:
+            self.required_indicator_columns = []
 
         if args.data_config.hetero_info is not None:
             hetero_info = dotdict(args.data_config.hetero_info)
@@ -388,6 +407,9 @@ class Data_Provider(object):
         # Get missing value strategy from config (default: 'none')
         missing_value_strategy = self.dataset_config.get('missing_value_strategy', 'none')
         
+        # Get required indicator columns (ensures consistent feature dimensions)
+        required_indicators = getattr(self, 'required_indicator_columns', [])
+        
         return TimeMMD_Dataset(
             root_path=self.dataset_config.root_path,
             data_path=data_path,
@@ -417,7 +439,8 @@ class Data_Provider(object):
             force_reembed=force_reembed,
             hf_cache_dir=hf_cache_dir,
             device=device,
-            missing_value_strategy=missing_value_strategy
+            missing_value_strategy=missing_value_strategy,
+            required_indicators=required_indicators
         )
     
     def get_train(self, return_type='loader'):
@@ -490,6 +513,7 @@ class Data_Provider(object):
         Creates Universal_Dataset instances for all configured data IDs.
         
         Uses Rich Progress for clean progress bar display that doesn't interfere with logging.
+        Aggregates missing value indicator logging to reduce clutter.
         
         Args:
             flag (str): Dataset split identifier ('train', 'val', 'test')
@@ -498,6 +522,9 @@ class Data_Provider(object):
             dict: Dictionary mapping data IDs to their corresponding Universal_Dataset instances
         """
         datasets = {}
+        
+        # Track missing value indicators across all entities for aggregated logging
+        all_indicator_columns = set()
         
         # Use Rich Progress if console is available, otherwise fall back to simple iteration
         if self.console is not None:
@@ -525,6 +552,8 @@ class Data_Provider(object):
                         data_path = self.formatter.format(i=i)
                         # Get missing value strategy from config (default: 'none')
                         missing_value_strategy = self.dataset_config.get('missing_value_strategy', 'none')
+                        # Get required indicator columns (ensures consistent feature dimensions)
+                        required_indicators = getattr(self, 'required_indicator_columns', [])
                         dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path, 
                                                     flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len, 
                                                     spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col, 
@@ -533,8 +562,11 @@ class Data_Provider(object):
                                                     hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
                                                     task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
                                                     timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample,
-                                                    entity_id=i, missing_value_strategy=missing_value_strategy)  # Pass entity_id and missing_value_strategy
+                                                    entity_id=i, missing_value_strategy=missing_value_strategy, required_indicators=required_indicators)  # Pass entity_id, missing_value_strategy, and required_indicators
                     datasets[i] = dataset
+                    # Collect indicator columns for aggregated logging
+                    if hasattr(dataset, 'missing_indicators') and dataset.missing_indicators:
+                        all_indicator_columns.update(dataset.missing_indicators)
                     progress.update(task, advance=1)
         else:
             # Fallback: simple iteration without progress bar
@@ -551,6 +583,8 @@ class Data_Provider(object):
                     data_path = self.formatter.format(i=i)
                     # Get missing value strategy from config (default: 'none')
                     missing_value_strategy = self.dataset_config.get('missing_value_strategy', 'none')
+                    # Get required indicator columns (ensures consistent feature dimensions)
+                    required_indicators = getattr(self, 'required_indicator_columns', [])
                     dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path,
                                                 flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len, 
                                                 spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col, 
@@ -559,8 +593,18 @@ class Data_Provider(object):
                                                 hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
                                                 task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
                                                 timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample,
-                                                entity_id=i, missing_value_strategy=missing_value_strategy)  # Pass entity_id and missing_value_strategy
+                                                entity_id=i, missing_value_strategy=missing_value_strategy, required_indicators=required_indicators)  # Pass entity_id, missing_value_strategy, and required_indicators
                 datasets[i] = dataset
+                # Collect indicator columns for aggregated logging
+                if hasattr(dataset, 'missing_indicators') and dataset.missing_indicators:
+                    all_indicator_columns.update(dataset.missing_indicators)
+        
+        # Print aggregated summary of missing value indicators
+        if all_indicator_columns:
+            indicator_list = sorted(list(all_indicator_columns))
+            print(f'[ info ] Created {len(indicator_list)} missing value indicator columns across all {len(datasets)} entities: {indicator_list[:5]}{"..." if len(indicator_list) > 5 else ""}')
+            # Note: Indicators are scaled along with other data. Performance may improve if indicators
+            # are left unscaled (they're binary 0/1 by design), but scaling is simpler for now.
         
         return datasets
 

@@ -15,6 +15,7 @@ from functools import partial
 import glob
 import joblib
 import logging
+from utils.missing_value_handler import handle_missing_values
 
 warnings.filterwarnings('ignore')
 
@@ -74,7 +75,7 @@ class Universal_Dataset(Dataset):
                  target='OT', scale=True, data_buffer=None, hetero_data_getter=None, 
                  preload_hetero=False, hetero_stride=1, task=None, custom_input=None, 
                  timezone=None, downsample=None, entity_id=None, 
-                 missing_value_strategy='none'):
+                 missing_value_strategy='none', required_indicators=None):
         # size [seq_len, label_len, pred_len]
         # info
         self.seq_len = seq_len
@@ -87,6 +88,7 @@ class Universal_Dataset(Dataset):
         self.scale = scale
         self.data_buffer = data_buffer
         self.missing_value_strategy = missing_value_strategy
+        self.required_indicators = required_indicators if required_indicators is not None else []
 
         self.timestamp_col = timestamp_col
 
@@ -174,6 +176,17 @@ class Universal_Dataset(Dataset):
             else:
                 print('[ info ] The timestamp column has timezone, forcing UTC')
                 df_raw[self.timestamp_col] = pd.to_datetime(df_raw[self.timestamp_col], utc=True).dt.tz_convert('UTC').dt.tz_localize(None)
+
+        # Handle missing values before splitting (ensures consistent processing across train/val/test)
+        # Exclude timestamp column from missing value processing
+        exclude_cols = [self.timestamp_col]
+        df_raw, self.missing_indicators = handle_missing_values(
+            df_raw,
+            strategy=self.missing_value_strategy,
+            exclude_cols=exclude_cols,
+            required_indicators=self.required_indicators
+        )
+        # Note: Logging is aggregated in data_factory.py get_datasets() method
 
         # apply the spliter
         train_data, val_data, test_data = self.spliter(df=df_raw)
