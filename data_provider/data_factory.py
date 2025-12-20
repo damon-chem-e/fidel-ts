@@ -567,14 +567,6 @@ class Data_Provider(object):
                     # Collect indicator columns for aggregated logging
                     if hasattr(dataset, 'missing_indicators') and dataset.missing_indicators:
                         all_indicator_columns.update(dataset.missing_indicators)
-                    
-                    # Debug: Print feature dimensions for each entity
-                    if hasattr(dataset, 'data'):
-                        num_features = dataset.data.shape[1] if len(dataset.data.shape) > 1 else 1
-                        num_indicators = len(dataset.missing_indicators) if hasattr(dataset, 'missing_indicators') else 0
-                        print(f'[ DEBUG ] Entity {i}: {num_features} features ({num_features - num_indicators} base + {num_indicators} indicators)')
-                    # END DEBUG
-                    
                     progress.update(task, advance=1)
         else:
             # Fallback: simple iteration without progress bar
@@ -606,13 +598,6 @@ class Data_Provider(object):
                 # Collect indicator columns for aggregated logging
                 if hasattr(dataset, 'missing_indicators') and dataset.missing_indicators:
                     all_indicator_columns.update(dataset.missing_indicators)
-                
-                # Debug: Print feature dimensions for each entity
-                if hasattr(dataset, 'data'):
-                    num_features = dataset.data.shape[1] if len(dataset.data.shape) > 1 else 1
-                    num_indicators = len(dataset.missing_indicators) if hasattr(dataset, 'missing_indicators') else 0
-                    print(f'[ DEBUG ] Entity {i}: {num_features} features ({num_features - num_indicators} base + {num_indicators} indicators)')
-                # END DEBUG
         
         # Print aggregated summary of missing value indicators
         if all_indicator_columns:
