@@ -53,7 +53,7 @@ class TimeMMD_HeteroGetter:
                  output_format='json', embed_model_name='bert-base-uncased', 
                  embed_dim=768, force_reembed=False, hf_cache_dir='./HF_cache/',
                  root_path=None, data_path=None, device='cpu', num_channels=None, channel_names=None,
-                 aggregation_method='cls', allow_old_pkl_fallback=False):
+                 aggregation_method='cls', use_old_pkl=False):
         """
         Initialize TimeMMD_HeteroGetter.
         
@@ -75,7 +75,7 @@ class TimeMMD_HeteroGetter:
                 If provided and multiple channels exist, each channel gets a unique embedding combining
                 channel_info with its name (e.g., "Weather variables: temperature" for channel "temperature")
             aggregation_method: Aggregation method for embeddings ('cls', 'average', 'none'). Default: 'cls'
-            allow_old_pkl_fallback: If True, allow falling back to old .pkl format if new cache not found (default: False)
+            use_old_pkl: If True, explicitly use old .pkl format (default: False). NO fallback - must be explicitly requested.
         """
         self.text_data = text_data
         self.timestamps = timestamps
@@ -92,7 +92,7 @@ class TimeMMD_HeteroGetter:
         self.aggregation_method = aggregation_method
         self.num_channels = num_channels  # Number of channels for expanding channel_info embedding
         self.channel_names = channel_names  # List of channel/column names for per-channel embeddings
-        self.allow_old_pkl_fallback = allow_old_pkl_fallback
+        self.use_old_pkl = use_old_pkl
         
         # Create a mapping for fast lookup
         self.text_dict = text_data.to_dict()
@@ -200,12 +200,19 @@ class TimeMMD_HeteroGetter:
         """
         Load or create embeddings using TextEmbedder.
         
-        Uses new hash-based cache system if available. Optionally falls back to old .pkl format
-        if allow_old_pkl_fallback=True.
+        No fallback between old and new systems. Explicit requests only.
         
         Embedding Paths:
         ---------------
-        1. **New Hash-Based Cache System** (primary):
+        1. **Old .pkl Format** (if use_old_pkl=True, explicitly requested):
+           Location: {root_path}/{base_filename}.pkl
+           Format: Simple pickle file with dictionary {timestamp_str: embedding_array}
+           Example: data/time_mmd/climate_data.pkl
+           
+           This format is ONLY used if use_old_pkl=True (explicitly requested).
+           No metadata validation - loaded directly via joblib.load().
+        
+        2. **New Hash-Based Cache System** (default):
            Location: {root_path}/{subdirectory}/embeddings_{hash}/
            Structure:
              - embeddings_{hash}/
@@ -216,63 +223,24 @@ class TimeMMD_HeteroGetter:
                              embedding_dim, max_length, sequence_length if applicable)
            Example: data/time_mmd/climate/embeddings_a1b2c3d4e5f6g7h8/
            
-           This system is always checked first. If matching cache is found, embeddings are loaded.
+           If matching cache is found and force_reembed=False, embeddings are loaded.
            If not found or force_reembed=True, embeddings are computed and saved to this system.
-        
-        2. **Old .pkl Format** (backward compatibility fallback - optional):
-           Location: {root_path}/{base_filename}.pkl
-           Format: Simple pickle file with dictionary {timestamp_str: embedding_array}
-           Example: data/time_mmd/climate_data.pkl
-           
-           This format is ONLY checked if:
-           - allow_old_pkl_fallback=True (explicitly requested)
-           - New cache system doesn't have matching embeddings
-           - force_reembed=False
-           
-           If found, embeddings are loaded and used. No metadata is stored with this format.
-           The old format is loaded directly via joblib.load() without metadata validation.
         
         3. **Computation** (if cache not found):
            Uses TextEmbedder to compute embeddings on-the-fly, then saves to new cache system.
            Old .pkl files are NOT automatically created or updated.
         
-        Backward Compatibility:
-        ----------------------
-        By default (allow_old_pkl_fallback=False), the system does NOT fall back to old .pkl files.
-        This ensures that only the new hash-based cache system with metadata is used.
-        
-        If allow_old_pkl_fallback=True, the _get_embedding_path() method is used to locate old-style
-        .pkl files. This is useful for:
-        - Loading legacy datasets with pre-computed .pkl embeddings
-        - Gradual migration from old to new cache system
-        - Temporary compatibility during transition periods
+        No Fallback Policy:
+        -------------------
+        - If use_old_pkl=True: Load from old .pkl files ONLY (no new cache check)
+        - If use_old_pkl=False: Use new cache system ONLY (no old .pkl check)
+        - NO automatic fallback between systems
         """
-        # Initialize embedder
-        self._init_embedder()
-        
-        # Convert text_data to dict format for embedder
+        # Convert text_data to dict format (needed for both paths)
         text_dict = {str(ts): text for ts, text in self.text_data.items()}
         
-        # Try to load from new cache system first
-        if self.embedder.cache_manager and not self.force_reembed:
-            try:
-                # Use embed_text_dict which handles caching internally
-                # format_for_time_mmd=True ensures shape (1, bert_dim) for CLS/average
-                embeddings_dict = self.embedder.embed_text_dict(text_dict, format_for_time_mmd=True)
-                self.embeddings = embeddings_dict
-                
-                # Count missing embeddings (shouldn't happen if embedder handles empty strings)
-                missing_count = sum(1 for ts in text_dict.keys() if ts not in embeddings_dict)
-                if missing_count > 0:
-                    print(f"[ warning ] {missing_count} timestamps missing embeddings (should not happen - embedder handles empty strings)")
-                
-                return
-            except Exception as e:
-                print(f"[ warning ] Failed to load from cache system: {e}")
-                # Fall through to old system or recompute
-        
-        # Fallback: Try old .pkl file format only if explicitly allowed
-        if self.allow_old_pkl_fallback:
+        # If explicitly requested, use old .pkl format (NO fallback)
+        if self.use_old_pkl:
             pkl_path = self._get_embedding_path()
             if os.path.exists(pkl_path) and not self.force_reembed:
                 try:
@@ -295,19 +263,30 @@ class TimeMMD_HeteroGetter:
                     
                     return
                 except Exception as e:
-                    print(f"[ warning ] Failed to load from old .pkl file: {e}. Recomputing embeddings.")
+                    raise FileNotFoundError(
+                        f"Failed to load from old .pkl file: {e}. "
+                        f"Set use_old_pkl=False to use new cache system."
+                    )
+            
+        # Use new cache system (NO fallback to old .pkl)
+        # Initialize embedder
+        self._init_embedder()
         
-        # Compute embeddings using TextEmbedder
-        print('[ info ] Computing embeddings on-the-fly (this may take a while)...')
-        
-        # Use embed_text_dict which handles formatting for TimeMMD
-        embeddings_dict = self.embedder.embed_text_dict(text_dict, format_for_time_mmd=True)
-        self.embeddings = embeddings_dict
-        
-        # Count missing embeddings (shouldn't happen)
-        missing_count = sum(1 for ts in text_dict.keys() if ts not in embeddings_dict)
-        if missing_count > 0:
-            print(f"[ warning ] {missing_count} timestamps missing embeddings after computation (should not happen)")
+        # Use embed_text_dict which handles caching internally
+        # format_for_time_mmd=True ensures shape (1, bert_dim) for CLS/average
+        try:
+            embeddings_dict = self.embedder.embed_text_dict(text_dict, format_for_time_mmd=True)
+            self.embeddings = embeddings_dict
+            
+            # Count missing embeddings (shouldn't happen if embedder handles empty strings)
+            missing_count = sum(1 for ts in text_dict.keys() if ts not in embeddings_dict)
+            if missing_count > 0:
+                print(f"[ warning ] {missing_count} timestamps missing embeddings (should not happen - embedder handles empty strings)")
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to load/create embeddings using new cache system: {e}. "
+                f"Set use_old_pkl=True to use old .pkl files (if available)."
+            )
     
     def _fetch_and_validate_embeddings(self, matched_times: List[str]) -> Tuple[List[np.ndarray], int]:
         """
@@ -581,7 +560,7 @@ class TimeMMD_Dataset(Universal_Dataset):
                  embed_model_name='bert-base-uncased', embed_dim=768,
                  force_reembed=False, hf_cache_dir='./HF_cache/', device='cpu',
                  missing_value_strategy='none', required_indicators=None,
-                 aggregation_method='cls', allow_old_pkl_fallback=False):
+                 aggregation_method='cls', use_old_pkl=False):
         """
         Initialize TimeMMD_Dataset.
         
@@ -607,7 +586,7 @@ class TimeMMD_Dataset(Universal_Dataset):
         self.hf_cache_dir = hf_cache_dir
         self.device = device
         self.aggregation_method = aggregation_method
-        self.allow_old_pkl_fallback = allow_old_pkl_fallback
+        self.use_old_pkl = use_old_pkl
         self.missing_value_strategy = missing_value_strategy
         self.required_indicators = required_indicators if required_indicators is not None else []
         
@@ -737,7 +716,7 @@ class TimeMMD_Dataset(Universal_Dataset):
             device=self.device,
             num_channels=num_channels,
             channel_names=channel_names,  # Pass actual channel names for per-channel embeddings
-            allow_old_pkl_fallback=self.allow_old_pkl_fallback
+            use_old_pkl=self.use_old_pkl
         )
         
         # Set as hetero_data_getter

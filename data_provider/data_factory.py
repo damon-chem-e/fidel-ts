@@ -112,6 +112,32 @@ class Data_Provider(object):
             if hetero_info.root_path is None:
                 hetero_info.root_path = args.data_config.root_path
             
+            # Parse embedding config (for new embedding system)
+            embedding_config = getattr(hetero_info, 'embedding_config', None)
+            if embedding_config is not None:
+                embedding_config = dotdict(embedding_config) if not isinstance(embedding_config, dict) else embedding_config
+            
+            # Parse use_old_embeddings flag (default: False, use new system)
+            use_old_embeddings = getattr(hetero_info, 'use_old_embeddings', False)
+            
+            # Get base_data_path from args (if provided in config)
+            base_data_path = getattr(self.args, 'base_data_path', None)
+            
+            # Create Heterogeneous_Dataset instance for managing Fidel-TS embedding/text data
+            # 
+            # This is NOT the dataset returned to users. Instead, it's a helper class that:
+            # 1. Loads/computes embeddings or text data for Fidel-TS datasets during __init__
+            # 2. Provides init_hetero_data(id) method to create hetero_data_getter functions
+            # 3. These functions are passed to Universal_Dataset instances in get_datasets()
+            # 4. Universal_Dataset calls hetero_data_getter(timestamps) during __getitem__()
+            #    to fetch text/embedding data for input/target sequences
+            #
+            # The output_format is determined by hetero_info.input_format:
+            # - 'embedding': Uses new embedding system (FidelTSEmbeddingLoader) for embedding-based models
+            # - 'json'/'dict'/'csv': Uses text format for prompting-based models (deprecated path via load_data)
+            #
+            # Note: This is ONLY used for non-Time-MMD datasets. Time-MMD datasets use
+            # TimeMMD_HeteroGetter instead, which is created internally by TimeMMD_Dataset.
             self.hetero_dataset = Heterogeneous_Dataset(root_path=hetero_info.root_path, 
                                                         formatter=hetero_info.formatter, 
                                                         id_info=self.id_info, 
@@ -128,7 +154,10 @@ class Data_Provider(object):
                                                         postemb_d=hetero_info.postemb_d, 
                                                         postemb_batch_size=hetero_info.postemb_batch_size, 
                                                         postemb_handle_downtime=hetero_info.postemb_handle_downtime, 
-                                                        device=self.args.gpu if self.args.use_gpu else 'cpu')
+                                                        device=self.args.gpu if self.args.use_gpu else 'cpu',
+                                                        embedding_config=embedding_config,
+                                                        use_old_embeddings=use_old_embeddings,
+                                                        base_data_path=base_data_path)
 
     def get_spliter(self):
         """
@@ -520,7 +549,27 @@ class Data_Provider(object):
 
     def get_datasets(self, flag):
         """
-        Creates Universal_Dataset instances for all configured data IDs.
+        Creates Universal_Dataset or TimeMMD_Dataset instances for all configured data IDs.
+        
+        This method handles two types of datasets:
+        1. **Time-MMD datasets**: Creates TimeMMD_Dataset instances (which handle their own
+           text embedding via TimeMMD_HeteroGetter internally)
+        2. **Fidel-TS and other datasets**: Creates Universal_Dataset instances, optionally
+           with hetero_data_getter from self.hetero_dataset if hetero_info is configured
+        
+        Heterogeneous Dataset Usage:
+        ----------------------------
+        If hetero_info is configured in the data config (checked during __init__), then
+        self.hetero_dataset is a Heterogeneous_Dataset instance that manages Fidel-TS
+        embedding/text data. In get_datasets(), for each entity ID:
+        
+        - If hetero_info is not None: Creates a hetero_data_getter function via
+          self.hetero_dataset.init_hetero_data(i), which returns a callable that
+          implements the hetero_data_getter interface expected by Universal_Dataset
+        - If hetero_info is None: Sets hetero_data_getter to None (no heterogeneous data)
+        
+        Note: self.hetero_dataset is ONLY used for non-Time-MMD datasets. Time-MMD datasets
+        use TimeMMD_HeteroGetter instead, which is created internally by TimeMMD_Dataset.
         
         Uses Rich Progress for clean progress bar display that doesn't interfere with logging.
         Aggregates missing value indicator logging to reduce clutter.
@@ -529,7 +578,8 @@ class Data_Provider(object):
             flag (str): Dataset split identifier ('train', 'val', 'test')
         
         Returns:
-            dict: Dictionary mapping data IDs to their corresponding Universal_Dataset instances
+            dict: Dictionary mapping data IDs to their corresponding dataset instances
+                (Universal_Dataset for Fidel-TS/standard datasets, TimeMMD_Dataset for Time-MMD)
         """
         datasets = {}
         

@@ -20,6 +20,8 @@ from .aggregation import (
 )
 from .metadata import EmbeddingMetadata
 from .cache_manager import EmbeddingCacheManager
+from .fidel_ts_path_resolver import FidelTSPathResolver
+from .fidel_ts_embedder import FidelTSEmbeddingLoader
 
 __all__ = [
     'EmbeddingModelRegistry',
@@ -31,5 +33,7 @@ __all__ = [
     'AGGREGATION_METHODS',
     'EmbeddingMetadata',
     'EmbeddingCacheManager',
+    'FidelTSPathResolver',
+    'FidelTSEmbeddingLoader',
 ]
 

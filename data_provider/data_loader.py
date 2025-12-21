@@ -7,15 +7,13 @@ from sklearn.preprocessing import StandardScaler
 from transformers import AutoTokenizer, AutoModel
 import warnings
 from .data_helper import ratio_spliter, data_buffer
-import multiprocessing as mp
 from time import time
-from tqdm import tqdm
 import json
 from functools import partial
-import glob
-import joblib
 import logging
 from utils.missing_value_handler import handle_missing_values
+from embedder import FidelTSEmbeddingLoader, FidelTSPathResolver
+from typing import Optional, Dict, Any
 
 warnings.filterwarnings('ignore')
 
@@ -251,6 +249,7 @@ class Universal_Dataset(Dataset):
             self.hetero_time, self.hetero_general, self.hetero_channel, self.full_hetero = self.hetero_data_getter(self.timestamp)
             print('[ info ] Preload the full heterogeneous data successfully, cost time: {:.2f}s'.format(time() - _))
             del self.hetero_data_getter
+            
     def __getitem__(self, index):
         """
         Retrieves a single data sample with all associated modalities.
@@ -366,51 +365,77 @@ class Universal_Dataset(Dataset):
 
 class Heterogeneous_Dataset(Dataset):
     """
-    Specialized dataset for managing heterogeneous cross-modal data sources.
+    Specialized dataset for managing heterogeneous cross-modal data sources, 
+    currently specialized for Fidel-TS datasets. For Time-MMD and TTC datasets 
+    use the TimeMMD_Dataset class.
     
     This class handles diverse data types including text (news, events), images, 
     and other modalities that complement time series forecasting. It provides
     efficient data loading, temporal alignment, and embedding generation for
     cross-modal forecasting tasks.
     
+    Usage Pattern:
+    -------------
+    Heterogeneous_Dataset is instantiated once by Data_Provider.__init__() when
+    hetero_info is configured. It's then used to create hetero_data_getter functions
+    via init_hetero_data(id) for each entity ID. These functions are passed to
+    Universal_Dataset instances, which call them during __getitem__() to fetch
+    text/embedding data for input/target sequences.
+    
     Key Features:
-        - Support for multiple heterogeneous data formats (JSON, text, images)
+        - Support for multiple heterogeneous data formats (JSON, text, images, embeddings)
         - Temporal alignment between time series and heterogeneous data
-        - Positional embeddings for temporal relationships
-        - Memory-efficient data loading and caching
-        - Flexible matching strategies (nearest, interpolation, etc.)
+        - Downtime handling (replaces data with downtime prompts during sensor failures)
+        - Memory-efficient data loading and caching via new embedding system
+        - Flexible matching strategies (nearest, forward, backward, single)
+        - Support for two data structures: 'all_for_one' (shared time series) and
+          'each_subset' (independent time series per entity)
     
     Args:
         root_path (str): Root directory for heterogeneous data files
         formatter (str): File naming pattern for data files
-        id_info (dict): Mapping of dataset IDs to metadata
-        static_path (str, optional): Path to static/constant heterogeneous data
-        matching (str): Strategy for temporal alignment ('nearest', 'interpolate')
-        output_format (str): Format for heterogeneous data output ('json', 'text')
+        id_info (dict): Mapping of dataset IDs to metadata (includes downtime info)
+        static_path (str, optional): Path to static/constant heterogeneous data JSON file
+        matching (str): Strategy for temporal alignment ('nearest', 'forward', 'backward', 'single')
+        output_format (str): Format for heterogeneous data output ('json', 'dict', 'csv', 'embedding')
         timezone (str, optional): Timezone for timestamp alignment
         noise (float): Noise level for data augmentation
-        hetero_type (str): Type of heterogeneous data handling strategy
+        hetero_type (str): Data structure type - 'all_for_one' (single DataFrame) or
+                          'each_subset' (dict of DataFrames keyed by ID)
         id_list (list, optional): Specific IDs to process
         postemb (str, optional): Positional embedding configuration
         postemb_model (str, optional): Model for generating positional embeddings
         postemb_max_len (int, optional): Maximum sequence length for embeddings
         postemb_d (int, optional): Dimensionality of positional embeddings
         postemb_batch_size (int): Batch size for embedding generation
-        postemb_handle_downtime (str, optional): Strategy for handling data gaps
+        postemb_handle_downtime (str, optional): Strategy for handling data gaps (deprecated)
         device (str): Computing device ('cpu' or cuda device id)
+        embedding_config (dict, optional): Configuration for new embedding system
+        use_old_embeddings (bool): Whether to use old .pkl embedding files (default: False)
+        base_data_path (str, optional): Base path for data directory (default: './data')
     
     Example:
         ```python
+        # In Data_Provider.__init__():
         hetero_dataset = Heterogeneous_Dataset(
-            root_path='./data/news',
-            formatter='news_{i}.json',
-            id_info=dataset_ids,
-            matching='nearest',
-            output_format='json'
+            root_path='./data/Bear_room/hetero',
+            formatter='dynamic_aggregate_text_v3.json',
+            id_info=id_info_dict,
+            matching='backward',
+            output_format='embedding',
+            hetero_type='each_subset',
+            embedding_config={'model_name': 'bert-base-uncased', 'aggregation_method': 'average'}
         )
+        
+        # Later in get_datasets():
+        getter = hetero_dataset.init_hetero_data(entity_id)  # Returns callable
+        dataset = Universal_Dataset(..., hetero_data_getter=getter)
         ```
     """
-    def __init__(self, root_path, formatter, id_info, static_path=None, matching='nearest', output_format='json', timezone=None, noise = 0.0, hetero_type='all_for_one', id_list=None, postemb=None, postemb_model=None, postemb_max_len=None, postemb_d=None, postemb_batch_size=200, postemb_handle_downtime=None, device='cpu'):
+    def __init__(self, root_path, formatter, id_info, static_path=None, matching='nearest', output_format='json', 
+                 timezone=None, noise = 0.0, hetero_type='all_for_one', id_list=None, postemb=None, postemb_model=None, 
+                 postemb_max_len=None, postemb_d=None, postemb_batch_size=200, postemb_handle_downtime=None, device='cpu', 
+                 embedding_config=None, use_old_embeddings=False, base_data_path=None):
         super().__init__()
 
         self.hetero_type = hetero_type
@@ -436,11 +461,23 @@ class Heterogeneous_Dataset(Dataset):
         self.output_format = output_format
         self.timezone = timezone
         
+        # New embedding system parameters
+        self.embedding_config = embedding_config or {}
+        self.use_old_embeddings = use_old_embeddings
+        self.base_data_path = base_data_path or './data'  # Default to './data' if not provided
+        
         if self.output_format == 'embedding':
             assert self.formatter is not None, "The embedding formatter should be provided if the output format is embedding"
             self.load_embedding(id_list=self.id_list)
         else:
-            self.load_data()
+            # Text formats (json/dict/csv) are not supported for Fidel-TS datasets.
+            # Heterogeneous_Dataset is now exclusively for Fidel-TS which always uses embedding format.
+            # For text-based models with Time-MMD/TTC datasets, use TimeMMD_Dataset instead.
+            raise NotImplementedError(
+                f"Heterogeneous_Dataset only supports output_format='embedding' for Fidel-TS datasets. "
+                f"Got output_format='{self.output_format}'. "
+                f"For text formats (json/dict/csv), use TimeMMD_Dataset with Time-MMD or TTC datasets instead."
+            )
         self.noise = noise
 
     def __addnoise__(self, x):
@@ -448,229 +485,188 @@ class Heterogeneous_Dataset(Dataset):
         # normalize
         x = x / np.linalg.norm(x, axis=-1, keepdims=True)
         return x
-
-    def convert_plain_text_to_embeddings(self, text):
-        tokenizer = self.tokenizer
-        model = self.model
-        model.eval()
-
-        encoded = tokenizer(text,
-                            padding=True,
-                            truncation=True,
-                            max_length=512,
-                            return_tensors='pt')
-
-        input_ids = encoded['input_ids'].to(self.device)
-        attention_mask = encoded['attention_mask'].to(self.device)
-
-        with torch.no_grad():
-            outputs = model(input_ids, attention_mask=attention_mask)
-            # [CLS]
-            text_embedding = outputs.last_hidden_state[:, 0, :].to('cpu')
-
-        return text_embedding[0]
-
-    def convert_df_text_to_embeddings(self, df):
-        tokenizer = self.tokenizer
-        model = self.model
-        model.eval()
-
-        df_time = df[['time']]
-        df_merged = df.drop('time', axis=1).astype(str).apply(''.join, axis=1)
-
-        batch_size = self.postemb_batch_size
-        ls_embeddings = []
+    
+    def _detect_fidel_ts_dataset(self) -> Optional[str]:
+        """
+        Detect if this is a Fidel-TS dataset and return dataset name.
         
-        for i in tqdm(range(0, len(df), batch_size), desc="Processing post embedding batches", unit="batch"):
-            batch_texts = df_merged.iloc[i:i+batch_size].tolist()
-
-            encoded = tokenizer(batch_texts,
-                            padding=True,
-                            truncation=True,
-                            max_length=512,
-                            return_tensors='pt')
-
-            input_ids = encoded['input_ids'].to(self.device)
-            attention_mask = encoded['attention_mask'].to(self.device)
-
-            with torch.no_grad():
-                outputs = model(input_ids, attention_mask=attention_mask)
-                # [CLS]
-                batch_embeddings = outputs.last_hidden_state[:, 0, :].to('cpu')
-                ls_embeddings.extend(batch_embeddings)
-
-        df_time['embeddings'] = ls_embeddings
-
-        return df_time
-
-    def load_data(self):
-        self.dynamic_data = {}
-        self.dynamic_embed = {}
-        if self.hetero_type == 'all_for_one':
-            if self.formatter.endswith('.json'):
-                file_paths = glob.glob(os.path.join(self.root_path, self.formatter))
-                for file_path in file_paths:
-                    json_data = json.load(open(file_path))
-                    self.dynamic_data.update(json_data)
-
-                self.dynamic_data = pd.DataFrame.from_dict(self.dynamic_data, orient='index')
-                self.dynamic_data.index = pd.to_datetime(self.dynamic_data.index)
-                # sort the index
-                self.dynamic_data.sort_index(inplace=True)
-                self.dynamic_data['time'] = self.dynamic_data.index
-                self.dynamic_data['time'] = self.dynamic_data['time'].dt.strftime('%Y%m%d%H%M%S')
-            elif self.formatter.endswith('.csv'):
-                file_paths = glob.glob(os.path.join(self.root_path, self.formatter))
-                df_list = []
-                for file_path in file_paths:
-                    df_list.append(pd.read_csv(file_path))
-                self.dynamic_data = pd.concat(df_list)
-                self.dynamic_data['time'] = pd.to_datetime(self.dynamic_data['time'])
-                self.dynamic_data.set_index('time', inplace=True)
-                self.dynamic_data.sort_index(inplace=True)
-                # self.dynamic_data['time'] = self.dynamic_data.index.strftime('%Y%m%d%H%M%S') # This line is now redundant
-            
-            print('[ info ] Successfully load the dynamic data from {}'.format(self.formatter))
-
-            if self.postemb is not None:
-                self.dynamic_embed = self.convert_df_text_to_embeddings(self.dynamic_data)
-                print('[ info ] Successfully convert text to embeddings after loading the textual data')
-
-        elif self.hetero_type == 'each_subset':
-            print(f'[ info ] Found {len(self.id_list)} subset IDs. Starting to load data for each...')
-            for id in self.id_list:
-                file_path = os.path.join(self.root_path, str(id), self.formatter)
-                
-                if not os.path.exists(file_path):
-                    print(f'[ Warning ] Data file not found for id: {id} at path: {file_path}. Skipping.')
-                    continue
-
-                if self.formatter.endswith('.json'):
-                    json_data = json.load(open(file_path))
-                    df = pd.DataFrame.from_dict(json_data, orient='index')
-                    df.index = pd.to_datetime(df.index)
-                    df.sort_index(inplace=True)
-                    df['time'] = df.index.strftime('%Y%m%d%H%M%S')
-
-                elif self.formatter.endswith('.csv'):
-                    df = pd.read_csv(file_path)
-                    df['time'] = pd.to_datetime(df['time'])
-                    df.set_index('time', inplace=True)
-                    df.sort_index(inplace=True)
-
-                # Time zone processing for each subset
-                if df.index.tz is not None:
-                    if self.timezone is not None:
-                        df.index = df.index.tz_convert(self.timezone).tz_localize(None)
-                    else:
-                        df.index = df.index.tz_convert('UTC').tz_localize(None)
-                
-                self.dynamic_data[id] = df
-                print(f'[ info ] Successfully loaded data for id: {id}')
-                
-                if self.postemb is not None:
-                    df = self.convert_df_text_to_embeddings(df)
-                    self.dynamic_embed[id] = df
-                    print(f'[ info ] Successfully convert text to embeddings after loading the textual data for id: {id}')
-        
-        else:
-            raise NotImplementedError('Only all_for_one and each_subset hetero type are supported, implement more if needed')
-
-        if self.static_path is None:
-            print('[ Warning ] No static data is provided, use default static data!')
-            self.static_data = {
-                'downtime_prompt': 'The sensor is down for unknown reasons.',
-                'general_info': 'The general information of the sensor',
-                'channel_info': {k: 'The information of the channel {}'.format(k) for k in self.id_info.keys()}
-            }
-        else:
-            self.static_data = json.load(open(os.path.join(self.root_path, self.static_path)))
-            print('[ info ] Successfully load the static data from {}'.format(self.static_path))
+        Returns:
+            Dataset name if Fidel-TS dataset detected, None otherwise
+        """
+        # Check if root_path contains any known Fidel-TS dataset name
+        root_path_str = str(self.root_path)
+        for dataset_name in FidelTSPathResolver.DATASET_NAMES:
+            if dataset_name in root_path_str:
+                return dataset_name
+        return None
     
     def load_embedding(self, id_list=None):
-        if self.hetero_type == 'all_for_one':
-            self.embeddings = {}
-            # if self.formatter.endswith('.npz'):
-            #     file_paths = glob.glob(os.path.join(self.root_path, self.formatter))
-            #     for file_path in file_paths:
-            #         npz_data = np.load(file_path)
-            #         self.embeddings.update(npz_data)
-            #     self.static_data = np.load(os.path.join(self.root_path, self.static_path))
-            if self.formatter.endswith('.pkl'):
-                file_paths = glob.glob(os.path.join(self.root_path, self.formatter))
-                for file_path in file_paths:
-                    pkl_data = joblib.load(file_path)
-                    self.embeddings.update(pkl_data)
-                print('[ info ] Successfully load the dynamic data embedding from {}'.format(self.formatter))
-
-            else:
-                raise NotImplementedError('Only .pkl data are supported, implement more if needed')
-            
-            # fake dynamic data just for timestamp matching
-            self.dynamic_data = pd.DataFrame.from_dict({k: 0 for k in self.embeddings.keys()}, orient='index')
-            self.dynamic_data['time'] = self.dynamic_data.index
-            self.dynamic_data.index = pd.to_datetime(self.dynamic_data.index)
-            # sort the index
-            # check if the index have timezone
-            if self.dynamic_data.index.tz is not None:
-                if self.timezone is not None:
-                    print('[ info ] The index has timezone, converting to {}'.format(self.timezone))
-                    self.dynamic_data.index = self.dynamic_data.index.tz_convert(self.timezone).tz_localize(None)
-                else:
-                    print('[ Warning ] The index has timezone, forcing UTC')
-                    self.dynamic_data.index = self.dynamic_data.index.tz_convert('UTC').tz_localize(None)
-                # print('[ info ] The index has timezone, converting to naive datetime, if need to keep timezone, please implement alignment using UDT')
-                # self.dynamic_data.index = self.dynamic_data.index.tz_convert('Europe/Berlin').tz_localize(None)
-            self.dynamic_data.sort_index(inplace=True)
-
-        elif self.hetero_type == 'each_subset':
-
-            self.embeddings = {}
-            self.dynamic_data = {}
-
-            print(f'[ info ] Found {len(id_list)} subset IDs. Starting to load embeddings for each...')
-
-            for id in id_list:
-                # /root_path/{id}/{formatter}. e.g. /data/subset_A/embeddings.pkl
-
-                file_path = os.path.join(self.root_path, str(id), self.formatter)
-                
-                if not os.path.exists(file_path):
-                    print(f'[ Warning ] Embedding file not found for id: {id} at path: {file_path}. Skipping.')
-                    continue
-
-                if self.formatter.endswith('.pkl'):
-                    # Load the embeddings for each subset
-                    id_specific_embeddings = joblib.load(file_path)
-                    self.embeddings[id] = id_specific_embeddings
-                    
-                    # DataFrame for time matching for each subset
-                    df = pd.DataFrame.from_dict({k: 0 for k in id_specific_embeddings.keys()}, orient='index')
-                    df['time'] = df.index
-                    df.index = pd.to_datetime(df.index)
-                    
-                    # Time zone processing for each subset
-                    if df.index.tz is not None:
-                        if self.timezone is not None:
-                            df.index = df.index.tz_convert(self.timezone).tz_localize(None)
-                        else:
-                            df.index = df.index.tz_convert('UTC').tz_localize(None)
-                    
-                    df.sort_index(inplace=True)
-                    self.dynamic_data[id] = df
-                    print(f'[ info ] Successfully loaded embeddings for id: {id}')
-
-                else:
-                    raise NotImplementedError('Only .pkl data are supported for this structure.')
-
-        else:
-            raise NotImplementedError('Only all_for_one and each_subset hetero type are supported, implement more if needed')
+        """
+        Load embeddings for Fidel-TS dataset.
+        
+        Heterogeneous_Dataset is only for Fidel-TS datasets. All embedding loading
+        is handled by FidelTSEmbeddingLoader (which supports both new cache and old .pkl formats).
+        """
+        # Detect Fidel-TS dataset (should always succeed since this class is only for Fidel-TS)
+        dataset_name = self._detect_fidel_ts_dataset()
+        if not dataset_name:
+            raise ValueError(
+                "Heterogeneous_Dataset is only for Fidel-TS datasets. "
+                "For Time-MMD/TTC datasets, use TimeMMD_Dataset instead."
+            )
+        
+        # Use Fidel-TS embedding system (handles both new cache and old .pkl formats)
+        self._load_embedding_fidel_ts(dataset_name)
     
-        # Global static data
-        self.static_data = joblib.load(os.path.join(self.root_path, self.static_path))
-        print('[ info ] Successfully load the static data from {}'.format(self.static_path))
+    def _load_embedding_fidel_ts(self, dataset_name: str):
+        """
+        Load embeddings using new Fidel-TS embedding system that supports
+        metadata, multiple embedding types, and manages complicated and 
+        unique file structures within each Fidel-TS subdataset.
+        
+        Args:
+            dataset_name: Name of Fidel-TS dataset
+        """
+        # Prepare hetero_info dict for FidelTSEmbeddingLoader
+        hetero_info = {
+            'root_path': self.root_path,
+            'formatter': self.formatter,
+            'static_path': self.static_path
+        }
+        
+        # Get embedding config parameters
+        embed_model_name = self.embedding_config.get('model_name', 'bert-base-uncased')
+        aggregation_method = self.embedding_config.get('aggregation_method', 'cls')
+        force_reembed = self.embedding_config.get('force_reembed', False)
+        hf_cache_dir = self.embedding_config.get('hf_cache_dir', './HF_cache/')
+        
+        # Create embedding loader
+        loader = FidelTSEmbeddingLoader(
+            dataset_name=dataset_name,
+            hetero_info=hetero_info,
+            base_data_path=self.base_data_path,
+            embed_model_name=embed_model_name,
+            aggregation_method=aggregation_method,
+            device=str(self.device) if hasattr(self.device, 'index') else 'cpu',
+            hf_cache_dir=hf_cache_dir,
+            force_reembed=force_reembed,
+            use_old_embeddings=self.use_old_embeddings
+        )
+        
+        # Load embeddings
+        dynamic_embeddings, static_embeddings = loader.load_embeddings()
+        
+        # Store embeddings in same format as old system
+        self.embeddings = dynamic_embeddings
+        self.static_data = static_embeddings
+        
+        # Create dynamic data for timestamp matching (shared helper method)
+        if self.hetero_type == 'all_for_one':
+            self._create_dynamic_data_from_embeddings()
+        else:
+            # each_subset - not yet supported for new system
+            raise NotImplementedError(
+                'New embedding system currently only supports hetero_type="all_for_one". '
+                'Set use_old_embeddings=True to use old system for each_subset.'
+            )
+    
+    def _create_dynamic_data_from_embeddings(self):
+        """
+        Create dynamic_data DataFrame from embeddings keys (timestamps).
+        
+        This method creates a "placeholder" DataFrame that serves as an index for temporal
+        matching. The actual embeddings are stored in self.embeddings (dict), but the
+        time_matcher() method needs a sorted pandas DatetimeIndex to efficiently perform
+        nearest/forward/backward timestamp matching operations.
+        
+        Why it's needed:
+        - self.embeddings is a dict {timestamp_str: embedding_array} - good for exact lookup
+        - time_matcher() needs a sorted DatetimeIndex to use pandas searchsorted() for
+          efficient temporal queries (finding nearest timestamp, etc.)
+        - The DataFrame values are dummy (just 0) - only the index matters for matching
+        - Also handles timezone conversion and sorting of timestamps
+        
+        Used for hetero_type='all_for_one'.
+        """
+        if self.hetero_type != 'all_for_one':
+            raise ValueError(f"_create_dynamic_data_from_embeddings() only supports hetero_type='all_for_one', got '{self.hetero_type}'")
+        
+        self.dynamic_data = pd.DataFrame.from_dict({k: 0 for k in self.embeddings.keys()}, orient='index')
+        self.dynamic_data['time'] = self.dynamic_data.index
+        self.dynamic_data.index = pd.to_datetime(self.dynamic_data.index)
+        
+        # Time zone processing
+        if self.dynamic_data.index.tz is not None:
+            if self.timezone is not None:
+                print('[ info ] The index has timezone, converting to {}'.format(self.timezone))
+                self.dynamic_data.index = self.dynamic_data.index.tz_convert(self.timezone).tz_localize(None)
+            else:
+                print('[ Warning ] The index has timezone, forcing UTC')
+                self.dynamic_data.index = self.dynamic_data.index.tz_convert('UTC').tz_localize(None)
+        
+        self.dynamic_data.sort_index(inplace=True)
+    
+    def _create_dynamic_data_from_embeddings_dict(self, embeddings_dict: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Create dynamic_data DataFrame from embeddings dict for a single ID.
+        
+        Shared helper method for hetero_type='each_subset'.
+        
+        Args:
+            embeddings_dict: Dictionary mapping timestamps to embeddings
+        
+        Returns:
+            DataFrame with timestamps as index
+        """
+        df = pd.DataFrame.from_dict({k: 0 for k in embeddings_dict.keys()}, orient='index')
+        df['time'] = df.index
+        df.index = pd.to_datetime(df.index)
+        
+        # Time zone processing
+        if df.index.tz is not None:
+            if self.timezone is not None:
+                df.index = df.index.tz_convert(self.timezone).tz_localize(None)
+            else:
+                df.index = df.index.tz_convert('UTC').tz_localize(None)
+        
+        df.sort_index(inplace=True)
+        return df
 
     def init_hetero_data(self, id):
+        """
+        Factory method that creates a callable hetero_data_getter function for a specific entity ID.
+        
+        This method prepares entity-specific parameters (downtime ranges, static info) and creates
+        a partially applied version of `get_hetero_data` that can be called with just timestamps.
+        The returned function implements the hetero_data_getter interface expected by Universal_Dataset.
+        
+        Where It's Used:
+        ----------------
+        Called by Data_Provider.get_datasets() for each entity ID when creating Universal_Dataset
+        instances for Fidel-TS datasets (non-Time-MMD datasets with hetero_info configured).
+        The returned function is passed as the `hetero_data_getter` parameter to Universal_Dataset.
+        
+        Args:
+            id: Entity/channel ID for which to create the hetero_data_getter function
+        
+        Returns:
+            callable: A partially applied function that takes timestamps and returns
+                (matched_times, general_info, channel_info, output_dynamic) tuple.
+                This function can be called as: hetero_data_getter(timestamps)
+        
+        Process:
+        --------
+        1. Extracts downtime ranges from id_info for the given entity ID
+        2. Converts downtime to pandas IntervalIndex with timezone handling
+        3. Retrieves entity-specific static data (general_info, channel_info, downtime_prompt)
+        4. Returns a partial function that binds these parameters to get_hetero_data()
+        
+        Note:
+        -----
+        This method is entity-specific - each entity ID gets its own hetero_data_getter
+        with its own downtime ranges and channel_info. For Time-MMD datasets, use
+        TimeMMD_HeteroGetter instead, which handles text directly from CSV columns.
+        """
         down_time = self.id_info[id]['sensor_downtime']
         down_time = [down_time[k]['time'] for k in down_time.keys()]
         down_time = [[pd.to_datetime(t[0]), pd.to_datetime(t[1])] for t in down_time]
@@ -741,6 +737,60 @@ class Heterogeneous_Dataset(Dataset):
 
     # @profile
     def get_hetero_data(self, downtime_ranges, general_info, channel_info, downtime_prompt, id, timestamp):
+        """
+        Retrieve heterogeneous (text/embedding) data for given timestamps.
+        
+        This is the core method that fetches and formats heterogeneous data (embeddings or text)
+        for a sequence of timestamps. It handles temporal matching, downtime detection, and
+        output formatting according to the configured output_format.
+        
+        Where It's Used:
+        ----------------
+        Called indirectly via hetero_data_getter functions created by init_hetero_data().
+        The hetero_data_getter is invoked by Universal_Dataset.__getitem__() during training/inference
+        to fetch text/embedding data for input and/or target sequences.
+        
+        Args:
+            downtime_ranges (pd.IntervalIndex): Time intervals when sensors were down
+            general_info: General dataset information (string or embedding array)
+            channel_info: Channel/entity-specific information (string or embedding array)
+            downtime_prompt: Prompt/embedding to use during downtime periods
+            id: Entity/channel ID (used only for hetero_type='each_subset')
+            timestamp: Array of timestamps to retrieve data for (int64 format: YYYYMMDDHHMMSS)
+        
+        Returns:
+            tuple: (matched_times, general_info, channel_info, output_dynamic)
+                - matched_times: List of matched timestamps as strings (YYYYMMDDHHMMSS)
+                - general_info: General dataset info (format depends on output_format)
+                - channel_info: Channel-specific info (format depends on output_format)
+                - output_dynamic: Dynamic heterogeneous data in requested format:
+                    - For 'embedding': numpy array of shape (num_timesteps, num_items, embedding_dim)
+                      where num_items depends on hetero_type and downtime handling
+                    - For 'json'/'dict'/'csv': Formatted text data
+        
+        Process:
+        --------
+        1. Matches input timestamps to available heterogeneous data using time_matcher()
+        2. Checks which matched timestamps fall within downtime periods
+        3. Retrieves dynamic embeddings/text for matched timestamps from self.embeddings or self.dynamic_data
+        4. Handles downtime: replaces data with downtime_prompt or zero vectors
+        5. Formats output according to output_format ('embedding', 'json', 'dict', 'csv')
+        6. Optionally applies noise augmentation if self.noise > 0
+        
+        Hetero Type Differences:
+        ------------------------
+        - all_for_one: Uses single self.dynamic_data DataFrame and self.embeddings dict
+                       (all entities share the same time series)
+        - each_subset: Uses self.dynamic_data[id] DataFrame and self.embeddings[id] dict
+                       (each entity has independent time series data)
+        
+        Note:
+        -----
+        This method is typically not called directly. Instead, use init_hetero_data(id) to
+        create a callable function that binds entity-specific parameters (downtime_ranges,
+        general_info, channel_info, downtime_prompt, id) to this method, leaving only
+        timestamp as the argument.
+        """
 
         if self.hetero_type == 'all_for_one':
             # Match times

@@ -161,4 +161,129 @@ class EmbeddingCacheManager:
             np.savez_compressed(emb_path, **embeddings)
         else:
             raise ValueError(f"Unknown format: {format}. Must be one of: 'pkl', 'pt', 'npz'")
+    
+    @staticmethod
+    def find_fidel_ts_cache(cache_base: Path, target_metadata: EmbeddingMetadata) -> Optional[Path]:
+        """
+        Find existing Fidel-TS cache directory matching target metadata.
+        
+        Static method that works directly with cache_base path.
+        
+        Args:
+            cache_base: Base path for Fidel-TS cache
+            target_metadata: Metadata to match
+        
+        Returns:
+            Path to matching cache directory, or None if not found
+        """
+        if not cache_base.exists():
+            return None
+        
+        # Look for embeddings_* directories
+        for cache_dir in cache_base.iterdir():
+            if cache_dir.is_dir() and cache_dir.name.startswith('embeddings_'):
+                metadata_path = cache_dir / 'metadata.json'
+                if metadata_path.exists():
+                    try:
+                        existing_metadata = EmbeddingMetadata.load(metadata_path)
+                        if existing_metadata.matches(target_metadata):
+                            return cache_dir
+                    except Exception as e:
+                        # Skip invalid metadata files
+                        print(f"[ warning ] Invalid metadata in {cache_dir}: {e}")
+                        continue
+        
+        return None
+    
+    @staticmethod
+    def create_fidel_ts_cache_dir(cache_base: Path, metadata: EmbeddingMetadata, force: bool = False) -> Path:
+        """
+        Create Fidel-TS cache directory for given metadata.
+        
+        Static method that works directly with cache_base path.
+        
+        Args:
+            cache_base: Base path for Fidel-TS cache
+            metadata: EmbeddingMetadata object
+            force: If True, overwrite existing cache
+        
+        Returns:
+            Path to cache directory
+        
+        Raises:
+            FileExistsError: If cache exists and force=False
+        """
+        hash_id = metadata.compute_hash()
+        cache_dir = cache_base / f"embeddings_{hash_id}"
+        
+        if cache_dir.exists() and not force:
+            raise FileExistsError(
+                f"Cache directory already exists: {cache_dir}. "
+                f"Use force=True to overwrite."
+            )
+        
+        cache_dir.mkdir(parents=True, exist_ok=force)
+        
+        # Save metadata
+        metadata_path = cache_dir / 'metadata.json'
+        metadata.save(metadata_path)
+        
+        return cache_dir
+    
+    @staticmethod
+    def load_fidel_ts_embeddings(cache_dir: Path) -> Dict[str, Any]:
+        """
+        Load Fidel-TS embeddings from cache directory.
+        
+        Loads both dynamic and static embeddings from the same cache directory.
+        
+        Args:
+            cache_dir: Path to cache directory
+        
+        Returns:
+            Dictionary with keys:
+                - 'dynamic': Dynamic embeddings dict
+                - 'static': Static embeddings dict (or None if not present)
+        
+        Raises:
+            FileNotFoundError: If dynamic_embeddings.pkl not found
+        """
+        dynamic_path = cache_dir / 'dynamic_embeddings.pkl'
+        static_path = cache_dir / 'static_embeddings.pkl'
+        
+        if not dynamic_path.exists():
+            raise FileNotFoundError(f"Dynamic embeddings not found in {cache_dir}")
+        
+        result = {
+            'dynamic': joblib.load(dynamic_path)
+        }
+        
+        if static_path.exists():
+            result['static'] = joblib.load(static_path)
+        else:
+            result['static'] = None
+        
+        return result
+    
+    @staticmethod
+    def save_fidel_ts_embeddings(dynamic_embeddings: Dict[str, Any], 
+                                  cache_dir: Path, static_embeddings: Optional[Dict[str, Any]] = None):
+        """
+        Save Fidel-TS embeddings to cache directory.
+        
+        Saves both dynamic and static embeddings to the same cache directory.
+        
+        Args:
+            dynamic_embeddings: Dictionary of dynamic embeddings (timestamp-keyed)
+            cache_dir: Path to cache directory (must already exist with metadata.json)
+            static_embeddings: Optional dictionary of static embeddings
+        """
+        # Save dynamic embeddings
+        dynamic_path = cache_dir / 'dynamic_embeddings.pkl'
+        joblib.dump(dynamic_embeddings, dynamic_path)
+        
+        # Save static embeddings if provided
+        if static_embeddings is not None:
+            static_path = cache_dir / 'static_embeddings.pkl'
+            joblib.dump(static_embeddings, static_path)
 
