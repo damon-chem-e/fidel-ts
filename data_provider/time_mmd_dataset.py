@@ -9,17 +9,13 @@ import os
 import re
 import numpy as np
 import pandas as pd
-import torch
 import joblib
 from pathlib import Path
 from sklearn.preprocessing import StandardScaler
-from transformers import AutoTokenizer, AutoModel
 from .data_loader import Universal_Dataset
 from .data_helper import ratio_spliter, data_buffer
-from utils.embedding_model_registry import EmbeddingModelRegistry
+from embedder import TextEmbedder
 from utils.missing_value_handler import handle_missing_values
-
-from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
 
 
 class TimeMMD_HeteroGetter:
@@ -40,7 +36,8 @@ class TimeMMD_HeteroGetter:
     def __init__(self, text_data, timestamps, general_info='', channel_info='', 
                  output_format='json', embed_model_name='bert-base-uncased', 
                  embed_dim=768, force_reembed=False, hf_cache_dir='./HF_cache/',
-                 root_path=None, data_path=None, device='cpu', num_channels=None, channel_names=None):
+                 root_path=None, data_path=None, device='cpu', num_channels=None, channel_names=None,
+                 aggregation_method='cls'):
         """
         Initialize TimeMMD_HeteroGetter.
         
@@ -51,8 +48,8 @@ class TimeMMD_HeteroGetter:
             channel_info: Channel-specific description (empty string if not provided)
             output_format: Format for output_dynamic ('json', 'dict', 'csv', 'embedding')
             embed_model_name: HuggingFace model name for text embedding (default: bert-base-uncased)
-            embed_dim: Embedding dimension (default: 768 for BERT)
-            force_reembed: If True, recompute embeddings even if .pkl exists
+            embed_dim: Embedding dimension (default: 768 for BERT) - kept for backward compatibility
+            force_reembed: If True, recompute embeddings even if cache exists
             hf_cache_dir: Local directory for caching HF models (default: ./HF_cache/)
             root_path: Dataset root path (for embedding file location)
             data_path: Data file path (for embedding file location)
@@ -61,6 +58,7 @@ class TimeMMD_HeteroGetter:
             channel_names: List of actual channel/column names from CSV (for per-channel embeddings).
                 If provided and multiple channels exist, each channel gets a unique embedding combining
                 channel_info with its name (e.g., "Weather variables: temperature" for channel "temperature")
+            aggregation_method: Aggregation method for embeddings ('cls', 'average', 'none'). Default: 'cls'
         """
         self.text_data = text_data
         self.timestamps = timestamps
@@ -74,17 +72,17 @@ class TimeMMD_HeteroGetter:
         self.root_path = root_path
         self.data_path = data_path
         self.device = device
-        self.bert_dim = None  # Will be set when model is loaded
+        self.aggregation_method = aggregation_method
         self.num_channels = num_channels  # Number of channels for expanding channel_info embedding
         self.channel_names = channel_names  # List of channel/column names for per-channel embeddings
         
         # Create a mapping for fast lookup
         self.text_dict = text_data.to_dict()
         
-        # Initialize embedding-related attributes (lazy loading)
-        self.embeddings = None
-        self.tokenizer = None
-        self.model = None
+        # Initialize TextEmbedder (lazy - only created when needed for embedding mode)
+        self.embedder = None
+        self.embeddings = None  # Cached embeddings dict
+        self.bert_dim = None  # Will be set when embedder is initialized
     
     def _match_timestamps(self, timestamps):
         """
@@ -138,7 +136,7 @@ class TimeMMD_HeteroGetter:
     
     def _get_embedding_path(self):
         """
-        Get the path to the embedding .pkl file.
+        Get the path to the old-style embedding .pkl file (for backward compatibility).
         
         Returns absolute path to ensure proper file access regardless of working directory.
         
@@ -154,179 +152,124 @@ class TimeMMD_HeteroGetter:
         # Convert to absolute path to avoid permission issues with relative paths
         return os.path.abspath(pkl_path)
     
-    def _load_embedding_model(self):
-        """
-        Load tokenizer and model using shared registry.
-        
-        Uses EmbeddingModelRegistry to ensure only one model instance exists
-        per (model_name, device, hf_cache_dir) combination, preventing
-        multiple copies from being loaded into GPU memory.
-        
-        Thread-safe: Safe to call from multiple DataLoader workers.
-        """
-        if self.tokenizer is not None and self.model is not None:
-            return  # Already loaded
-        
-        # Get shared tokenizer and model from registry
-        # Registry handles caching, device placement, and thread safety
-        self.tokenizer = EmbeddingModelRegistry.get_tokenizer(
-            self.embed_model_name,
-            self.hf_cache_dir
-        )
-        
-        self.model = EmbeddingModelRegistry.get_model(
-            self.embed_model_name,
-            self.device,
-            self.hf_cache_dir
-        )
-        
-        # Get BERT output dimension (typically 768 for bert-base-uncased)
-        # Check the model's config to get the hidden size
-        self.bert_dim = self.model.config.hidden_size
-    
-    def _embed_text_corpus(self):
-        """
-        Embed all text in text_data using the embedding model.
-        
-        Returns:
-            dict: Dictionary mapping timestamp strings to embedding arrays
-                Format: {"YYYYMMDDHHMMSS": np.ndarray(shape=(1, bert_dim), dtype=np.float32)}
-                where bert_dim is BERT's output dimension (typically 768)
-        """
-        # Load model only when we need to compute embeddings
-        self._load_embedding_model()
-        
-        embeddings_dict = {}
-        batch_size = 32  # Process in batches for efficiency
-        
-        # Get all timestamps and texts
-        all_timestamps = list(self.text_data.index)
-        all_texts = list(self.text_data.values)
-        total_batches = (len(all_texts) + batch_size - 1) // batch_size
-        
-        # Use Rich progress bar for embedding computation
-        with Progress(
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TextColumn("[progress.completed]{task.completed}/{task.total} batches"),
-            TimeElapsedColumn(),
-        ) as progress:
-            task = progress.add_task(
-                f"Computing embeddings for {len(all_texts)} texts",
-                total=total_batches
-            )
+    def _init_embedder(self):
+        """Initialize TextEmbedder if not already initialized."""
+        if self.embedder is None:
+            # Determine cache path (dataset subdirectory if applicable)
+            cache_path = ''
+            if self.root_path and self.data_path:
+                # Extract subdirectory from data_path if it exists
+                data_path_obj = Path(self.data_path)
+                if data_path_obj.parent != Path('.'):
+                    cache_path = str(data_path_obj.parent)
             
-            # Process in batches
-            for i in range(0, len(all_texts), batch_size):
-                batch_texts = all_texts[i:i+batch_size]
-                batch_timestamps = all_timestamps[i:i+batch_size]
-                
-                # Tokenize batch
-                encoded = self.tokenizer(
-                    batch_texts,
-                    padding=True,
-                    truncation=True,
-                    max_length=512,
-                    return_tensors='pt'
-                )
-                
-                input_ids = encoded['input_ids'].to(self.device)
-                attention_mask = encoded['attention_mask'].to(self.device)
-                
-                # Get embeddings
-                with torch.no_grad():
-                    outputs = self.model(input_ids, attention_mask=attention_mask)
-                    # Use [CLS] token embedding (first token)
-                    # Output in BERT's native dimension (768) - models will project if needed
-                    batch_embeddings = outputs.last_hidden_state[:, 0, :].cpu().numpy()
-                
-                # Store embeddings with timestamp keys
-                for ts, emb in zip(batch_timestamps, batch_embeddings):
-                    # Reshape to (1, bert_dim) for consistency with expected format
-                    embeddings_dict[str(ts)] = emb.reshape(1, -1).astype(np.float32)
-                
-                # Update progress
-                progress.update(task, advance=1)
+            self.embedder = TextEmbedder(
+                model_name=self.embed_model_name,
+                aggregation_method=self.aggregation_method,
+                device=self.device,
+                hf_cache_dir=self.hf_cache_dir,
+                max_length=512,
+                batch_size=32,
+                cache_root=self.root_path,
+                cache_path=cache_path,
+                force_reembed=self.force_reembed
+            )
+            # Get embedding dimension from embedder
+            self.bert_dim = self.embedder.embedding_dim
+    
+    
+    def _load_or_create_embeddings(self):
+        """
+        Load or create embeddings using TextEmbedder.
         
-        return embeddings_dict
+        Uses new hash-based cache system if available, falls back to old .pkl format for backward compatibility.
+        """
+        # Initialize embedder
+        self._init_embedder()
+        
+        # Try to load from new cache system first
+        if self.embedder.cache_manager and not self.force_reembed:
+            try:
+                # Convert text_data to dict format for embedder
+                text_dict = {str(ts): text for ts, text in self.text_data.items()}
+                embeddings_dict = self.embedder.embed_text_dict(text_dict)
+                
+                # Convert to expected format: {timestamp_str: np.ndarray(shape=(1, bert_dim))}
+                # TextEmbedder returns shape (bert_dim) for CLS/average, need to reshape
+                formatted_embeddings = {}
+                for key, emb in embeddings_dict.items():
+                    if self.aggregation_method == 'none':
+                        # For 'none', emb is [seq_len, embed_dim], keep as is or reshape as needed
+                        formatted_embeddings[key] = emb.astype(np.float32)
+                    else:
+                        # Reshape to (1, bert_dim) for backward compatibility
+                        formatted_embeddings[key] = emb.reshape(1, -1).astype(np.float32)
+                
+                self.embeddings = formatted_embeddings
+                return
+            except Exception as e:
+                print(f"[ warning ] Failed to load from cache system: {e}")
+                # Fall through to old system or recompute
+        
+        # Fallback: Try old .pkl file format for backward compatibility
+        pkl_path = self._get_embedding_path()
+        if os.path.exists(pkl_path) and not self.force_reembed:
+            try:
+                self.embeddings = joblib.load(pkl_path)
+                # Set bert_dim from a sample embedding if not already set
+                if self.bert_dim is None and self.embeddings:
+                    sample_key = next(iter(self.embeddings.keys()))
+                    sample_emb = self.embeddings[sample_key]
+                    if hasattr(sample_emb, 'shape'):
+                        # Handle both (1, bert_dim) and (bert_dim,) shapes
+                        if len(sample_emb.shape) == 2:
+                            self.bert_dim = sample_emb.shape[1]
+                        else:
+                            self.bert_dim = sample_emb.shape[0]
+                return
+            except Exception as e:
+                print(f"[ warning ] Failed to load from old .pkl file: {e}. Recomputing embeddings.")
+        
+        # Compute embeddings using TextEmbedder
+        print('[ info ] Computing embeddings on-the-fly (this may take a while)...')
+        
+        # Convert text_data to dict format
+        text_dict = {str(ts): text for ts, text in self.text_data.items()}
+        embeddings_dict = self.embedder.embed_text_dict(text_dict)
+        
+        # Convert to expected format: {timestamp_str: np.ndarray(shape=(1, bert_dim))}
+        formatted_embeddings = {}
+        for key, emb in embeddings_dict.items():
+            if self.aggregation_method == 'none':
+                formatted_embeddings[key] = emb.astype(np.float32)
+            else:
+                # Reshape to (1, bert_dim) for backward compatibility
+                formatted_embeddings[key] = emb.reshape(1, -1).astype(np.float32)
+        
+        self.embeddings = formatted_embeddings
     
     def _embed_single_text(self, text):
         """
-        Embed a single text string using the embedding model.
+        Embed a single text string using the TextEmbedder.
         
         Args:
             text: Text string to embed
             
         Returns:
-            np.ndarray: Embedding vector of shape (1, bert_dim) where bert_dim is BERT's output dimension (typically 768)
+            np.ndarray: Embedding vector of shape (1, bert_dim) for CLS/average, 
+                       or (seq_len, bert_dim) for 'none' aggregation
         """
-        # Only load model if we need to compute embeddings (not if embeddings already exist)
-        if self.tokenizer is None or self.model is None:
-            self._load_embedding_model()
+        # Initialize embedder if needed
+        self._init_embedder()
         
-        # Tokenize
-        encoded = self.tokenizer(
-            text if text else '',  # Handle empty strings
-            padding=True,
-            truncation=True,
-            max_length=512,
-            return_tensors='pt'
-        )
+        # Embed single text
+        embedding = self.embedder.embed_single(text if text else '')
         
-        input_ids = encoded['input_ids'].to(self.device)
-        attention_mask = encoded['attention_mask'].to(self.device)
-        
-        # Get embedding
-        with torch.no_grad():
-            outputs = self.model(input_ids, attention_mask=attention_mask)
-            # Use [CLS] token embedding (first token)
-            # Output in BERT's native dimension (768) - models will project if needed
-            embedding = outputs.last_hidden_state[:, 0, :].cpu().numpy()
-        
-        # Reshape to (1, bert_dim) for consistency
-        return embedding.reshape(1, -1).astype(np.float32)
-    
-    def _load_or_create_embeddings(self):
-        """
-        Load embeddings from .pkl file or create them on-the-fly.
-        
-        If .pkl exists and force_reembed=False, loads from file (no need to load BERT model).
-        Otherwise, computes embeddings and saves to .pkl (loads BERT model only when needed).
-        """
-        pkl_path = self._get_embedding_path()
-
-        if os.path.exists(pkl_path) and not self.force_reembed:
-            # Load precomputed embeddings (no need to load BERT model)
-            self.embeddings = joblib.load(pkl_path)
-            # Set bert_dim from a sample embedding if not already set
-            if self.bert_dim is None and self.embeddings:
-                sample_key = next(iter(self.embeddings.keys()))
-                sample_emb = self.embeddings[sample_key]
-                if hasattr(sample_emb, 'shape'):
-                    self.bert_dim = sample_emb.shape[-1]
+        # Reshape to (1, bert_dim) for backward compatibility (unless aggregation='none')
+        if self.aggregation_method == 'none':
+            return embedding.astype(np.float32)
         else:
-            # Compute embeddings on-the-fly (load BERT model only when needed)
-            print('[ info ] Computing embeddings on-the-fly (this may take a while)...')
-            self.embeddings = self._embed_text_corpus()
-            
-            # Save to .pkl
-            pkl_dir = os.path.dirname(pkl_path)
-            try:
-                # Ensure directory exists
-                os.makedirs(pkl_dir, exist_ok=True)
-                    
-                joblib.dump(self.embeddings, pkl_path)
-                print(f'[ info ] Saved embeddings to {pkl_path}')
-            except PermissionError as e:
-                print(f'[ error ] Permission denied saving embeddings to {pkl_path}')
-                print(f'[ error ] Error details: {e}')
-                print(f'[ error ] Current working directory: {os.getcwd()}')
-                print(f'[ error ] Directory permissions: {oct(os.stat(pkl_dir).st_mode) if os.path.exists(pkl_dir) else "N/A"}')
-                print('[ info ] Embeddings will be recomputed on next run')
-            except Exception as e:
-                print(f'[ error ] Could not save embeddings to {pkl_path}: {type(e).__name__}: {e}')
-                print('[ info ] Embeddings will be recomputed on next run')
+            return embedding.reshape(1, -1).astype(np.float32)
     
     def __call__(self, timestamps):
         """
@@ -369,11 +312,29 @@ class TimeMMD_HeteroGetter:
             for ts in matched_times:
                 # ts is string 'YYYYMMDDHHMMSS'
                 if ts in self.embeddings:
-                    emb = self.embeddings[ts]  # shape: (1, bert_dim) where bert_dim is BERT's output (typically 768)
+                    emb = self.embeddings[ts]
+                    # Ensure shape is correct based on aggregation method
+                    if self.aggregation_method == 'none':
+                        # Shape should be (seq_len, bert_dim)
+                        if len(emb.shape) == 1:
+                            # If somehow 1D, reshape (shouldn't happen)
+                            emb = emb.reshape(-1, self.bert_dim)
+                    else:
+                        # Shape should be (1, bert_dim) for CLS/average
+                        if len(emb.shape) == 1:
+                            emb = emb.reshape(1, -1)
+                        elif len(emb.shape) == 2 and emb.shape[0] != 1:
+                            # If (bert_dim, 1) or other shape, reshape to (1, bert_dim)
+                            emb = emb.reshape(1, -1)
                 else:
                     # No embedding found, use zero vector
-                    # Use BERT's native dimension (768) - models will project if needed
-                    emb = np.zeros((1, self.bert_dim), dtype=np.float32)
+                    if self.aggregation_method == 'none':
+                        # Zero vector with sequence dimension
+                        sequence_length = self.embedder.sequence_length if self.embedder else 512
+                        emb = np.zeros((sequence_length, self.bert_dim), dtype=np.float32)
+                    else:
+                        # Use BERT's native dimension (768) - models will project if needed
+                        emb = np.zeros((1, self.bert_dim), dtype=np.float32)
                 embedding_list.append(emb)
             
             # Stack to shape: (num_timesteps, 1, bert_dim)
@@ -381,9 +342,7 @@ class TimeMMD_HeteroGetter:
             # where news_num=1 for Time-MMD (single text per timestamp)
             # Models will project bert_dim -> text_dim if needed
             output_dynamic = np.stack(embedding_list, axis=0)  # (num_timesteps, 1, bert_dim)
-            # Squeeze middle dimension to match expected shape: (num_timesteps, embed_dim)
-            # But we need to keep it as (num_timesteps, 1, embed_dim) for compatibility
-            # Actually, let's keep it as (num_timesteps, 1, embed_dim) to match TGTSF expectation
+
         else:
             raise ValueError(f"Unsupported output_format: {self.output_format}")
         
@@ -485,7 +444,8 @@ class TimeMMD_Dataset(Universal_Dataset):
                  output_format='json', general_info='', channel_info='',
                  embed_model_name='bert-base-uncased', embed_dim=768,
                  force_reembed=False, hf_cache_dir='./HF_cache/', device='cpu',
-                 missing_value_strategy='none', required_indicators=None):
+                 missing_value_strategy='none', required_indicators=None,
+                 aggregation_method='cls'):
         """
         Initialize TimeMMD_Dataset.
         
@@ -510,6 +470,7 @@ class TimeMMD_Dataset(Universal_Dataset):
         self.force_reembed = force_reembed
         self.hf_cache_dir = hf_cache_dir
         self.device = device
+        self.aggregation_method = aggregation_method
         self.missing_value_strategy = missing_value_strategy
         self.required_indicators = required_indicators if required_indicators is not None else []
         
@@ -634,6 +595,7 @@ class TimeMMD_Dataset(Universal_Dataset):
             force_reembed=self.force_reembed,
             hf_cache_dir=self.hf_cache_dir,
             root_path=self.root_path,
+            aggregation_method=self.aggregation_method,
             data_path=self.data_path,
             device=self.device,
             num_channels=num_channels,

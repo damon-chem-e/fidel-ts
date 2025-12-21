@@ -403,6 +403,8 @@ class Data_Provider(object):
         # Models will handle dimension conversion with learned projections if needed
         embed_dim = self.dataset_config.get('timemmd_embed_dim', 768)
         force_reembed = self.dataset_config.get('timemmd_force_reembed', False)
+        # Get aggregation method from embeddings config if available, default to 'cls'
+        aggregation_method = self.dataset_config.get('aggregation_method', 'cls')
         # hf_cache_dir is data-agnostic; prefer global args.hf_cache_dir, fall back to dataset config, then default
         hf_cache_dir = getattr(self.args, 'hf_cache_dir', None) or self.dataset_config.get('hf_cache_dir', './HF_cache/')
         
@@ -447,7 +449,8 @@ class Data_Provider(object):
             hf_cache_dir=hf_cache_dir,
             device=device,
             missing_value_strategy=missing_value_strategy,
-            required_indicators=required_indicators
+            required_indicators=required_indicators,
+            aggregation_method=aggregation_method
         )
     
     def get_train(self, return_type='loader'):
