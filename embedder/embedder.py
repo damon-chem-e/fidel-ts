@@ -9,8 +9,7 @@ Unified interface for embedding text with support for:
 
 import torch
 import numpy as np
-from typing import List, Dict, Optional, Union, Tuple, Any
-from pathlib import Path
+from typing import List, Dict, Optional, Union, Tuple
 
 from .registry import EmbeddingModelRegistry
 from .aggregation import get_aggregation_function
@@ -98,6 +97,110 @@ class TextEmbedder:
             **extra_config
         )
     
+    def _tokenize_batch(self, texts: List[str]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Tokenize a batch of texts.
+        
+        Args:
+            texts: List of text strings to tokenize
+        
+        Returns:
+            tuple: (input_ids, attention_mask) tensors on self.device
+        """
+        encoded = self.tokenizer(
+            texts,
+            padding=True,
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors='pt'
+        )
+        
+        input_ids = encoded['input_ids'].to(self.device)
+        attention_mask = encoded['attention_mask'].to(self.device)
+        
+        return input_ids, attention_mask
+    
+    def _compute_embeddings_batch(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> np.ndarray:
+        """
+        Compute embeddings for a batch of tokenized texts.
+        
+        Args:
+            input_ids: Token IDs tensor [B, seq_len]
+            attention_mask: Attention mask tensor [B, seq_len]
+        
+        Returns:
+            embeddings: numpy array of aggregated embeddings
+                - If aggregation='cls' or 'average': [B, embedding_dim]
+                - If aggregation='none': [B, seq_len, embedding_dim]
+        """
+        # Get embeddings from model
+        with torch.no_grad():
+            outputs = self.model(input_ids, attention_mask=attention_mask)
+            last_hidden_state = outputs.last_hidden_state  # [B, seq_len, hidden_dim]
+        
+        # Aggregate based on method
+        if self.aggregation_method == 'none':
+            embeddings, _ = self.aggregate_fn(last_hidden_state, attention_mask)
+        else:
+            embeddings = self.aggregate_fn(last_hidden_state, attention_mask)
+        
+        return embeddings.cpu().numpy()
+    
+    def _load_from_cache(self, text_keys: List[str], metadata: EmbeddingMetadata) -> Optional[np.ndarray]:
+        """
+        Attempt to load embeddings from cache.
+        
+        Args:
+            text_keys: List of keys to look up in cache
+            metadata: Metadata to match cache
+        
+        Returns:
+            embeddings array if all keys found in cache, None otherwise
+        """
+        if not self.cache_manager or self.force_reembed:
+            return None
+        
+        cache_dir = self.cache_manager.find_existing_cache(metadata)
+        if cache_dir is None:
+            return None
+        
+        try:
+            # Load from cache
+            cached_embeddings = self.cache_manager.load_embeddings(cache_dir)
+            
+            # Try to match texts to cached embeddings by keys
+            if isinstance(cached_embeddings, dict):
+                # Check if all keys are present
+                if all(key in cached_embeddings for key in text_keys):
+                    # Convert to array in correct order
+                    emb_list = [cached_embeddings[key] for key in text_keys]
+                    result = np.stack(emb_list, axis=0)
+                    return result
+        except Exception as e:
+            print(f"[ warning ] Failed to load from cache: {e}. Recomputing embeddings.")
+        
+        return None
+    
+    def _save_to_cache(self, embeddings: np.ndarray, text_keys: List[str], metadata: EmbeddingMetadata):
+        """
+        Save embeddings to cache.
+        
+        Args:
+            embeddings: Embeddings array [N, ...]
+            text_keys: List of keys corresponding to embeddings
+            metadata: Metadata to save with cache
+        """
+        if not self.cache_manager:
+            return
+        
+        cache_dir = self.cache_manager.find_existing_cache(metadata)
+        if cache_dir is None:
+            cache_dir = self.cache_manager.create_cache_dir(metadata)
+        
+        # Save embeddings as dict with keys
+        embeddings_dict = {key: embeddings[i] for i, key in enumerate(text_keys)}
+        self.cache_manager.save_embeddings(embeddings_dict, cache_dir, format='pkl')
+    
     def embed_texts(self, 
                    texts: List[str],
                    text_keys: Optional[List[str]] = None,
@@ -106,7 +209,7 @@ class TextEmbedder:
         Embed list of texts.
         
         Args:
-            texts: List of text strings to embed
+            texts: List of text strings to embed (empty strings will be embedded as zero vectors)
             text_keys: Optional list of keys for caching (e.g., timestamps). 
                       If None, uses indices as keys
             return_metadata: If True, also return metadata
@@ -118,35 +221,23 @@ class TextEmbedder:
             metadata: EmbeddingMetadata (if return_metadata=True)
         
         Note:
-            For aggregation='none', attention masks are not currently returned.
-            This may need to be extended based on use cases.
+            Empty strings are embedded normally (will produce non-zero embeddings).
+            Missing embeddings (keys not in cache) will trigger recomputation.
         """
         if text_keys is None:
             text_keys = [str(i) for i in range(len(texts))]
         
-        # Check cache
-        if self.cache_manager and not self.force_reembed:
-            metadata = self.create_metadata()
-            cache_dir = self.cache_manager.find_existing_cache(metadata)
-            if cache_dir is not None:
-                try:
-                    # Load from cache
-                    cached_embeddings = self.cache_manager.load_embeddings(cache_dir)
-                    
-                    # Try to match texts to cached embeddings by keys
-                    # This assumes cached_embeddings is a dict mapping keys to embeddings
-                    if isinstance(cached_embeddings, dict):
-                        # Check if all keys are present
-                        if all(key in cached_embeddings for key in text_keys):
-                            # Convert to array in correct order
-                            emb_list = [cached_embeddings[key] for key in text_keys]
-                            result = np.stack(emb_list, axis=0)
-                            
-                            if return_metadata:
-                                return result, metadata
-                            return result
-                except Exception as e:
-                    print(f"[ warning ] Failed to load from cache: {e}. Recomputing embeddings.")
+        if len(texts) != len(text_keys):
+            raise ValueError(f"Number of texts ({len(texts)}) must match number of keys ({len(text_keys)})")
+        
+        metadata = self.create_metadata()
+        
+        # Try to load from cache
+        cached_result = self._load_from_cache(text_keys, metadata)
+        if cached_result is not None:
+            if return_metadata:
+                return cached_result, metadata
+            return cached_result
         
         # Compute embeddings
         all_embeddings = []
@@ -155,47 +246,20 @@ class TextEmbedder:
         for i in range(0, len(texts), self.batch_size):
             batch_texts = texts[i:i+self.batch_size]
             
-            # Tokenize
-            encoded = self.tokenizer(
-                batch_texts,
-                padding=True,
-                truncation=True,
-                max_length=self.max_length,
-                return_tensors='pt'
-            )
+            # Tokenize batch
+            input_ids, attention_mask = self._tokenize_batch(batch_texts)
             
-            input_ids = encoded['input_ids'].to(self.device)
-            attention_mask = encoded['attention_mask'].to(self.device)
-            
-            # Get embeddings
-            with torch.no_grad():
-                outputs = self.model(input_ids, attention_mask=attention_mask)
-                last_hidden_state = outputs.last_hidden_state  # [B, seq_len, hidden_dim]
-            
-            # Aggregate
-            if self.aggregation_method == 'none':
-                embeddings, _ = self.aggregate_fn(last_hidden_state, attention_mask)
-                all_embeddings.append(embeddings.cpu().numpy())
-            else:
-                embeddings = self.aggregate_fn(last_hidden_state, attention_mask)
-                all_embeddings.append(embeddings.cpu().numpy())
+            # Compute embeddings
+            batch_embeddings = self._compute_embeddings_batch(input_ids, attention_mask)
+            all_embeddings.append(batch_embeddings)
         
-        # Concatenate
+        # Concatenate all batches
         result = np.concatenate(all_embeddings, axis=0)
         
-        # Save to cache if enabled
-        if self.cache_manager:
-            metadata = self.create_metadata()
-            cache_dir = self.cache_manager.find_existing_cache(metadata)
-            if cache_dir is None:
-                cache_dir = self.cache_manager.create_cache_dir(metadata)
-            
-            # Save embeddings as dict with keys
-            embeddings_dict = {key: result[i] for i, key in enumerate(text_keys)}
-            self.cache_manager.save_embeddings(embeddings_dict, cache_dir, format='pkl')
+        # Save to cache
+        self._save_to_cache(result, text_keys, metadata)
         
         if return_metadata:
-            metadata = self.create_metadata()
             return result, metadata
         return result
     
@@ -216,9 +280,42 @@ class TextEmbedder:
         else:
             return result[0]  # [embedding_dim]
     
+    def _format_embeddings_for_time_mmd(self, embeddings_array: np.ndarray, keys: List[str]) -> Dict[str, np.ndarray]:
+        """
+        Format embeddings array to TimeMMD expected format.
+        
+        TimeMMD expects: {timestamp_str: np.ndarray(shape=(1, bert_dim))} for CLS/average
+        or {timestamp_str: np.ndarray(shape=(seq_len, bert_dim))} for 'none' aggregation.
+        
+        Args:
+            embeddings_array: Embeddings array from embed_texts
+                - [N, embedding_dim] for CLS/average
+                - [N, seq_len, embedding_dim] for 'none'
+            keys: List of keys corresponding to embeddings
+        
+        Returns:
+            Dictionary mapping keys to formatted embedding arrays
+        """
+        embeddings_dict = {}
+        
+        if embeddings_array.ndim == 2:
+            # [N, embedding_dim] -> dict of [embedding_dim] arrays
+            # Reshape to (1, embedding_dim) for TimeMMD compatibility
+            for i, key in enumerate(keys):
+                embeddings_dict[key] = embeddings_array[i].reshape(1, -1).astype(np.float32)
+        elif embeddings_array.ndim == 3:
+            # [N, seq_len, embedding_dim] -> dict of [seq_len, embedding_dim] arrays
+            for i, key in enumerate(keys):
+                embeddings_dict[key] = embeddings_array[i].astype(np.float32)
+        else:
+            raise ValueError(f"Unexpected embeddings_array shape: {embeddings_array.shape}")
+        
+        return embeddings_dict
+    
     def embed_text_dict(self, 
                        text_dict: Dict[str, str],
-                       return_metadata: bool = False) -> Union[Dict[str, np.ndarray], Tuple[Dict[str, np.ndarray], EmbeddingMetadata]]:
+                       return_metadata: bool = False,
+                       format_for_time_mmd: bool = True) -> Union[Dict[str, np.ndarray], Tuple[Dict[str, np.ndarray], EmbeddingMetadata]]:
         """
         Embed dictionary of texts (key -> text mapping).
         
@@ -227,9 +324,14 @@ class TextEmbedder:
         Args:
             text_dict: Dictionary mapping keys (e.g., timestamps) to text strings
             return_metadata: If True, also return metadata
+            format_for_time_mmd: If True, format embeddings as (1, embedding_dim) for CLS/average
+                                to match TimeMMD expected format. If False, returns raw shapes.
         
         Returns:
             embeddings_dict: Dictionary mapping keys to embedding arrays
+                - If format_for_time_mmd=True and aggregation='cls'/'average': {key: [1, embedding_dim]}
+                - If format_for_time_mmd=True and aggregation='none': {key: [seq_len, embedding_dim]}
+                - If format_for_time_mmd=False: {key: [embedding_dim]} or {key: [seq_len, embedding_dim]}
             metadata: EmbeddingMetadata (if return_metadata=True)
         """
         keys = list(text_dict.keys())
@@ -238,26 +340,23 @@ class TextEmbedder:
         # Embed all texts
         if return_metadata:
             embeddings_array, metadata = self.embed_texts(texts, text_keys=keys, return_metadata=True)
-            # Convert array to dict
-            if embeddings_array.ndim == 2:
-                # [N, embedding_dim] -> dict of [embedding_dim] arrays
-                embeddings_dict = {key: embeddings_array[i] for i, key in enumerate(keys)}
-            elif embeddings_array.ndim == 3:
-                # [N, seq_len, embedding_dim] -> dict of [seq_len, embedding_dim] arrays
-                embeddings_dict = {key: embeddings_array[i] for i, key in enumerate(keys)}
-            else:
-                raise ValueError(f"Unexpected embeddings_array shape: {embeddings_array.shape}")
-            return embeddings_dict, metadata
         else:
             embeddings_array = self.embed_texts(texts, text_keys=keys, return_metadata=False)
-            # Convert array to dict
+            metadata = None
+        
+        # Format embeddings
+        if format_for_time_mmd:
+            embeddings_dict = self._format_embeddings_for_time_mmd(embeddings_array, keys)
+        else:
+            # Return raw shapes (no reshaping)
             if embeddings_array.ndim == 2:
-                # [N, embedding_dim] -> dict of [embedding_dim] arrays
                 embeddings_dict = {key: embeddings_array[i] for i, key in enumerate(keys)}
             elif embeddings_array.ndim == 3:
-                # [N, seq_len, embedding_dim] -> dict of [seq_len, embedding_dim] arrays
                 embeddings_dict = {key: embeddings_array[i] for i, key in enumerate(keys)}
             else:
                 raise ValueError(f"Unexpected embeddings_array shape: {embeddings_array.shape}")
-            return embeddings_dict
+        
+        if return_metadata:
+            return embeddings_dict, metadata
+        return embeddings_dict
 

@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import joblib
 from pathlib import Path
+from typing import List, Tuple
 from sklearn.preprocessing import StandardScaler
 from .data_loader import Universal_Dataset
 from .data_helper import ratio_spliter, data_buffer
@@ -31,13 +32,28 @@ class TimeMMD_HeteroGetter:
         general_info (str): General dataset information
         channel_info (str): Channel-specific information
         output_format (str): Output format for text ('json', 'dict', 'csv', 'embedding')
+    
+    Embedding Behavior:
+    -------------------
+    When output_format='embedding', embeddings are loaded/computed via TextEmbedder.
+    The embedder handles empty strings by embedding them normally (produces non-zero embeddings).
+    
+    Missing Embeddings:
+    -------------------
+    If a timestamp does not have an associated embedding in the cache (should not happen
+    since embedder processes all texts including empty strings), a zero vector will be used:
+    - For CLS/average aggregation: shape (1, bert_dim) zero vector
+    - For 'none' aggregation: shape (seq_len, bert_dim) zero vector
+    
+    A warning will be printed if any timestamps are missing embeddings, as this indicates
+    a potential issue (e.g., cache corruption or incomplete embedding computation).
     """
     
     def __init__(self, text_data, timestamps, general_info='', channel_info='', 
                  output_format='json', embed_model_name='bert-base-uncased', 
                  embed_dim=768, force_reembed=False, hf_cache_dir='./HF_cache/',
                  root_path=None, data_path=None, device='cpu', num_channels=None, channel_names=None,
-                 aggregation_method='cls'):
+                 aggregation_method='cls', allow_old_pkl_fallback=False):
         """
         Initialize TimeMMD_HeteroGetter.
         
@@ -59,6 +75,7 @@ class TimeMMD_HeteroGetter:
                 If provided and multiple channels exist, each channel gets a unique embedding combining
                 channel_info with its name (e.g., "Weather variables: temperature" for channel "temperature")
             aggregation_method: Aggregation method for embeddings ('cls', 'average', 'none'). Default: 'cls'
+            allow_old_pkl_fallback: If True, allow falling back to old .pkl format if new cache not found (default: False)
         """
         self.text_data = text_data
         self.timestamps = timestamps
@@ -75,6 +92,7 @@ class TimeMMD_HeteroGetter:
         self.aggregation_method = aggregation_method
         self.num_channels = num_channels  # Number of channels for expanding channel_info embedding
         self.channel_names = channel_names  # List of channel/column names for per-channel embeddings
+        self.allow_old_pkl_fallback = allow_old_pkl_fallback
         
         # Create a mapping for fast lookup
         self.text_dict = text_data.to_dict()
@@ -182,78 +200,261 @@ class TimeMMD_HeteroGetter:
         """
         Load or create embeddings using TextEmbedder.
         
-        Uses new hash-based cache system if available, falls back to old .pkl format for backward compatibility.
+        Uses new hash-based cache system if available. Optionally falls back to old .pkl format
+        if allow_old_pkl_fallback=True.
+        
+        Embedding Paths:
+        ---------------
+        1. **New Hash-Based Cache System** (primary):
+           Location: {root_path}/{subdirectory}/embeddings_{hash}/
+           Structure:
+             - embeddings_{hash}/
+               ├── metadata.json  (contains model, tokenizer, aggregation method, etc.)
+               └── embeddings.pkl (dictionary: {timestamp_str: embedding_array})
+           
+           Hash computation: Based on metadata (model_name, tokenizer_name, aggregation_method, 
+                             embedding_dim, max_length, sequence_length if applicable)
+           Example: data/time_mmd/climate/embeddings_a1b2c3d4e5f6g7h8/
+           
+           This system is always checked first. If matching cache is found, embeddings are loaded.
+           If not found or force_reembed=True, embeddings are computed and saved to this system.
+        
+        2. **Old .pkl Format** (backward compatibility fallback - optional):
+           Location: {root_path}/{base_filename}.pkl
+           Format: Simple pickle file with dictionary {timestamp_str: embedding_array}
+           Example: data/time_mmd/climate_data.pkl
+           
+           This format is ONLY checked if:
+           - allow_old_pkl_fallback=True (explicitly requested)
+           - New cache system doesn't have matching embeddings
+           - force_reembed=False
+           
+           If found, embeddings are loaded and used. No metadata is stored with this format.
+           The old format is loaded directly via joblib.load() without metadata validation.
+        
+        3. **Computation** (if cache not found):
+           Uses TextEmbedder to compute embeddings on-the-fly, then saves to new cache system.
+           Old .pkl files are NOT automatically created or updated.
+        
+        Backward Compatibility:
+        ----------------------
+        By default (allow_old_pkl_fallback=False), the system does NOT fall back to old .pkl files.
+        This ensures that only the new hash-based cache system with metadata is used.
+        
+        If allow_old_pkl_fallback=True, the _get_embedding_path() method is used to locate old-style
+        .pkl files. This is useful for:
+        - Loading legacy datasets with pre-computed .pkl embeddings
+        - Gradual migration from old to new cache system
+        - Temporary compatibility during transition periods
         """
         # Initialize embedder
         self._init_embedder()
         
+        # Convert text_data to dict format for embedder
+        text_dict = {str(ts): text for ts, text in self.text_data.items()}
+        
         # Try to load from new cache system first
         if self.embedder.cache_manager and not self.force_reembed:
             try:
-                # Convert text_data to dict format for embedder
-                text_dict = {str(ts): text for ts, text in self.text_data.items()}
-                embeddings_dict = self.embedder.embed_text_dict(text_dict)
+                # Use embed_text_dict which handles caching internally
+                # format_for_time_mmd=True ensures shape (1, bert_dim) for CLS/average
+                embeddings_dict = self.embedder.embed_text_dict(text_dict, format_for_time_mmd=True)
+                self.embeddings = embeddings_dict
                 
-                # Convert to expected format: {timestamp_str: np.ndarray(shape=(1, bert_dim))}
-                # TextEmbedder returns shape (bert_dim) for CLS/average, need to reshape
-                formatted_embeddings = {}
-                for key, emb in embeddings_dict.items():
-                    if self.aggregation_method == 'none':
-                        # For 'none', emb is [seq_len, embed_dim], keep as is or reshape as needed
-                        formatted_embeddings[key] = emb.astype(np.float32)
-                    else:
-                        # Reshape to (1, bert_dim) for backward compatibility
-                        formatted_embeddings[key] = emb.reshape(1, -1).astype(np.float32)
+                # Count missing embeddings (shouldn't happen if embedder handles empty strings)
+                missing_count = sum(1 for ts in text_dict.keys() if ts not in embeddings_dict)
+                if missing_count > 0:
+                    print(f"[ warning ] {missing_count} timestamps missing embeddings (should not happen - embedder handles empty strings)")
                 
-                self.embeddings = formatted_embeddings
                 return
             except Exception as e:
                 print(f"[ warning ] Failed to load from cache system: {e}")
                 # Fall through to old system or recompute
         
-        # Fallback: Try old .pkl file format for backward compatibility
-        pkl_path = self._get_embedding_path()
-        if os.path.exists(pkl_path) and not self.force_reembed:
-            try:
-                self.embeddings = joblib.load(pkl_path)
-                # Set bert_dim from a sample embedding if not already set
-                if self.bert_dim is None and self.embeddings:
-                    sample_key = next(iter(self.embeddings.keys()))
-                    sample_emb = self.embeddings[sample_key]
-                    if hasattr(sample_emb, 'shape'):
-                        # Handle both (1, bert_dim) and (bert_dim,) shapes
-                        if len(sample_emb.shape) == 2:
-                            self.bert_dim = sample_emb.shape[1]
-                        else:
-                            self.bert_dim = sample_emb.shape[0]
-                return
-            except Exception as e:
-                print(f"[ warning ] Failed to load from old .pkl file: {e}. Recomputing embeddings.")
+        # Fallback: Try old .pkl file format only if explicitly allowed
+        if self.allow_old_pkl_fallback:
+            pkl_path = self._get_embedding_path()
+            if os.path.exists(pkl_path) and not self.force_reembed:
+                try:
+                    self.embeddings = joblib.load(pkl_path)
+                    # Set bert_dim from a sample embedding if not already set
+                    if self.bert_dim is None and self.embeddings:
+                        sample_key = next(iter(self.embeddings.keys()))
+                        sample_emb = self.embeddings[sample_key]
+                        if hasattr(sample_emb, 'shape'):
+                            # Handle both (1, bert_dim) and (bert_dim,) shapes
+                            if len(sample_emb.shape) == 2:
+                                self.bert_dim = sample_emb.shape[1]
+                            else:
+                                self.bert_dim = sample_emb.shape[0]
+                    
+                    # Count missing embeddings
+                    missing_count = sum(1 for ts in text_dict.keys() if str(ts) not in self.embeddings)
+                    if missing_count > 0:
+                        print(f"[ warning ] {missing_count} timestamps missing from old .pkl cache (will use zero vectors)")
+                    
+                    return
+                except Exception as e:
+                    print(f"[ warning ] Failed to load from old .pkl file: {e}. Recomputing embeddings.")
         
         # Compute embeddings using TextEmbedder
         print('[ info ] Computing embeddings on-the-fly (this may take a while)...')
         
-        # Convert text_data to dict format
-        text_dict = {str(ts): text for ts, text in self.text_data.items()}
-        embeddings_dict = self.embedder.embed_text_dict(text_dict)
+        # Use embed_text_dict which handles formatting for TimeMMD
+        embeddings_dict = self.embedder.embed_text_dict(text_dict, format_for_time_mmd=True)
+        self.embeddings = embeddings_dict
         
-        # Convert to expected format: {timestamp_str: np.ndarray(shape=(1, bert_dim))}
-        formatted_embeddings = {}
-        for key, emb in embeddings_dict.items():
-            if self.aggregation_method == 'none':
-                formatted_embeddings[key] = emb.astype(np.float32)
+        # Count missing embeddings (shouldn't happen)
+        missing_count = sum(1 for ts in text_dict.keys() if ts not in embeddings_dict)
+        if missing_count > 0:
+            print(f"[ warning ] {missing_count} timestamps missing embeddings after computation (should not happen)")
+    
+    def _fetch_and_validate_embeddings(self, matched_times: List[str]) -> Tuple[List[np.ndarray], int]:
+        """
+        Fetch embeddings for matched timestamps and validate shapes.
+        
+        Args:
+            matched_times: List of timestamp strings ('YYYYMMDDHHMMSS')
+        
+        Returns:
+            tuple: (embedding_list, missing_count)
+                - embedding_list: List of embedding arrays with validated shapes
+                - missing_count: Number of timestamps missing embeddings
+        """
+        embedding_list = []
+        missing_count = 0
+        
+        for ts in matched_times:
+            # ts is string 'YYYYMMDDHHMMSS'
+            if ts in self.embeddings:
+                emb = self.embeddings[ts]
+                # Validate and normalize shape
+                emb = self._normalize_embedding_shape(emb)
             else:
-                # Reshape to (1, bert_dim) for backward compatibility
-                formatted_embeddings[key] = emb.reshape(1, -1).astype(np.float32)
+                # No embedding found, use zero vector
+                missing_count += 1
+                emb = self._create_zero_embedding()
+            
+            embedding_list.append(emb)
         
-        self.embeddings = formatted_embeddings
+        return embedding_list, missing_count
+    
+    def _normalize_embedding_shape(self, emb: np.ndarray) -> np.ndarray:
+        """
+        Normalize embedding shape to expected format.
+        
+        Args:
+            emb: Embedding array (may have various shapes)
+        
+        Returns:
+            Normalized embedding array:
+                - For CLS/average: shape (1, bert_dim)
+                - For 'none': shape (seq_len, bert_dim)
+        """
+        if self.aggregation_method == 'none':
+            # Shape should be (seq_len, bert_dim)
+            if len(emb.shape) == 1:
+                # If somehow 1D, reshape (shouldn't happen with format_for_time_mmd=True)
+                emb = emb.reshape(-1, self.bert_dim)
+            elif len(emb.shape) == 2:
+                # Already correct shape (seq_len, bert_dim)
+                pass
+            else:
+                raise ValueError(f"Unexpected embedding shape for 'none' aggregation: {emb.shape}")
+        else:
+            # Shape should be (1, bert_dim) for CLS/average
+            if len(emb.shape) == 1:
+                emb = emb.reshape(1, -1)
+            elif len(emb.shape) == 2:
+                if emb.shape[0] != 1:
+                    # If (bert_dim, 1) or other shape, reshape to (1, bert_dim)
+                    emb = emb.reshape(1, -1)
+                # else: already (1, bert_dim)
+            else:
+                raise ValueError(f"Unexpected embedding shape for '{self.aggregation_method}' aggregation: {emb.shape}")
+        
+        return emb.astype(np.float32)
+    
+    def _create_zero_embedding(self) -> np.ndarray:
+        """
+        Create zero embedding vector with correct shape.
+        
+        Returns:
+            Zero embedding array:
+                - For CLS/average: shape (1, bert_dim)
+                - For 'none': shape (seq_len, bert_dim)
+        """
+        if self.aggregation_method == 'none':
+            # Zero vector with sequence dimension
+            sequence_length = self.embedder.sequence_length if self.embedder else 512
+            return np.zeros((sequence_length, self.bert_dim), dtype=np.float32)
+        else:
+            # Use BERT's native dimension (768) - models will project if needed
+            return np.zeros((1, self.bert_dim), dtype=np.float32)
+    
+    def _prepare_channel_and_general_info(self) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Prepare general_info and channel_info embeddings for embedding output format.
+        
+        When output_format='embedding', these should also be embeddings for models like TGTSF.
+        TGTSF expects channel_description: [bs, nvars, d_model] (before unsqueeze in forward)
+        So per sample: [nvars, d_model], which collates to [batch_size, nvars, d_model]
+        For Time-MMD with single channel: [1, embed_dim] per sample
+        
+        Returns:
+            tuple: (general_info_emb, channel_info_emb)
+                - general_info_emb: Embedding array of shape (1, embed_dim)
+                - channel_info_emb: Embedding array of shape (1, embed_dim) for single channel,
+                                    or (num_channels, embed_dim) for multiple channels
+        """
+        # Embed general_info if it's a string
+        if isinstance(self.general_info, str):
+            general_info_emb = self._embed_single_text(self.general_info)  # (1, embed_dim)
+        else:
+            general_info_emb = self.general_info
+        
+        # Handle channel_info based on whether it's a string or already an array
+        if isinstance(self.channel_info, str):
+            # Create per-channel embeddings based on actual channel names if available
+            # This allows each channel (e.g., 'temperature', 'humidity', 'pressure') to have
+            # its own unique embedding derived from its name, rather than repeating the same
+            # generic channel_info string for all channels
+            
+            if self.channel_names is not None and len(self.channel_names) > 1:
+                # Create unique embedding for each channel using its name
+                # Format: combine channel_info (dataset-level description) with channel name
+                channel_info_emb_list = []
+                for channel_name in self.channel_names:
+                    # Combine dataset-level channel_info with per-channel name
+                    # e.g., "Weather variables: temperature" if channel_info="Weather variables:" and channel_name="temperature"
+                    combined_text = f"{self.channel_info} {channel_name}" if self.channel_info else channel_name
+                    channel_emb = self._embed_single_text(combined_text)  # (1, embed_dim)
+                    channel_info_emb_list.append(channel_emb)
+                # Stack to create (num_channels, embed_dim) array
+                channel_info_emb = np.vstack(channel_info_emb_list)  # (num_channels, embed_dim)
+            elif self.num_channels is not None and self.num_channels > 1:
+                # Fallback: if we have num_channels but not channel names, repeat the embedding
+                # This happens when channel names aren't available (shouldn't happen for TTC)
+                channel_info_emb = self._embed_single_text(self.channel_info)  # (1, embed_dim)
+                channel_info_emb = np.repeat(channel_info_emb, self.num_channels, axis=0)  # (num_channels, embed_dim)
+            else:
+                # Single channel case: (1, embed_dim) is correct as-is
+                channel_info_emb = self._embed_single_text(self.channel_info)  # (1, embed_dim)
+            
+            # DataLoader will collate to [batch_size, nvars, embed_dim]
+            # TGTSF forward expects [bs, nvars, d_model] before unsqueeze
+        else:
+            # channel_info is already an array/list - use as-is (should already have correct shape)
+            channel_info_emb = self.channel_info
+        
+        return general_info_emb, channel_info_emb
     
     def _embed_single_text(self, text):
         """
         Embed a single text string using the TextEmbedder.
         
         Args:
-            text: Text string to embed
+            text: Text string to embed (empty strings are handled by embedder)
             
         Returns:
             np.ndarray: Embedding vector of shape (1, bert_dim) for CLS/average, 
@@ -262,13 +463,14 @@ class TimeMMD_HeteroGetter:
         # Initialize embedder if needed
         self._init_embedder()
         
-        # Embed single text
+        # Embed single text (embedder handles empty strings)
         embedding = self.embedder.embed_single(text if text else '')
         
-        # Reshape to (1, bert_dim) for backward compatibility (unless aggregation='none')
+        # Format for TimeMMD compatibility
         if self.aggregation_method == 'none':
             return embedding.astype(np.float32)
         else:
+            # Reshape to (1, bert_dim) for backward compatibility
             return embedding.reshape(1, -1).astype(np.float32)
     
     def __call__(self, timestamps):
@@ -307,35 +509,11 @@ class TimeMMD_HeteroGetter:
             if self.embeddings is None:
                 self._load_or_create_embeddings()
             
-            # Fetch embeddings for matched timestamps
-            embedding_list = []
-            for ts in matched_times:
-                # ts is string 'YYYYMMDDHHMMSS'
-                if ts in self.embeddings:
-                    emb = self.embeddings[ts]
-                    # Ensure shape is correct based on aggregation method
-                    if self.aggregation_method == 'none':
-                        # Shape should be (seq_len, bert_dim)
-                        if len(emb.shape) == 1:
-                            # If somehow 1D, reshape (shouldn't happen)
-                            emb = emb.reshape(-1, self.bert_dim)
-                    else:
-                        # Shape should be (1, bert_dim) for CLS/average
-                        if len(emb.shape) == 1:
-                            emb = emb.reshape(1, -1)
-                        elif len(emb.shape) == 2 and emb.shape[0] != 1:
-                            # If (bert_dim, 1) or other shape, reshape to (1, bert_dim)
-                            emb = emb.reshape(1, -1)
-                else:
-                    # No embedding found, use zero vector
-                    if self.aggregation_method == 'none':
-                        # Zero vector with sequence dimension
-                        sequence_length = self.embedder.sequence_length if self.embedder else 512
-                        emb = np.zeros((sequence_length, self.bert_dim), dtype=np.float32)
-                    else:
-                        # Use BERT's native dimension (768) - models will project if needed
-                        emb = np.zeros((1, self.bert_dim), dtype=np.float32)
-                embedding_list.append(emb)
+            # Fetch and validate embeddings for matched timestamps
+            embedding_list, missing_count = self._fetch_and_validate_embeddings(matched_times)
+            
+            if missing_count > 0:
+                print(f"[ warning ] {missing_count} timestamps missing embeddings (using zero vectors)")
             
             # Stack to shape: (num_timesteps, 1, bert_dim)
             # This matches expected format: (seq_len, news_num, bert_dim)
@@ -347,50 +525,8 @@ class TimeMMD_HeteroGetter:
             raise ValueError(f"Unsupported output_format: {self.output_format}")
         
         # Handle general_info and channel_info based on output_format
-        # When output_format='embedding', these should also be embeddings for models like TGTSF
         if self.output_format == 'embedding':
-            # Embed general_info and channel_info if they're strings
-            # TGTSF expects channel_description: [bs, nvars, d_model] (before unsqueeze in forward)
-            # So per sample: [nvars, d_model], which collates to [batch_size, nvars, d_model]
-            # For Time-MMD with single channel: [1, embed_dim] per sample
-            if isinstance(self.general_info, str):
-                general_info_emb = self._embed_single_text(self.general_info)  # (1, embed_dim)
-            else:
-                general_info_emb = self.general_info
-            
-            if isinstance(self.channel_info, str):
-                # Create per-channel embeddings based on actual channel names if available
-                # This allows each channel (e.g., 'temperature', 'humidity', 'pressure') to have
-                # its own unique embedding derived from its name, rather than repeating the same
-                # generic channel_info string for all channels
-                
-                if self.channel_names is not None and len(self.channel_names) > 1:
-                    # Create unique embedding for each channel using its name
-                    # Format: combine channel_info (dataset-level description) with channel name
-                    channel_info_emb_list = []
-                    for channel_name in self.channel_names:
-                        # Combine dataset-level channel_info with per-channel name
-                        # e.g., "Weather variables: temperature" if channel_info="Weather variables:" and channel_name="temperature"
-                        combined_text = f"{self.channel_info} {channel_name}" if self.channel_info else channel_name
-                        channel_emb = self._embed_single_text(combined_text)  # (1, embed_dim)
-                        channel_info_emb_list.append(channel_emb)
-                    # Stack to create (num_channels, embed_dim) array
-                    channel_info_emb = np.vstack(channel_info_emb_list)  # (num_channels, embed_dim)
-                elif self.num_channels is not None and self.num_channels > 1:
-                    # Fallback: if we have num_channels but not channel names, repeat the embedding
-                    # This happens when channel names aren't available (shouldn't happen for TTC)
-                    channel_info_emb = self._embed_single_text(self.channel_info)  # (1, embed_dim)
-                    channel_info_emb = np.repeat(channel_info_emb, self.num_channels, axis=0)  # (num_channels, embed_dim)
-                else:
-                    # Single channel case: (1, embed_dim) is correct as-is
-                    channel_info_emb = self._embed_single_text(self.channel_info)  # (1, embed_dim)
-                
-                # DataLoader will collate to [batch_size, nvars, embed_dim]
-                # TGTSF forward expects [bs, nvars, d_model] before unsqueeze
-            else:
-                # channel_info is already an array/list - use as-is (should already have correct shape)
-                channel_info_emb = self.channel_info
-            
+            general_info_emb, channel_info_emb = self._prepare_channel_and_general_info()
             return matched_times, general_info_emb, channel_info_emb, output_dynamic
         else:
             # For text formats, return strings as-is
@@ -445,7 +581,7 @@ class TimeMMD_Dataset(Universal_Dataset):
                  embed_model_name='bert-base-uncased', embed_dim=768,
                  force_reembed=False, hf_cache_dir='./HF_cache/', device='cpu',
                  missing_value_strategy='none', required_indicators=None,
-                 aggregation_method='cls'):
+                 aggregation_method='cls', allow_old_pkl_fallback=False):
         """
         Initialize TimeMMD_Dataset.
         
@@ -471,6 +607,7 @@ class TimeMMD_Dataset(Universal_Dataset):
         self.hf_cache_dir = hf_cache_dir
         self.device = device
         self.aggregation_method = aggregation_method
+        self.allow_old_pkl_fallback = allow_old_pkl_fallback
         self.missing_value_strategy = missing_value_strategy
         self.required_indicators = required_indicators if required_indicators is not None else []
         
@@ -599,7 +736,8 @@ class TimeMMD_Dataset(Universal_Dataset):
             data_path=self.data_path,
             device=self.device,
             num_channels=num_channels,
-            channel_names=channel_names  # Pass actual channel names for per-channel embeddings
+            channel_names=channel_names,  # Pass actual channel names for per-channel embeddings
+            allow_old_pkl_fallback=self.allow_old_pkl_fallback
         )
         
         # Set as hetero_data_getter
