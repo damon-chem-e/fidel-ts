@@ -1,0 +1,196 @@
+# Experiment Suite: Embeddings System Test
+# Description: Test fidel-ts datasets with old and new embedding systems
+# Usage: python -m cli.suite run configs/experiment_suites/embeddings_test.yaml
+# Purpose: Ensure fidel-ts datasets work properly with the new embedding system
+
+suite:
+  name: "embeddings_test"
+  description: "Test fidel-ts datasets with old embeddings, new embeddings (cls), and new embeddings (average)"
+  tags: ["embeddings", "test", "fidel-ts", "tgtsf", "lynx_film_raw"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/embeddings_test"
+  
+  # Experiments in this suite
+  experiments:
+    # TGTSF with old embeddings (1 epoch)
+    - name: "tgtsf_old_embeddings"
+      description: "TGTSF on NYC Traffic Speed with old embeddings (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+          hetero_info:
+            use_old_embeddings: true
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 768
+          learning_rate: 8.66e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/embeddings_test"
+        wandb:
+          enabled: false
+    
+    # Lynx Film Raw with old embeddings (1 epoch)
+    - name: "lynx_film_raw_old_embeddings"
+      description: "lynx_film_raw on NYC Traffic Speed with old embeddings (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+          hetero_info:
+            use_old_embeddings: true
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 768
+          learning_rate: 8.66e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/embeddings_test"
+        wandb:
+          enabled: false
+    
+    # TGTSF with new embeddings (cls aggregation) (1 epoch)
+    - name: "tgtsf_new_embeddings_cls"
+      description: "TGTSF on NYC Traffic Speed with new embeddings (cls aggregation, 1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+          hetero_info:
+            embedding_config:
+              aggregation_method: "cls"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 768
+          learning_rate: 8.66e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/embeddings_test"
+        wandb:
+          enabled: false
+    
+    # Lynx Film Raw with new embeddings (cls aggregation) (1 epoch)
+    - name: "lynx_film_raw_new_embeddings_cls"
+      description: "lynx_film_raw on NYC Traffic Speed with new embeddings (cls aggregation, 1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+          hetero_info:
+            embedding_config:
+              aggregation_method: "cls"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 768
+          learning_rate: 8.66e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/embeddings_test"
+        wandb:
+          enabled: false
+    
+    # TGTSF with new embeddings (average aggregation) (1 epoch)
+    - name: "tgtsf_new_embeddings_average"
+      description: "TGTSF on NYC Traffic Speed with new embeddings (average aggregation, 1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+          hetero_info:
+            embedding_config:
+              aggregation_method: "average"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 768
+          learning_rate: 8.66e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/embeddings_test"
+        wandb:
+          enabled: false
+    
+    # Lynx Film Raw with new embeddings (average aggregation) (1 epoch)
+    - name: "lynx_film_raw_new_embeddings_average"
+      description: "lynx_film_raw on NYC Traffic Speed with new embeddings (average aggregation, 1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+          hetero_info:
+            embedding_config:
+              aggregation_method: "average"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 768
+          learning_rate: 8.66e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/embeddings_test"
+        wandb:
+          enabled: false
+
