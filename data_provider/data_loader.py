@@ -686,6 +686,11 @@ class Heterogeneous_Dataset(Dataset):
 
         general_info = self.static_data['general_info']
         channel_info = self.static_data['channel_info'][id]
+        
+        # Normalize channel_info shape to (1, embedding_dim) if it's an embedding
+        # This ensures it works with TGTSF projection which expects 3D/4D inputs [B, 1, D] or [B, C, D]
+        if isinstance(channel_info, np.ndarray):
+            channel_info = self._normalize_embedding_shape(channel_info)
 
         # channel_info = channel_info.reshape(1, 256) if channel_info.shape == (256,) else channel_info
         
