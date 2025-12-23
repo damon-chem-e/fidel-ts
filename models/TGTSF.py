@@ -46,16 +46,6 @@ class Model(nn.Module):
         # - text_dim: Operational dimension used internally by the model (e.g., 256)
         # If input_text_dim != text_dim, a learned projection layer is added
         
-        # BEGIN DEBUG
-        print(f"[DEBUG] TGTSF.__init__: Checking text dimensions")
-        print(f"[DEBUG]   hasattr(configs, 'input_text_dim'): {hasattr(configs, 'input_text_dim')}")
-        if hasattr(configs, 'input_text_dim'):
-            print(f"[DEBUG]   configs.input_text_dim: {configs.input_text_dim}")
-        print(f"[DEBUG]   hasattr(configs, 'text_dim'): {hasattr(configs, 'text_dim')}")
-        if hasattr(configs, 'text_dim'):
-            print(f"[DEBUG]   configs.text_dim: {configs.text_dim}")
-        # END DEBUG
-        
         # NOTE: `dotdict.__getattr__` returns None when a key is missing, which breaks
         # `getattr(configs, "input_text_dim", configs.text_dim)` fallback semantics.
         # Treat None as "unset" and fall back to text_dim.
@@ -69,23 +59,11 @@ class Model(nn.Module):
                 f"Set it via model_config_overrides.input_text_dim (e.g., 256 for old embeddings, 768 for BERT)."
             )
         
-        # BEGIN DEBUG
-        print(f"[DEBUG] TGTSF.__init__: After getattr")
-        print(f"[DEBUG]   self.input_text_dim: {self.input_text_dim}")
-        print(f"[DEBUG]   self.text_dim: {self.text_dim}")
-        # END DEBUG
-        
         # Learned projection layer if input dimension differs from operational dimension
         if self.input_text_dim != self.text_dim:
-            # BEGIN DEBUG
-            print(f"[DEBUG] TGTSF.__init__: Creating projection layer {self.input_text_dim} -> {self.text_dim}")
-            # END DEBUG
             self.text_projection = nn.Linear(self.input_text_dim, self.text_dim)
             print(f'[ info ] TGTSF: Added learned projection layer {self.input_text_dim} -> {self.text_dim}')
         else:
-            # BEGIN DEBUG
-            print(f"[DEBUG] TGTSF.__init__: No projection needed (input_text_dim == text_dim == {self.text_dim})")
-            # END DEBUG
             self.text_projection = None
         
         self.text_encoder = text_encoder(cross_layer=configs.cross_layers, self_layer=configs.self_layers, embedding_dim=configs.text_dim, num_heads=configs.n_heads, dropout=configs.dropout, pred_len = configs.pred_len, stride=self.stride)

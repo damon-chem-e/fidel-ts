@@ -164,10 +164,8 @@ class LLM_Socket():
                 
                 try:
                     result = self.call_openai(messages)
-                    # print(f"[DEBUG] Result: {result}")
                     messages.append({"role": "assistant", "content": result})
                     pred = self.extract_result(result)
-                    # print(f"[DEBUG] Pred: {pred}")
                     if str(pred[0][0]) != str(y_timestamp[0][0]):
                         print(f"Mismatch: pred[0][0] = {pred[0][0]}, y_timestamp[0][0] = {y_timestamp[0][0]}")
                         raise AssertionError("Mismatch between pred[0][0] and y_timestamp[0]")

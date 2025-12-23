@@ -303,27 +303,8 @@ class SuiteExecutor:
         # Load template
         template = load_template(template_path)
         
-        # BEGIN DEBUG
-        print(f"[DEBUG] SuiteExecutor._execute_experiment: Merging configs for '{exp_name}'")
-        print(f"[DEBUG]   Template keys: {list(template.keys())}")
-        print(f"[DEBUG]   Overrides keys: {list(overrides.keys())}")
-        if 'model_config_overrides' in overrides:
-            print(f"[DEBUG]   Overrides.model_config_overrides: {overrides['model_config_overrides']}")
-        if 'data_config' in overrides:
-            print(f"[DEBUG]   Overrides.data_config: {overrides['data_config']}")
-        # END DEBUG
-        
         # Merge template with overrides
         final_config = merge_configs(template, overrides)
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] SuiteExecutor._execute_experiment: After merge")
-        print(f"[DEBUG]   Final config keys: {list(final_config.keys())}")
-        if 'model_config_overrides' in final_config:
-            print(f"[DEBUG]   Final config.model_config_overrides: {final_config['model_config_overrides']}")
-        if 'data_config' in final_config:
-            print(f"[DEBUG]   Final config.data_config: {final_config['data_config']}")
-        # END DEBUG
         
         # Extract values for placeholder substitution from merged config
         # This ensures we get the actual values after merging
@@ -368,38 +349,9 @@ class SuiteExecutor:
             config: Complete experiment configuration dictionary
             experiment_name: Name of the experiment
         """
-        # BEGIN DEBUG
-        print(f"[DEBUG] SuiteExecutor._run_single_experiment: Creating ExperimentConfig for '{experiment_name}'")
-        print(f"[DEBUG]   Config keys: {list(config.keys())}")
-        if 'model_config_overrides' in config:
-            print(f"[DEBUG]   Config.model_config_overrides: {config['model_config_overrides']}")
-        if 'data_config' in config:
-            print(f"[DEBUG]   Config.data_config: {config['data_config']}")
-        # END DEBUG
-        
         exp_type = config.get('experiment', {}).get('type', 'pytorch')
         
         logger.info(f"Running experiment '{experiment_name}' with type '{exp_type}'")
-        
-        # BEGIN DEBUG
-        try:
-            # Validate and create ExperimentConfig from merged config
-            experiment_config = ExperimentConfig(**config)
-            print(f"[DEBUG] SuiteExecutor._run_single_experiment: ExperimentConfig created")
-            print(f"[DEBUG]   hasattr(experiment_config, 'model_config_overrides'): {hasattr(experiment_config, 'model_config_overrides')}")
-            if hasattr(experiment_config, 'model_config_overrides'):
-                print(f"[DEBUG]   experiment_config.model_config_overrides: {experiment_config.model_config_overrides}")
-            # Check model_dump for extra fields
-            if hasattr(experiment_config, 'model_dump'):
-                config_dict = experiment_config.model_dump()
-                if 'model_config_overrides' in config_dict:
-                    print(f"[DEBUG]   model_dump()['model_config_overrides']: {config_dict['model_config_overrides']}")
-                if 'data_config' in config_dict:
-                    print(f"[DEBUG]   model_dump()['data_config']: {config_dict['data_config']}")
-        except Exception as e:
-            print(f"[DEBUG] SuiteExecutor._run_single_experiment: Error creating ExperimentConfig: {e}")
-            raise
-        # END DEBUG
         
         # Prepare suite information to pass to experiments
         # Use the timestamped suite name so experiments are saved in the correct directory
@@ -410,15 +362,6 @@ class SuiteExecutor:
             "description": self.suite_info.get('description', ''),
             "tags": self.suite_info.get('tags', [])
         }
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] SuiteExecutor._run_single_experiment: About to create ExperimentConfig")
-        print(f"[DEBUG]   Config keys: {list(config.keys())}")
-        if 'model_config_overrides' in config:
-            print(f"[DEBUG]   Config.model_config_overrides: {config['model_config_overrides']}")
-        if 'data_config' in config:
-            print(f"[DEBUG]   Config.data_config: {config['data_config']}")
-        # END DEBUG
         
         # Execute based on experiment type
         if exp_type == 'evaluation':
@@ -446,33 +389,8 @@ class SuiteExecutor:
         else:
             # Convert dict to ExperimentConfig for training experiments
             try:
-                # BEGIN DEBUG
-                print(f"[DEBUG] SuiteExecutor._run_single_experiment: Creating ExperimentConfig (pytorch/lightning/llm)")
-                print(f"[DEBUG]   Config keys: {list(config.keys())}")
-                if 'model_config_overrides' in config:
-                    print(f"[DEBUG]   Config.model_config_overrides: {config['model_config_overrides']}")
-                if 'data_config' in config:
-                    print(f"[DEBUG]   Config.data_config: {config['data_config']}")
-                # END DEBUG
                 experiment_config = ExperimentConfig(**config)
-                # BEGIN DEBUG
-                print(f"[DEBUG] SuiteExecutor._run_single_experiment: ExperimentConfig created successfully")
-                print(f"[DEBUG]   hasattr(experiment_config, 'model_config_overrides'): {hasattr(experiment_config, 'model_config_overrides')}")
-                if hasattr(experiment_config, 'model_config_overrides'):
-                    print(f"[DEBUG]   experiment_config.model_config_overrides: {experiment_config.model_config_overrides}")
-                # Check model_dump for extra fields
-                if hasattr(experiment_config, 'model_dump'):
-                    config_dict = experiment_config.model_dump()
-                    if 'model_config_overrides' in config_dict:
-                        print(f"[DEBUG]   model_dump()['model_config_overrides']: {config_dict['model_config_overrides']}")
-                    if 'data_config' in config_dict:
-                        print(f"[DEBUG]   model_dump()['data_config']: {config_dict['data_config']}")
-                # END DEBUG
             except Exception as e:
-                # BEGIN DEBUG
-                print(f"[DEBUG] SuiteExecutor._run_single_experiment: Error creating ExperimentConfig: {e}")
-                print(f"[DEBUG]   Config that failed: {config}")
-                # END DEBUG
                 raise ValueError(f"Invalid experiment configuration: {str(e)}")
             
             # Set experiment name
