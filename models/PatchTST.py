@@ -78,16 +78,47 @@ class Model(nn.Module):
                                   pretrain_head=pretrain_head, head_type=head_type, individual=individual, revin=revin, affine=affine,
                                   subtract_last=subtract_last, verbose=verbose, notrans=notrans, **kwargs)
     
-    def forward(self, x, **kwargs):           # x: [Batch, Input length, Channel]
+    def forward(self, x, return_representations=False, **kwargs):           # x: [Batch, Input length, Channel]
+        """
+        Forward pass.
+        
+        Args:
+            x: Input time series [B, seq_len, C]
+            return_representations: If True, return aggregated representations before prediction head
+            **kwargs: Additional arguments
+            
+        Returns:
+            If return_representations=False: predictions [B, pred_len, C]
+            If return_representations=True: aggregated representation [B, d_model]
+        """
         if self.decomposition:
             res_init, trend_init = self.decomp_module(x)
             res_init, trend_init = res_init.permute(0,2,1), trend_init.permute(0,2,1)  # x: [Batch, Channel, Input length]
+            
+            if return_representations:
+                # Get representations from both branches before head
+                # Pass return_representations flag to backbone
+                res_backbone_out = self.model_res(res_init, return_representations=True)  # [B, C, d_model, patch_num]
+                trend_backbone_out = self.model_trend(trend_init, return_representations=True)  # [B, C, d_model, patch_num]
+                # Aggregate: mean over channels and patches -> [B, d_model]
+                combined = (res_backbone_out + trend_backbone_out).mean(dim=(1, 3))  # [B, d_model]
+                return combined
+            
             res = self.model_res(res_init)
             trend = self.model_trend(trend_init)
             x = res + trend
             x = x.permute(0,2,1)    # x: [Batch, Input length, Channel]
         else:
             x = x.permute(0,2,1)    # x: [Batch, Channel, Input length]
+            
+            if return_representations:
+                # Get representation from backbone before head
+                # Pass return_representations flag to backbone
+                repr = self.model(x, return_representations=True)  # [B, C, d_model, patch_num]
+                # Aggregate: mean over channels and patches -> [B, d_model]
+                repr = repr.mean(dim=(1, 3))  # [B, d_model]
+                return repr
+            
             x = self.model(x)
             x = x.permute(0,2,1)    # x: [Batch, Input length, Channel]
         return x

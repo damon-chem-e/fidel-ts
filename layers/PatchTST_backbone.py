@@ -57,7 +57,7 @@ class PatchTST_backbone(nn.Module):
             self.head = Flatten_Head(self.individual, self.n_vars, self.head_nf, target_window, head_dropout=head_dropout)
         
     
-    def forward(self, z):                                                                   # z: [bs x nvars x seq_len]
+    def forward(self, z, return_representations=False):                                                                   # z: [bs x nvars x seq_len]
         # norm
         if self.revin: 
             z = z.permute(0,2,1)
@@ -72,6 +72,11 @@ class PatchTST_backbone(nn.Module):
         
         # model
         z = self.backbone(z)                                                                # z: [bs x nvars x d_model x patch_num]
+        
+        # Return representations before head if requested
+        if return_representations:
+            return z  # [bs x nvars x d_model x patch_num]
+        
         z = self.head(z)                                                                    # z: [bs x nvars x target_window] 
         
         # denorm

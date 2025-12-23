@@ -1,0 +1,66 @@
+# ZhangHanBest Model Configuration
+# Based on Zhang, Han, et al. (2025) - Amazon team
+
+model: ZhangHanBest
+
+# Unimodal time series model configuration
+unimodal_model_type: "PatchTST"  # Options: PatchTST, DLinear, Sundial, TimeMoE
+# Unimodal model configs will be inherited/merged from corresponding model config
+# Or can be specified here to override
+
+# Time series encoder parameters (passed to unimodal model)
+seq_len: 96
+pred_len: 96
+enc_in: 1  # Number of channels/variates
+d_model: 512  # Representation dimension (should match unimodal model's d_model)
+# For DLinear: set d_model=seq_len or ZhangHanBest will add projection layer
+revin: True  # For PatchTST: use RevIN normalization
+use_norm: False  # For iTransformer-style models: use Non-stationary Transformer normalization
+
+# PatchTST specific parameters (if using PatchTST)
+e_layers: 3
+n_heads: 4
+d_ff: 128
+dropout: 0.3
+fc_dropout: 0.3
+head_dropout: 0
+patch_len: 16
+stride: 8
+padding_patch: end
+affine: False
+subtract_last: False
+decomposition: False
+kernel_size: 25
+notrans: False
+
+# Text input configuration
+input_text_dim: 768  # Dimension of input text embeddings (from TextEmbedder)
+# Text embeddings are pre-computed by TextEmbedder (embedder/embedder.py) in data loader
+# Embedding aggregation method configured in dataset config via embedding_config:
+#   aggregation_method: 'average'  # For ZhangHanBest: use average pooling (not CLS)
+# Embeddings are cached using hash-based cache system with metadata
+
+# Residual projection configuration
+# Note: Residual connection is ALWAYS used (as per paper)
+residual_proj_use_layer_norm: True
+residual_proj_activation: "gelu"  # Options: gelu, relu, none
+residual_proj_dropout: 0.1
+
+# Fusion configuration
+fusion_weight_mode: "fixed"  # Options: "fixed" or "learned"
+fusion_weight: 0.5  # Weight w in w*text + (1-w)*ts (range: 0.0 to 1.0)
+# If mode="learned", fusion_weight is initial value, then learned during training
+fusion_weight_initial: 0.5  # Initial value for learned fusion weight (if mode="learned")
+
+# Prediction head configuration
+pred_head_use_mlp: False  # Whether to use MLP instead of single linear layer
+pred_head_hidden_dim: null  # If use_mlp=True, specify hidden dimension
+pred_head_dropout: 0.1
+
+# Task type
+task: TGTSF  # Text-guided time series forecasting
+individual: False
+
+# Other parameters
+dropout: 0.1
+

@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
 
 class moving_avg(nn.Module):
     """
@@ -69,10 +67,25 @@ class Model(nn.Module):
             # self.Linear_Seasonal.weight = nn.Parameter((1/self.seq_len)*torch.ones([self.pred_len,self.seq_len]))
             # self.Linear_Trend.weight = nn.Parameter((1/self.seq_len)*torch.ones([self.pred_len,self.seq_len]))
 
-    def forward(self, x, **kwargs):
+    def forward(self, x, return_representations=False, **kwargs):
+        """
+        Forward pass.
+        
+        Args:
+            x: Input time series [B, seq_len, C]
+            return_representations: If True, return aggregated representations after linear projections
+            **kwargs: Additional arguments
+            
+        Returns:
+            If return_representations=False: predictions [B, pred_len, C]
+            If return_representations=True: aggregated representation [B, pred_len]
+                Note: Representation is extracted after Linear_Seasonal and Linear_Trend,
+                then aggregated over channels. This captures the learned time series encoding.
+        """
         # x: [Batch, Input length, Channel]
         seasonal_init, trend_init = self.decompsition(x)
         seasonal_init, trend_init = seasonal_init.permute(0,2,1), trend_init.permute(0,2,1)
+        
         if self.individual:
             seasonal_output = torch.zeros([seasonal_init.size(0),seasonal_init.size(1),self.pred_len],dtype=seasonal_init.dtype).to(seasonal_init.device)
             trend_output = torch.zeros([trend_init.size(0),trend_init.size(1),self.pred_len],dtype=trend_init.dtype).to(trend_init.device)
@@ -83,5 +96,14 @@ class Model(nn.Module):
             seasonal_output = self.Linear_Seasonal(seasonal_init)
             trend_output = self.Linear_Trend(trend_init)
 
+        # Combined output after linear projections: [B, C, pred_len]
         x = seasonal_output + trend_output
+        
+        if return_representations:
+            # Return representation after linear projections (time series encoding)
+            # Aggregate over channels: [B, C, pred_len] -> [B, pred_len]
+            # This captures the learned encoding for each timestep in the prediction horizon
+            repr = x.mean(dim=1)  # [B, pred_len]
+            return repr
+        
         return x.permute(0,2,1) # to [Batch, Output length, Channel]
