@@ -45,7 +45,10 @@ suite:
           output_dir: "outputs/suites/embeddings_test"
         wandb:
           enabled: false
-        # Note: Old embeddings are already 256-dimensional (text_dim), so no input_text_dim override needed
+        # Old embeddings are 256-dimensional (match TGTSF.text_dim), so set input_text_dim explicitly.
+        # This avoids relying on implicit defaults and documents the expected embedding width.
+        model_config_overrides:
+          input_text_dim: 256
     
     # Lynx Film Raw with old embeddings (1 epoch)
     - name: "lynx_film_raw_old_embeddings"
@@ -76,7 +79,9 @@ suite:
           output_dir: "outputs/suites/embeddings_test"
         wandb:
           enabled: false
-        # Note: Old embeddings are already 256-dimensional (text_dim), so no input_text_dim override needed
+        # Old embeddings are 256-dimensional (match text_dim), so set input_text_dim explicitly.
+        model_config_overrides:
+          input_text_dim: 256
     
     # TGTSF with new embeddings (cls aggregation) (1 epoch)
     - name: "tgtsf_new_embeddings_cls"

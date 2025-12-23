@@ -83,7 +83,15 @@ class Model(nn.Module):
             self.ts_proj = None
         
         # 2. Text input dimension (from pre-computed embeddings)
-        self.text_dim = getattr(configs, 'input_text_dim', 768)  # Embedding dimension (typically 768 for BERT)
+        # NOTE: `dotdict.__getattr__` returns None for missing keys, so treat None as unset.
+        raw_input_text_dim = getattr(configs, 'input_text_dim', None)
+        self.text_dim = 768 if raw_input_text_dim is None else raw_input_text_dim
+
+        if not isinstance(self.text_dim, int) or self.text_dim <= 0:
+            raise ValueError(
+                f"ZhangHanBest requires a positive integer input_text_dim; got {self.text_dim!r}. "
+                f"Set it via model_config_overrides.input_text_dim (typically 768 for BERT embeddings)."
+            )
         
         # 3. Residual projection (always uses residual connection)
         self.residual_proj = ResidualProjection(

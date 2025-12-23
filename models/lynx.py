@@ -92,8 +92,16 @@ class Model(nn.Module):
         # - input_text_dim: Dimension of input text embeddings (e.g., 768 for BERT)
         # - text_dim: Operational dimension used internally by the model (e.g., 256)
         # If input_text_dim != text_dim, a learned projection layer is added
-        self.input_text_dim = getattr(configs, 'input_text_dim', configs.text_dim)
+        # NOTE: `dotdict.__getattr__` returns None for missing keys, so treat None as unset.
         self.text_dim = configs.text_dim
+        raw_input_text_dim = getattr(configs, 'input_text_dim', None)
+        self.input_text_dim = self.text_dim if raw_input_text_dim is None else raw_input_text_dim
+
+        if not isinstance(self.input_text_dim, int) or self.input_text_dim <= 0:
+            raise ValueError(
+                f"LYNX requires a positive integer input_text_dim; got {self.input_text_dim!r}. "
+                f"Set it via model_config_overrides.input_text_dim (e.g., 256 for old embeddings, 768 for BERT)."
+            )
         
         # Learned projection layer if input dimension differs from operational dimension
         if self.input_text_dim != self.text_dim:

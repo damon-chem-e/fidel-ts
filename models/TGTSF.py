@@ -56,8 +56,18 @@ class Model(nn.Module):
             print(f"[DEBUG]   configs.text_dim: {configs.text_dim}")
         # END DEBUG
         
-        self.input_text_dim = getattr(configs, 'input_text_dim', configs.text_dim)
+        # NOTE: `dotdict.__getattr__` returns None when a key is missing, which breaks
+        # `getattr(configs, "input_text_dim", configs.text_dim)` fallback semantics.
+        # Treat None as "unset" and fall back to text_dim.
         self.text_dim = configs.text_dim
+        raw_input_text_dim = getattr(configs, 'input_text_dim', None)
+        self.input_text_dim = self.text_dim if raw_input_text_dim is None else raw_input_text_dim
+
+        if not isinstance(self.input_text_dim, int) or self.input_text_dim <= 0:
+            raise ValueError(
+                f"TGTSF requires a positive integer input_text_dim; got {self.input_text_dim!r}. "
+                f"Set it via model_config_overrides.input_text_dim (e.g., 256 for old embeddings, 768 for BERT)."
+            )
         
         # BEGIN DEBUG
         print(f"[DEBUG] TGTSF.__init__: After getattr")
