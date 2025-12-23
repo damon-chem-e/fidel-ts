@@ -15,6 +15,15 @@ class FidelTSPathResolver:
     
     Each subdataset has its own specific method to ensure robustness.
     No generic/pattern-based resolution - everything is explicit and hardcoded.
+
+    Notes on returned fields:
+    - `old_embedding_path` / `old_embedding_paths`:
+      Paths to legacy embedding `.pkl` files (loaded only when the caller explicitly
+      requests old embeddings, e.g. `use_old_embeddings=True`).
+    - `old_text_path` / `old_text_paths`:
+      Paths to legacy raw-text JSON files. These are used as the **text source for
+      re-embedding** when producing the new hash-based cache format (i.e., when
+      `use_old_embeddings=False` and a cache miss triggers embedding computation).
     """
     
     # Dataset name mapping (extracted from root_path or config)
@@ -56,7 +65,7 @@ class FidelTSPathResolver:
         Returns:
             Dictionary with paths and dataset-specific information:
                 - 'old_embedding_path' or 'old_embedding_paths': Path(s) to old embedding file(s)
-                - 'old_text_path' or 'old_text_paths': Path(s) to raw text file(s) (if available)
+                - 'old_text_path' or 'old_text_paths': Path(s) to raw text file(s) used for re-embedding
                 - 'old_static_path': Path to old static embeddings file (.pkl)
                 - 'static_text_path': Path to static text JSON file (for re-embedding)
                 - 'cache_base': Base path for new cache directory
@@ -166,6 +175,9 @@ class FidelTSPathResolver:
         Hardcoded path resolution for Canada_photovoltaics_plants dataset.
         
         Loads ALL year files (2015-2023, hardcoded list) and merges them.
+
+        Uses the corresponding *formal report* JSONs as the text source for re-embedding:
+        `fast_general_formal_forecast_{year}.json` under `weather_report/formal_report/`.
         """
         root_path = Path(hetero_info['root_path'])
         
@@ -176,6 +188,12 @@ class FidelTSPathResolver:
         old_embedding_paths = [root_path / f for f in old_embedding_files]
         old_static_path = root_path / hetero_info['static_path']
         
+        # Text source for re-embedding (formal reports, year-partitioned).
+        # From: data/Canada_photovoltaics_plants/weather/calgary/report_embedding/formal_report
+        # To:   data/Canada_photovoltaics_plants/weather/calgary/weather_report/formal_report
+        text_source_base = root_path.parent.parent / 'weather_report' / 'formal_report'
+        old_text_paths = [text_source_base / f'fast_general_formal_forecast_{year}.json' for year in years]
+
         # New cache base path
         # From: data/Canada_photovoltaics_plants/weather/calgary/report_embedding/formal_report
         # To:   data/Canada_photovoltaics_plants/weather/embeddings_cache/calgary/report_embedding/formal_report
@@ -183,7 +201,7 @@ class FidelTSPathResolver:
         
         return {
             'old_embedding_paths': old_embedding_paths,
-            'old_text_paths': [],  # Text source TBD (may not exist)
+            'old_text_paths': old_text_paths,
             'old_static_path': old_static_path,
             'cache_base': cache_base,
             'years': years
@@ -208,10 +226,22 @@ class FidelTSPathResolver:
         # From: data/Germany_Renewable_Power_Grid/weather/merged_report_embedding
         # To:   data/Germany_Renewable_Power_Grid/weather/embeddings_cache/merged_report_embedding
         cache_base = root_path.parent / 'embeddings_cache' / 'merged_report_embedding'
+
+        # Text source for dynamic (timestamp-keyed) re-embedding.
+        # Expected location:
+        #   data/Germany_Renewable_Power_Grid/weather/merged_general_report/merged_general_weather_report.json
+        # Note: This is optional; if it doesn't exist, the loader will fall back to old .pkl
+        # only when explicitly requested (use_old_embeddings=True).
+        text_source_base = root_path.parent / 'merged_general_report'
+        old_text_paths = (
+            [text_source_base / 'merged_general_weather_report.json']
+            if text_source_base.exists()
+            else []
+        )
         
         return {
             'old_embedding_paths': old_embedding_paths,
-            'old_text_paths': [],  # Text source TBD
+            'old_text_paths': old_text_paths,
             'old_static_path': old_static_path,
             'cache_base': cache_base,
             'years': years
@@ -266,10 +296,22 @@ class FidelTSPathResolver:
         # From: data/NYC_traffic_speed/weather/merged_report_embedding
         # To:   data/NYC_traffic_speed/weather/embeddings_cache/merged_report_embedding
         cache_base = root_path.parent / 'embeddings_cache' / 'merged_report_embedding'
+
+        # Text source for dynamic (timestamp-keyed) re-embedding.
+        # Expected location:
+        #   data/NYC_traffic_speed/weather/merged_general_report/merged_general_weather_report.json
+        # Note: This is optional; if it doesn't exist, the loader will fall back to old .pkl
+        # only when explicitly requested (use_old_embeddings=True).
+        text_source_base = root_path.parent / 'merged_general_report'
+        old_text_paths = (
+            [text_source_base / 'merged_general_weather_report.json']
+            if text_source_base.exists()
+            else []
+        )
         
         return {
             'old_embedding_paths': old_embedding_paths,
-            'old_text_paths': [],  # Text source TBD
+            'old_text_paths': old_text_paths,
             'old_static_path': old_static_path,
             'cache_base': cache_base,
             'years': years
