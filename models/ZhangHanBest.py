@@ -48,7 +48,7 @@ class Model(nn.Module):
         
         # Get representation dimension from TS encoder
         # For PatchTST: d_model from config
-        # For DLinear: pred_len (need to handle projection)
+    # For DLinear: pred_len (need to handle projection)
         # For Sundial/TimeMoE: hidden_size from model config (need to handle projection)
         self.ts_rep_dim = getattr(configs, 'd_model', 512)  # Default from config
         
