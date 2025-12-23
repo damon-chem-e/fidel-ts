@@ -405,42 +405,64 @@ class FidelTSEmbeddingLoader:
         # Initialize embedder if not already initialized
         self._init_embedder()
         
-        # Compute embeddings for each static text field
-        static_embeddings = {}
+        # Collect all static texts and their keys for batch embedding
+        static_texts_list = []
+        text_keys_list = []
+        keys_to_type = {}  # Map to track which key belongs to which type ('general_info', 'downtime_prompt', or 'channel_info')
         
-        # Embed general_info
+        # Collect general_info
         if 'general_info' in static_text:
             general_text = static_text['general_info']
             if isinstance(general_text, str) and general_text.strip():
-                static_embeddings['general_info'] = self.embedder.embed_single(general_text)
-            else:
-                print(f'[ warning ] general_info is empty or not a string, skipping')
+                static_texts_list.append(general_text)
+                text_keys_list.append('general_info')
+                keys_to_type['general_info'] = 'general_info'
         
-        # Embed downtime_prompt
+        # Collect downtime_prompt
         if 'downtime_prompt' in static_text:
             downtime_text = static_text['downtime_prompt']
             if isinstance(downtime_text, str) and downtime_text.strip():
-                static_embeddings['downtime_prompt'] = self.embedder.embed_single(downtime_text)
-            else:
-                print(f'[ warning ] downtime_prompt is empty or not a string, skipping')
+                static_texts_list.append(downtime_text)
+                text_keys_list.append('downtime_prompt')
+                keys_to_type['downtime_prompt'] = 'downtime_prompt'
         
-        # Embed channel_info (dict of channel_id -> text)
+        # Collect channel_info texts
         if 'channel_info' in static_text:
             channel_info_text = static_text['channel_info']
             if isinstance(channel_info_text, dict):
-                static_embeddings['channel_info'] = {}
-                # Embed each channel's text
                 for channel_id, channel_text in channel_info_text.items():
                     if isinstance(channel_text, str) and channel_text.strip():
-                        static_embeddings['channel_info'][channel_id] = self.embedder.embed_single(channel_text)
-                    else:
-                        print(f'[ warning ] channel_info[{channel_id}] is empty or not a string, skipping')
+                        static_texts_list.append(channel_text)
+                        key = f'channel_info_{channel_id}'
+                        text_keys_list.append(key)
+                        keys_to_type[key] = 'channel_info'
             else:
                 print(f'[ warning ] channel_info is not a dictionary, skipping')
         
-        if not static_embeddings:
+        if not static_texts_list:
             print(f'[ warning ] No valid static text fields found, returning None')
             return None
+        
+        # Embed all static texts in a single batch (single progress bar)
+        embeddings_array = self.embedder.embed_texts(static_texts_list, text_keys=text_keys_list)
+        
+        # Map embeddings back to the correct structure
+        static_embeddings = {}
+        
+        for i, key in enumerate(text_keys_list):
+            emb = embeddings_array[i]
+            text_type = keys_to_type[key]
+            
+            if text_type == 'general_info':
+                static_embeddings['general_info'] = emb
+            elif text_type == 'downtime_prompt':
+                static_embeddings['downtime_prompt'] = emb
+            elif text_type == 'channel_info':
+                # Extract channel_id from key
+                channel_id = key.replace('channel_info_', '')
+                if 'channel_info' not in static_embeddings:
+                    static_embeddings['channel_info'] = {}
+                static_embeddings['channel_info'][channel_id] = emb
         
         print(f'[ info ] Computed static embeddings with aggregation method: {self.aggregation_method}')
         return static_embeddings
