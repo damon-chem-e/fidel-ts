@@ -28,6 +28,7 @@ suite:
         data:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        data_config:
           hetero_info:
             use_old_embeddings: true
         training:
@@ -57,6 +58,7 @@ suite:
         data:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        data_config:
           hetero_info:
             use_old_embeddings: true
         training:
@@ -86,6 +88,7 @@ suite:
         data:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        data_config:
           hetero_info:
             embedding_config:
               aggregation_method: "cls"
@@ -116,6 +119,7 @@ suite:
         data:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        data_config:
           hetero_info:
             embedding_config:
               aggregation_method: "cls"
@@ -146,6 +150,7 @@ suite:
         data:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        data_config:
           hetero_info:
             embedding_config:
               aggregation_method: "average"
@@ -176,6 +181,7 @@ suite:
         data:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        data_config:
           hetero_info:
             embedding_config:
               aggregation_method: "average"
