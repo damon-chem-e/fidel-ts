@@ -736,6 +736,35 @@ class Heterogeneous_Dataset(Dataset):
         #     print(timestamps, type(timestamps), downtime_ranges, type(downtime_ranges))
 
         return is_downtime
+    
+    def _normalize_embedding_shape(self, emb: np.ndarray) -> np.ndarray:
+        """
+        Normalize embedding shape to expected format for Fidel-TS compatibility.
+        
+        Ensures embeddings have shape (1, embedding_dim) for CLS/average aggregation
+        to match the expected format for downtime concatenation in get_hetero_data().
+        
+        Args:
+            emb: Embedding array (may have shape (embedding_dim,) or (1, embedding_dim))
+        
+        Returns:
+            Normalized embedding array with shape (1, embedding_dim)
+        """
+        if len(emb.shape) == 1:
+            # 1D array: (embedding_dim,) -> reshape to (1, embedding_dim)
+            emb = emb.reshape(1, -1)
+        elif len(emb.shape) == 2:
+            if emb.shape[0] != 1:
+                # If (embedding_dim, 1) or other shape, reshape to (1, embedding_dim)
+                emb = emb.reshape(1, -1)
+            # else: already (1, embedding_dim) - correct shape
+        else:
+            raise ValueError(
+                f"Unexpected embedding shape: {emb.shape}. "
+                f"Expected 1D (embedding_dim,) or 2D (1, embedding_dim)"
+            )
+        
+        return emb.astype(np.float32)
 
     # @profile
     def get_hetero_data(self, downtime_ranges, general_info, channel_info, downtime_prompt, id, timestamp):
@@ -806,13 +835,18 @@ class Heterogeneous_Dataset(Dataset):
 
             if self.output_format == 'embedding':
                 matched_dynamic = self.dynamic_data.loc[matched_times]['time'].values
-                output_dynamic_ = np.array([self.embeddings[time] for time in matched_dynamic], dtype=np.float32)
+                # Normalize embedding shapes to (1, embedding_dim) before batching
+                # This ensures compatibility with downtime concatenation logic
+                normalized_embeddings = [self._normalize_embedding_shape(self.embeddings[time]) for time in matched_dynamic]
+                output_dynamic_ = np.array(normalized_embeddings, dtype=np.float32)  # Shape: (batch, 1, embedding_dim)
+                
+                # Downtime data: shape (batch, 1, embedding_dim)
                 downtime_data_ = np.array([downtime_prompt if is_down else np.zeros((1, downtime_prompt.shape[-1])) 
                                         for is_down in is_downtime], dtype=np.float32)
-                # output_dynamic = np.concatenate([output_dynamic_, downtime_data_], axis=1)
-                output_dynamic = np.empty((len(matched_dynamic), output_dynamic_.shape[1] + downtime_data_.shape[1], downtime_prompt.shape[-1]), dtype=np.float32)
-                output_dynamic[:, :output_dynamic_.shape[1],:] = output_dynamic_
-                output_dynamic[:, output_dynamic_.shape[1]:,:] = downtime_data_
+                
+                # Concatenate dynamic embeddings and downtime indicators along num_items dimension
+                # Final shape: (batch, 2, embedding_dim) where 2 = num_items (dynamic + downtime)
+                output_dynamic = np.concatenate([output_dynamic_, downtime_data_], axis=1)
 
                 if self.noise > 0:
                     output_dynamic = self.__addnoise__(output_dynamic)
@@ -871,13 +905,18 @@ class Heterogeneous_Dataset(Dataset):
                 # Get the matched dynamic data for the specific subset id
                 matched_dynamic = self.dynamic_data[id].loc[matched_times]['time'].values
                 id_specific_embeddings = self.embeddings[id]
-                output_dynamic_ = np.array([id_specific_embeddings[time] for time in matched_dynamic], dtype=np.float32)
-
+                # Normalize embedding shapes to (1, embedding_dim) before batching
+                # This ensures compatibility with downtime concatenation logic
+                normalized_embeddings = [self._normalize_embedding_shape(id_specific_embeddings[time]) for time in matched_dynamic]
+                output_dynamic_ = np.array(normalized_embeddings, dtype=np.float32)  # Shape: (batch, 1, embedding_dim)
+                
+                # Downtime data: shape (batch, 1, embedding_dim)
                 downtime_data_ = np.array([downtime_prompt if is_down else np.zeros((1, downtime_prompt.shape[-1])) 
                                         for is_down in is_downtime], dtype=np.float32)
-                output_dynamic = np.empty((len(matched_dynamic), output_dynamic_.shape[1] + downtime_data_.shape[1], downtime_prompt.shape[-1]), dtype=np.float32)
-                output_dynamic[:, :output_dynamic_.shape[1],:] = output_dynamic_
-                output_dynamic[:, output_dynamic_.shape[1]:,:] = downtime_data_
+                
+                # Concatenate dynamic embeddings and downtime indicators along num_items dimension
+                # Final shape: (batch, 2, embedding_dim) where 2 = num_items (dynamic + downtime)
+                output_dynamic = np.concatenate([output_dynamic_, downtime_data_], axis=1)
                 if self.noise > 0:
                     output_dynamic = self.__addnoise__(output_dynamic)
             else:
