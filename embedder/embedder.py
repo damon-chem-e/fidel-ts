@@ -9,7 +9,7 @@ Unified interface for embedding text with support for:
 
 import torch
 import numpy as np
-from typing import List, Dict, Optional, Union, Tuple
+from typing import List, Dict, Optional, Union, Tuple, Any
 
 from .registry import EmbeddingModelRegistry
 from .aggregation import get_aggregation_function
@@ -31,7 +31,8 @@ class TextEmbedder:
                  batch_size: int = 32,
                  cache_root: Optional[str] = None,
                  cache_path: Optional[str] = None,
-                 force_reembed: bool = False):
+                 force_reembed: bool = False,
+                 console: Optional[Any] = None):
         """
         Initialize text embedder.
         
@@ -45,6 +46,7 @@ class TextEmbedder:
             cache_root: Root directory for embedding cache (if None, caching disabled)
             cache_path: Dataset-specific path within cache_root
             force_reembed: If True, recompute embeddings even if cache exists
+            console: Optional Rich Console instance for progress bar display
         """
         self.model_name = model_name
         self.aggregation_method = aggregation_method
@@ -53,6 +55,7 @@ class TextEmbedder:
         self.max_length = max_length
         self.batch_size = batch_size
         self.force_reembed = force_reembed
+        self.console = console  # Rich Console for progress bars
         
         # Get model and tokenizer from registry
         self.model = EmbeddingModelRegistry.get_model(model_name, device, hf_cache_dir)
@@ -242,16 +245,48 @@ class TextEmbedder:
         # Compute embeddings
         all_embeddings = []
         
-        # Process in batches
-        for i in range(0, len(texts), self.batch_size):
-            batch_texts = texts[i:i+self.batch_size]
+        # Calculate number of batches
+        num_batches = (len(texts) + self.batch_size - 1) // self.batch_size
+        
+        # Use Rich Progress if console is available, otherwise simple iteration
+        if self.console is not None:
+            from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
             
-            # Tokenize batch
-            input_ids, attention_mask = self._tokenize_batch(batch_texts)
+            progress_columns = (
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TextColumn("•"),
+                TextColumn("[progress.completed]{task.completed}/{task.total} batches"),
+                TimeElapsedColumn(),
+            )
             
-            # Compute embeddings
-            batch_embeddings = self._compute_embeddings_batch(input_ids, attention_mask)
-            all_embeddings.append(batch_embeddings)
+            with Progress(*progress_columns, console=self.console, transient=False) as progress:
+                task = progress.add_task("Computing embeddings", total=num_batches)
+                
+                # Process in batches
+                for i in range(0, len(texts), self.batch_size):
+                    batch_texts = texts[i:i+self.batch_size]
+                    
+                    # Tokenize batch
+                    input_ids, attention_mask = self._tokenize_batch(batch_texts)
+                    
+                    # Compute embeddings
+                    batch_embeddings = self._compute_embeddings_batch(input_ids, attention_mask)
+                    all_embeddings.append(batch_embeddings)
+                    
+                    progress.update(task, advance=1)
+        else:
+            # Fallback: simple iteration without progress bar
+            for i in range(0, len(texts), self.batch_size):
+                batch_texts = texts[i:i+self.batch_size]
+                
+                # Tokenize batch
+                input_ids, attention_mask = self._tokenize_batch(batch_texts)
+                
+                # Compute embeddings
+                batch_embeddings = self._compute_embeddings_batch(input_ids, attention_mask)
+                all_embeddings.append(batch_embeddings)
         
         # Concatenate all batches
         result = np.concatenate(all_embeddings, axis=0)

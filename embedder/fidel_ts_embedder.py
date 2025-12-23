@@ -105,7 +105,8 @@ class FidelTSEmbeddingLoader:
                  device: str = 'cpu',
                  hf_cache_dir: str = './HF_cache/',
                  force_reembed: bool = False,
-                 use_old_embeddings: bool = False):
+                 use_old_embeddings: bool = False,
+                 console=None):
         """
         Initialize Fidel-TS embedding loader.
         
@@ -129,6 +130,7 @@ class FidelTSEmbeddingLoader:
         self.hf_cache_dir = hf_cache_dir
         self.force_reembed = force_reembed
         self.use_old_embeddings = use_old_embeddings
+        self.console = console  # Rich Console for progress bars
         
         # Initialize path resolver
         self.path_resolver = FidelTSPathResolver(dataset_name, hetero_info, base_data_path)
@@ -150,7 +152,8 @@ class FidelTSEmbeddingLoader:
                 batch_size=32,
                 cache_root=None,  # Not using TextEmbedder's cache for Fidel-TS
                 cache_path=None,
-                force_reembed=self.force_reembed
+                force_reembed=self.force_reembed,
+                console=self.console
             )
     
     def load_embeddings(self) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:

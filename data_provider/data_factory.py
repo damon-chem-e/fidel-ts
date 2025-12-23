@@ -157,7 +157,8 @@ class Data_Provider(object):
                                                         device=self.args.gpu if self.args.use_gpu else 'cpu',
                                                         embedding_config=embedding_config,
                                                         use_old_embeddings=use_old_embeddings,
-                                                        base_data_path=base_data_path)
+                                                        base_data_path=base_data_path,
+                                                        console=self.console)
 
     def get_spliter(self):
         """

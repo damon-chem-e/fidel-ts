@@ -435,7 +435,7 @@ class Heterogeneous_Dataset(Dataset):
     def __init__(self, root_path, formatter, id_info, static_path=None, matching='nearest', output_format='json', 
                  timezone=None, noise = 0.0, hetero_type='all_for_one', id_list=None, postemb=None, postemb_model=None, 
                  postemb_max_len=None, postemb_d=None, postemb_batch_size=200, postemb_handle_downtime=None, device='cpu', 
-                 embedding_config=None, use_old_embeddings=False, base_data_path=None):
+                 embedding_config=None, use_old_embeddings=False, base_data_path=None, console=None):
         super().__init__()
 
         self.hetero_type = hetero_type
@@ -465,6 +465,7 @@ class Heterogeneous_Dataset(Dataset):
         self.embedding_config = embedding_config or {}
         self.use_old_embeddings = use_old_embeddings
         self.base_data_path = base_data_path or './data'  # Default to './data' if not provided
+        self.console = console  # Rich Console for progress bars
         
         if self.output_format == 'embedding':
             assert self.formatter is not None, "The embedding formatter should be provided if the output format is embedding"
@@ -550,7 +551,8 @@ class Heterogeneous_Dataset(Dataset):
             device=str(self.device) if hasattr(self.device, 'index') else 'cpu',
             hf_cache_dir=hf_cache_dir,
             force_reembed=force_reembed,
-            use_old_embeddings=self.use_old_embeddings
+            use_old_embeddings=self.use_old_embeddings,
+            console=self.console
         )
         
         # Load embeddings
