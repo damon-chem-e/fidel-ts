@@ -18,6 +18,7 @@ from exp.exp_universal import Experiment
 from cli.config.models import ExperimentConfig
 from exp.manager import ExperimentManager
 from utils.data_path_utils import replace_data_paths
+from runs.suite_executor import merge_configs
 
 
 def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
@@ -82,13 +83,14 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
         model_config = yaml.safe_load(f)
     
     # Merge model_config overrides if present (from experiment suite)
+    # Use deep merge to preserve nested structures if any exist
     # Supports both explicit model_config_overrides field and legacy model_config extra field
     # Explicit field takes precedence for clarity and type safety
     # Note: model_config_overrides is at top level of config (flattened from overrides by merge_configs)
     
     # Check explicit model_config_overrides field first (preferred)
     if hasattr(config, 'model_config_overrides') and config.model_config_overrides is not None:
-        model_config.update(config.model_config_overrides)
+        model_config = merge_configs(model_config, config.model_config_overrides)
     else:
         # Fallback: check for legacy 'model_config' extra field (for backward compatibility)
         # Extra fields in Pydantic v2 may not be accessible as attributes, so check model_dump() first
@@ -96,10 +98,10 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
             config_dict = config.model_dump(mode='python')
             # Check for model_config in dumped dict (handles extra fields)
             if 'model_config' in config_dict and isinstance(config_dict['model_config'], dict):
-                model_config.update(config_dict['model_config'])
+                model_config = merge_configs(model_config, config_dict['model_config'])
             # Also try direct attribute access as fallback (may work in some Pydantic versions)
             elif hasattr(config, 'model_config') and isinstance(getattr(config, 'model_config', None), dict):
-                model_config.update(getattr(config, 'model_config'))
+                model_config = merge_configs(model_config, getattr(config, 'model_config'))
     
     args.model_config = dotdict(model_config)
     
@@ -107,14 +109,15 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
         data_configs = yaml.safe_load(f)
     
     # Merge data_config overrides if present (from experiment suite)
+    # Use deep merge to preserve nested structures (e.g., hetero_info)
     # Pydantic models with extra="allow" store extra fields in model_extra or model_dump()
     if hasattr(config, 'model_dump'):
         config_dict = config.model_dump()
         if 'data_config' in config_dict and isinstance(config_dict['data_config'], dict):
-            data_configs.update(config_dict['data_config'])
+            data_configs = merge_configs(data_configs, config_dict['data_config'])
     # Also check if data_config is directly accessible (for backwards compatibility)
     elif hasattr(config, 'data_config') and isinstance(config.data_config, dict):
-        data_configs.update(config.data_config)
+        data_configs = merge_configs(data_configs, config.data_config)
     
     # Replace './data' with base_data_path if specified
     if config.base_data_path:
