@@ -840,8 +840,11 @@ class Heterogeneous_Dataset(Dataset):
                 normalized_embeddings = [self._normalize_embedding_shape(self.embeddings[time]) for time in matched_dynamic]
                 output_dynamic_ = np.array(normalized_embeddings, dtype=np.float32)  # Shape: (batch, 1, embedding_dim)
                 
+                # Normalize downtime_prompt to (1, embedding_dim)
+                downtime_prompt_norm = self._normalize_embedding_shape(downtime_prompt)
+                
                 # Downtime data: shape (batch, 1, embedding_dim)
-                downtime_data_ = np.array([downtime_prompt if is_down else np.zeros((1, downtime_prompt.shape[-1])) 
+                downtime_data_ = np.array([downtime_prompt_norm if is_down else np.zeros_like(downtime_prompt_norm) 
                                         for is_down in is_downtime], dtype=np.float32)
                 
                 # Concatenate dynamic embeddings and downtime indicators along num_items dimension
@@ -910,8 +913,11 @@ class Heterogeneous_Dataset(Dataset):
                 normalized_embeddings = [self._normalize_embedding_shape(id_specific_embeddings[time]) for time in matched_dynamic]
                 output_dynamic_ = np.array(normalized_embeddings, dtype=np.float32)  # Shape: (batch, 1, embedding_dim)
                 
+                # Normalize downtime_prompt to (1, embedding_dim)
+                downtime_prompt_norm = self._normalize_embedding_shape(downtime_prompt)
+                
                 # Downtime data: shape (batch, 1, embedding_dim)
-                downtime_data_ = np.array([downtime_prompt if is_down else np.zeros((1, downtime_prompt.shape[-1])) 
+                downtime_data_ = np.array([downtime_prompt_norm if is_down else np.zeros_like(downtime_prompt_norm) 
                                         for is_down in is_downtime], dtype=np.float32)
                 
                 # Concatenate dynamic embeddings and downtime indicators along num_items dimension
