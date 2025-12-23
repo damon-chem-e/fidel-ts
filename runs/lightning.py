@@ -18,7 +18,7 @@ from exp.exp_lightning import train_lightning_model
 from cli.config.models import ExperimentConfig
 from exp.manager import ExperimentManager
 from utils.data_path_utils import replace_data_paths
-from runs.suite_executor import merge_configs
+from utils.config_utils import merge_configs
 
 
 def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):

@@ -16,6 +16,7 @@ from datetime import datetime
 from cli.config.loader import resolve_config_path
 from cli.config.models import ExperimentConfig
 from utils.gpu_monitor import GpuMonitor
+from utils.config_utils import merge_configs
 from runs.pytorch import run as run_pytorch
 from runs.lightning import run as run_lightning
 from runs.llm import run as run_llm
@@ -53,31 +54,6 @@ def load_template(template_path: str, base_dir: Optional[Path] = None) -> Dict[s
     return template
 
 
-def merge_configs(template: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Merge template configuration with overrides.
-    
-    This function performs a deep merge, where overrides take precedence
-    over template values. Nested dictionaries are merged recursively.
-    
-    Args:
-        template: Base template configuration
-        overrides: Configuration overrides
-    
-    Returns:
-        Merged configuration dictionary
-    """
-    result = template.copy()
-    
-    for key, value in overrides.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            # Recursively merge nested dictionaries
-            result[key] = merge_configs(result[key], value)
-        else:
-            # Override with new value
-            result[key] = value
-    
-    return result
 
 
 def substitute_placeholders(config: Dict[str, Any], experiment_name: str, 
