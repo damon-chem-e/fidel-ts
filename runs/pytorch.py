@@ -88,14 +88,9 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     print(f"[DEBUG]   text_dim: {model_config.get('text_dim', 'NOT SET')}")
     # END DEBUG
     
-    # Merge model_config overrides if present (from experiment suite)
-    # Use deep merge to preserve nested structures if any exist
-    # Supports both explicit model_config_overrides field and legacy model_config extra field
-    # Explicit field takes precedence for clarity and type safety
-    # Note: model_config_overrides is at top level of config (flattened from overrides by merge_configs)
-    
-    # Check explicit model_config_overrides field first (preferred)
-    if hasattr(config, 'model_config_overrides') and config.model_config_overrides is not None:
+    # Merge model_config overrides if present.
+    # NOTE: Legacy 'model_config' overrides were removed because 'model_config' is reserved in Pydantic v2.
+    if config.model_config_overrides is not None:
         # BEGIN DEBUG
         print(f"[DEBUG] Found model_config_overrides in config:")
         print(f"[DEBUG]   {config.model_config_overrides}")
@@ -106,42 +101,10 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
         print(f"[DEBUG]   input_text_dim: {model_config.get('input_text_dim', 'NOT SET')}")
         print(f"[DEBUG]   text_dim: {model_config.get('text_dim', 'NOT SET')}")
         # END DEBUG
+    # BEGIN DEBUG
     else:
-        # Fallback: check for legacy 'model_config' extra field (for backward compatibility)
-        # Extra fields in Pydantic v2 may not be accessible as attributes, so check model_dump() first
-        if hasattr(config, 'model_dump'):
-            config_dict = config.model_dump(mode='python')
-            # Check for model_config in dumped dict (handles extra fields)
-            if 'model_config' in config_dict and isinstance(config_dict['model_config'], dict):
-                # BEGIN DEBUG
-                print(f"[DEBUG] Found model_config in config_dict:")
-                print(f"[DEBUG]   {config_dict['model_config']}")
-                # END DEBUG
-                model_config = merge_configs(model_config, config_dict['model_config'])
-                # BEGIN DEBUG
-                print(f"[DEBUG] After merging model_config from config_dict:")
-                print(f"[DEBUG]   input_text_dim: {model_config.get('input_text_dim', 'NOT SET')}")
-                print(f"[DEBUG]   text_dim: {model_config.get('text_dim', 'NOT SET')}")
-                # END DEBUG
-            # Also try direct attribute access as fallback (may work in some Pydantic versions)
-            elif hasattr(config, 'model_config') and isinstance(getattr(config, 'model_config', None), dict):
-                # BEGIN DEBUG
-                print(f"[DEBUG] Found model_config as attribute:")
-                print(f"[DEBUG]   {getattr(config, 'model_config')}")
-                # END DEBUG
-                model_config = merge_configs(model_config, getattr(config, 'model_config'))
-                # BEGIN DEBUG
-                print(f"[DEBUG] After merging model_config from attribute:")
-                print(f"[DEBUG]   input_text_dim: {model_config.get('input_text_dim', 'NOT SET')}")
-                print(f"[DEBUG]   text_dim: {model_config.get('text_dim', 'NOT SET')}")
-                # END DEBUG
-        # BEGIN DEBUG
-        else:
-            print(f"[DEBUG] No model_config_overrides found in config")
-            print(f"[DEBUG]   hasattr(config, 'model_config_overrides'): {hasattr(config, 'model_config_overrides')}")
-            if hasattr(config, 'model_config_overrides'):
-                print(f"[DEBUG]   config.model_config_overrides value: {config.model_config_overrides}")
-        # END DEBUG
+        print(f"[DEBUG] No model_config_overrides found in config")
+    # END DEBUG
     
     args.model_config = dotdict(model_config)
     

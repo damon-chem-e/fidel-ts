@@ -142,6 +142,25 @@ class ExperimentConfig(BaseModel):
     mark_last_job_complete: bool = Field(default=False, description="Mark the last running job as complete/timeout (required when resuming if previous job timed out)")
     
     model_config = ConfigDict(extra="allow")  # Allow extra fields for nested configs
+
+    @model_validator(mode="before")
+    @classmethod
+    def forbid_legacy_model_config_key(cls, data: Any) -> Any:
+        """
+        Forbid the legacy top-level key 'model_config'.
+
+        In Pydantic v2, 'model_config' is a reserved attribute used to configure model behavior.
+        Historically, this repo used a user-provided YAML key named 'model_config' to mean
+        "model config overrides", but that name collides with Pydantic internals and is unsafe.
+
+        Users must use 'model_config_overrides' instead.
+        """
+        if isinstance(data, dict) and "model_config" in data:
+            raise ValueError(
+                "Legacy config key 'model_config' is not supported. "
+                "Use 'model_config_overrides' for model YAML overrides."
+            )
+        return data
     
     @classmethod
     def from_yaml(cls, config_path: Union[str, Path]) -> 'ExperimentConfig':

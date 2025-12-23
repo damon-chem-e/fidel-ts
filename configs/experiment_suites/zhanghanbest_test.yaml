@@ -1,0 +1,154 @@
+# Experiment Suite: ZhangHanBest Model Test
+# Description: Test ZhangHanBest with all supported unimodal encoders (PatchTST, DLinear, Sundial, TimeMoE) for 1 epoch each
+# Usage: python -m cli.suite run configs/experiment_suites/zhanghanbest_test.yaml
+# Purpose: Verify that ZhangHanBest works correctly with each unimodal encoder type
+
+suite:
+  name: "zhanghanbest_test"
+  description: "Test ZhangHanBest model with all supported unimodal encoders (PatchTST, DLinear, Sundial, TimeMoE) - 1 epoch each"
+  tags: ["zhanghanbest", "multimodal", "pytorch", "test", "tgtsf"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/zhanghanbest_test"
+  
+  # Experiments in this suite
+  experiments:
+    # ZhangHanBest with PatchTST (default encoder)
+    - name: "zhanghanbest_patchtst_nyc_traffic_speed"
+      description: "ZhangHanBest with PatchTST encoder on NYC Traffic Speed (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          # PatchTST is the default, but explicitly set for clarity
+          unimodal_model_type: "PatchTST"
+          seq_len: 96
+          pred_len: 96
+          d_model: 512
+          revin: true
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 96
+          output_len: 96
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_test"
+        wandb:
+          enabled: false
+    
+    # ZhangHanBest with DLinear encoder
+    - name: "zhanghanbest_dlinear_nyc_traffic_speed"
+      description: "ZhangHanBest with DLinear encoder on NYC Traffic Speed (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "DLinear"
+          seq_len: 96
+          pred_len: 96
+          d_model: 512  # ZhangHanBest will add projection layer if needed
+          # DLinear doesn't use revin
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 96
+          output_len: 96
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_test"
+        wandb:
+          enabled: false
+    
+    # ZhangHanBest with Sundial encoder
+    - name: "zhanghanbest_sundial_nyc_traffic_speed"
+      description: "ZhangHanBest with Sundial encoder on NYC Traffic Speed (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "Sundial"
+          seq_len: 96
+          pred_len: 96
+          d_model: 512  # ZhangHanBest will add projection layer if hidden_size != d_model
+          # Sundial-specific configs (merged from model_configs/FM/Sundial.yaml)
+          model_name: "thuml/sundial-base-128m"
+          num_samples: 10
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 96
+          output_len: 96
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_test"
+        wandb:
+          enabled: false
+    
+    # ZhangHanBest with TimeMoE encoder
+    - name: "zhanghanbest_timemoe_nyc_traffic_speed"
+      description: "ZhangHanBest with TimeMoE encoder on NYC Traffic Speed (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "TimeMoE"
+          seq_len: 96
+          pred_len: 96
+          d_model: 512  # ZhangHanBest will add projection layer if hidden_size != d_model
+          # TimeMoE-specific configs (merged from model_configs/FM/TimeMoE.yaml)
+          model_name: "Maple728/TimeMoE-50M"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 96
+          output_len: 96
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_test"
+        wandb:
+          enabled: false
+
