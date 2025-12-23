@@ -7,6 +7,7 @@ NO fallback between systems - explicit requests only.
 """
 
 import joblib
+import pandas as pd
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 import numpy as np
@@ -14,6 +15,77 @@ import numpy as np
 from .fidel_ts_path_resolver import FidelTSPathResolver
 from .embedder import TextEmbedder
 from .cache_manager import EmbeddingCacheManager
+
+
+def flatten_nested_text_data(data: Dict[str, Any], separator: str = ' ') -> Dict[str, str]:
+    """
+    Flatten nested JSON structures into flat timestamp -> text string mapping.
+    
+    Handles both flat and nested JSON structures by converting nested dicts to
+    DataFrames and concatenating all text fields per timestamp. This preserves
+    all information by joining text values from different locations/time periods.
+    
+    Args:
+        data: Dictionary loaded from JSON file. Can be:
+            - Flat: {timestamp: text_string}
+            - 2-level nested: {timestamp: {location: text_string}}
+            - 3-level nested: {timestamp: {location: {time_period: text_string}}}
+            - Mixed structures
+        separator: String separator to use when concatenating multiple text values.
+                   Default is single space ' '.
+    
+    Returns:
+        Flat dictionary mapping timestamps (as strings) to concatenated text strings.
+        Each timestamp maps to a single string containing all text values joined.
+    
+    Example:
+        Input (nested):
+        {
+            "20170101": {
+                "brooklyn": {
+                    "daily": "Weather text 1",
+                    "Morning": "Weather text 2"
+                },
+                "queens": {
+                    "daily": "Weather text 3"
+                }
+            }
+        }
+        
+        Output (flat):
+        {
+            "20170101": "Weather text 1 Weather text 2 Weather text 3"
+        }
+    """
+    if not data:
+        return {}
+    
+    # Check if data is already flat (all values are strings)
+    # If all values are strings, return as-is (but ensure keys are strings)
+    if all(isinstance(v, str) for v in data.values()):
+        return {str(k): str(v) for k, v in data.items()}
+    
+    # Nested structure detected - convert to DataFrame and concatenate
+    try:
+        # Convert nested dict to DataFrame with timestamps as index
+        # This handles arbitrary nesting levels: nested keys become columns
+        df = pd.DataFrame.from_dict(data, orient='index')
+        
+        # Concatenate all columns (text fields) into a single string per row
+        # Convert all columns to strings, then join with separator
+        df_text = df.astype(str).apply(separator.join, axis=1)
+        
+        # Convert back to dictionary: {timestamp_str: concatenated_text_string}
+        result = df_text.to_dict()
+        
+        # Ensure all keys are strings
+        return {str(k): str(v) for k, v in result.items()}
+    
+    except Exception as e:
+        raise ValueError(
+            f"Failed to flatten nested text data. "
+            f"Expected dict structure with string or dict values. Error: {e}"
+        )
 
 
 class FidelTSEmbeddingLoader:
@@ -219,10 +291,16 @@ class FidelTSEmbeddingLoader:
     
     def _load_text_data(self) -> Dict[str, str]:
         """
-        Load text data from JSON files.
+        Load text data from JSON files and flatten nested structures.
+        
+        Handles both flat and nested JSON structures. For nested structures
+        (e.g., {timestamp: {location: {time_period: text}}}), flattens by
+        converting to DataFrame and concatenating all text values per timestamp.
+        This preserves all information while producing a flat dict for embedding.
         
         Returns:
-            Dictionary mapping timestamps to text strings
+            Dictionary mapping timestamps (as strings) to text strings.
+            For nested structures, text values are concatenated with spaces.
         """
         import json
         
@@ -234,15 +312,18 @@ class FidelTSEmbeddingLoader:
             if text_path.exists():
                 with open(text_path, 'r') as f:
                     data = json.load(f)
-                    # Assume data is dict with timestamp keys
-                    text_data.update(data)
+                    # Flatten nested structure if needed
+                    flattened = flatten_nested_text_data(data)
+                    text_data.update(flattened)
         elif 'old_text_paths' in self.paths:
-            # Multiple files
+            # Multiple files - load and merge them
             for text_path in self.paths['old_text_paths']:
                 if text_path.exists():
                     with open(text_path, 'r') as f:
                         data = json.load(f)
-                        text_data.update(data)
+                        # Flatten nested structure if needed
+                        flattened = flatten_nested_text_data(data)
+                        text_data.update(flattened)
         
         return text_data
     
