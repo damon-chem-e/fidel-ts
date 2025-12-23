@@ -45,8 +45,7 @@ suite:
           output_dir: "outputs/suites/embeddings_test"
         wandb:
           enabled: false
-        model_config_overrides:
-          input_text_dim: 768  # BERT-base-uncased output dimension
+        # Note: Old embeddings are already 256-dimensional (text_dim), so no input_text_dim override needed
     
     # Lynx Film Raw with old embeddings (1 epoch)
     - name: "lynx_film_raw_old_embeddings"
@@ -77,8 +76,7 @@ suite:
           output_dir: "outputs/suites/embeddings_test"
         wandb:
           enabled: false
-        model_config_overrides:
-          input_text_dim: 768  # BERT-base-uncased output dimension
+        # Note: Old embeddings are already 256-dimensional (text_dim), so no input_text_dim override needed
     
     # TGTSF with new embeddings (cls aggregation) (1 epoch)
     - name: "tgtsf_new_embeddings_cls"

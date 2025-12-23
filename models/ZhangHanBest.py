@@ -48,7 +48,8 @@ class Model(nn.Module):
         
         # Get representation dimension from TS encoder
         # For PatchTST: d_model from config
-        # For DLinear: seq_len (need to handle projection)
+        # For DLinear: pred_len (need to handle projection)
+        # For Sundial/TimeMoE: hidden_size from model config (need to handle projection)
         self.ts_rep_dim = getattr(configs, 'd_model', 512)  # Default from config
         
         # Handle DLinear special case: representation dim is pred_len, not d_model
@@ -58,13 +59,28 @@ class Model(nn.Module):
             d_model_from_config = getattr(configs, 'd_model', None)
             if d_model_from_config is None or d_model_from_config != self.pred_len:
                 # Add projection layer to match d_model
-                self.dlinear_proj = nn.Linear(self.pred_len, self.ts_rep_dim)
+                self.ts_proj = nn.Linear(self.pred_len, self.ts_rep_dim)
                 print(f'[ info ] ZhangHanBest: Added projection layer for DLinear: {self.pred_len} -> {self.ts_rep_dim}')
             else:
-                self.dlinear_proj = None
+                self.ts_proj = None
                 self.ts_rep_dim = self.pred_len
+        elif self.unimodal_model_type in ['Sundial', 'TimeMoE']:
+            # Sundial and TimeMoE return [B, hidden_size] from their internal representations
+            # Get actual hidden_size from the encoder model
+            encoder_hidden_size = getattr(self.ts_encoder, 'hidden_size', None)
+            if encoder_hidden_size is None:
+                raise ValueError(f"Encoder {self.unimodal_model_type} does not have hidden_size attribute")
+            
+            d_model_from_config = getattr(configs, 'd_model', None)
+            if d_model_from_config is None or d_model_from_config != encoder_hidden_size:
+                # Add projection layer to match d_model
+                self.ts_proj = nn.Linear(encoder_hidden_size, self.ts_rep_dim)
+                print(f'[ info ] ZhangHanBest: Added projection layer for {self.unimodal_model_type}: {encoder_hidden_size} -> {self.ts_rep_dim}')
+            else:
+                self.ts_proj = None
+                self.ts_rep_dim = encoder_hidden_size
         else:
-            self.dlinear_proj = None
+            self.ts_proj = None
         
         # 2. Text input dimension (from pre-computed embeddings)
         self.text_dim = getattr(configs, 'input_text_dim', 768)  # Embedding dimension (typically 768 for BERT)
@@ -139,11 +155,11 @@ class Model(nn.Module):
         """
         # 1. Get time series representations (aggregated)
         # Call unimodal model with return_representations=True
-        ts_repr = self.ts_encoder(x, return_representations=True)  # [B, d_model] or [B, pred_len] for DLinear
+        ts_repr = self.ts_encoder(x, return_representations=True)  # [B, d_model] or [B, pred_len] for DLinear, [B, hidden_size] for Sundial/TimeMoE
         
-        # Handle DLinear projection if needed
-        if self.dlinear_proj is not None:
-            ts_repr = self.dlinear_proj(ts_repr)  # [B, pred_len] -> [B, d_model]
+        # Handle projection if needed (for DLinear, Sundial, TimeMoE when dimensions don't match)
+        if self.ts_proj is not None:
+            ts_repr = self.ts_proj(ts_repr)  # Project to [B, d_model]
         
         # 2. Get text representation from pre-computed embeddings
         text_repr = self._get_text_embeddings(kwargs)  # [B, text_dim]

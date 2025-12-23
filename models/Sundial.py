@@ -37,10 +37,13 @@ class Model(nn.Module):
         )
         print(f"[ info ] {self.model_name} loaded successfully on device {next(self.model.parameters()).device}.")
         
+            # Get hidden size from model config for representation extraction
+        self.hidden_size = self.model.config.hidden_size
+        
         # Set to evaluation mode for inference
         self.model.eval()
 
-    def forward(self, x):
+    def forward(self, x, return_representations=False, **kwargs):
         """
         Performs a forward pass (prediction) following Sundial's logic.
 
@@ -48,19 +51,44 @@ class Model(nn.Module):
             x (torch.Tensor): 
                 Input context tensor. For univariate tasks, its shape is 
                 [Batch, Input length] from the DataLoader.
+            return_representations (bool): 
+                If True, return internal representations instead of predictions.
+                Returns aggregated hidden states [B, hidden_size] for use with ZhangHanBest.
             **kwargs: 
                 Catches any extra arguments and ignores them.
         
         Returns:
             torch.Tensor: 
-                Prediction tensor, reshaped to [Batch, Output length, 1] 
-                to match the framework's expectation.
+                If return_representations=False: 
+                    Prediction tensor [Batch, pred_len]
+                If return_representations=True:
+                    Aggregated representation [Batch, hidden_size]
         """
         # Sundial, unlike Time-MoE, does not require explicit external normalization.
         # It takes the raw (or globally scaled) sequence directly.
         context = x
 
-        # --- Model Generation ---
+        # --- Extract Representations (for ZhangHanBest integration) ---
+        if return_representations:
+            # Use forward pass with output_hidden_states to get internal representations
+            # This extracts hidden states before the language model head
+            with torch.no_grad():
+                outputs = self.model.forward(
+                    context,
+                    output_hidden_states=True,
+                    return_dict=True
+                )
+            
+            # Get last hidden state: [B, seq_len, hidden_size]
+            last_hidden_state = outputs.last_hidden_state
+            
+            # Aggregate over sequence length: mean pooling -> [B, hidden_size]
+            # This gives us a global representation of the input sequence
+            aggregated_repr = last_hidden_state.mean(dim=1)  # [B, hidden_size]
+            
+            return aggregated_repr
+
+        # --- Model Generation (original prediction path) ---
         # Generate multiple future sample trajectories.
         with torch.no_grad():
             output = self.model.generate(
