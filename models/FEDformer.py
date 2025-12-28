@@ -280,16 +280,21 @@ class Model(nn.Module):
             projection=nn.Linear(self.d_model, self.c_out, bias=True)
         )
 
-    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec,
+    def forward(self, x=None, x_enc=None, x_mark_enc=None, x_dec=None, x_mark_dec=None,
                 enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None, **kwargs):
         """
-        Forward pass for FEDformer (matches original interface).
+        Forward pass for FEDformer.
+        
+        Supports two calling conventions:
+        1. Framework interface: forward(x, **kwargs) - where x is [B, seq_len, C]
+        2. Original interface: forward(x_enc, x_mark_enc, x_dec, x_mark_dec, ...)
         
         Args:
-            x_enc: Input time series [B, seq_len, enc_in]
-            x_mark_enc: Encoder temporal marks [B, seq_len, time_features]
-            x_dec: Decoder input [B, label_len + pred_len, dec_in]
-            x_mark_dec: Decoder temporal marks [B, label_len + pred_len, time_features]
+            x: Input time series [B, seq_len, C] (framework interface)
+            x_enc: Input time series [B, seq_len, enc_in] (original interface)
+            x_mark_enc: Encoder temporal marks [B, seq_len, time_features] (original interface)
+            x_dec: Decoder input [B, label_len + pred_len, dec_in] (original interface)
+            x_mark_dec: Decoder temporal marks [B, label_len + pred_len, time_features] (original interface)
             enc_self_mask: Optional encoder self-attention mask
             dec_self_mask: Optional decoder self-attention mask
             dec_enc_mask: Optional decoder cross-attention mask
@@ -298,6 +303,28 @@ class Model(nn.Module):
         Returns:
             predictions: [B, pred_len, c_out]
         """
+        # Handle framework interface: convert x to FEDformer format
+        if x is not None:
+            # Framework passes x as [B, seq_len, C]
+            x_enc = x
+            # Temporal marks should be provided as direct keyword arguments (x_mark_enc, x_mark_dec)
+            # If not provided, raise an error
+            if x_mark_enc is None or x_mark_dec is None:
+                raise ValueError(
+                    "FEDformer requires temporal marks (x_mark_enc, x_mark_dec) when using framework interface. "
+                    "These should be provided via the dataloader with generate_time_features=True."
+                )
+        
+        # If using original interface, x_enc must be provided
+        if x_enc is None:
+            raise ValueError("Either 'x' (framework interface) or 'x_enc' (original interface) must be provided")
+        
+        # Temporal marks are required for FEDformer (either passed directly or via kwargs)
+        if x_mark_enc is None:
+            raise ValueError("x_mark_enc (encoder temporal marks) is required for FEDformer")
+        if x_mark_dec is None:
+            raise ValueError("x_mark_dec (decoder temporal marks) is required for FEDformer")
+        
         # Decomposition initialization
         # Initialize decoder with trend from encoder input extended by mean
         mean = torch.mean(x_enc, dim=1).unsqueeze(1).repeat(1, self.pred_len, 1)

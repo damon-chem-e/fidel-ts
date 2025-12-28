@@ -560,7 +560,8 @@ class TimeMMD_Dataset(Universal_Dataset):
                  embed_model_name='bert-base-uncased', embed_dim=768,
                  force_reembed=False, hf_cache_dir='./HF_cache/', device='cpu',
                  missing_value_strategy='none', required_indicators=None,
-                 aggregation_method='cls', use_old_pkl=False):
+                 aggregation_method='cls', use_old_pkl=False,
+                 generate_time_features=False, time_feature_freq='h'):
         """
         Initialize TimeMMD_Dataset.
         
@@ -617,7 +618,9 @@ class TimeMMD_Dataset(Universal_Dataset):
             downsample=downsample,
             entity_id=entity_id,
             missing_value_strategy=missing_value_strategy,
-            required_indicators=required_indicators  # Pass required_indicators to parent
+            required_indicators=required_indicators,  # Pass required_indicators to parent
+            generate_time_features=generate_time_features,
+            time_feature_freq=time_feature_freq
         )
         
         # Setup text getter after data is loaded (after parent.__init__ which loads data)

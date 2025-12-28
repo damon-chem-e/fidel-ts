@@ -14,6 +14,7 @@ import logging
 from utils.missing_value_handler import handle_missing_values
 from embedder import FidelTSEmbeddingLoader, FidelTSPathResolver
 from typing import Optional, Dict, Any
+from utils.timefeatures import time_features
 
 warnings.filterwarnings('ignore')
 
@@ -73,7 +74,8 @@ class Universal_Dataset(Dataset):
                  target='OT', scale=True, data_buffer=None, hetero_data_getter=None, 
                  preload_hetero=False, hetero_stride=1, task=None, custom_input=None, 
                  timezone=None, downsample=None, entity_id=None, 
-                 missing_value_strategy='none', required_indicators=None):
+                 missing_value_strategy='none', required_indicators=None,
+                 generate_time_features=False, time_feature_freq='h'):
         # size [seq_len, label_len, pred_len]
         # info
         self.seq_len = seq_len
@@ -103,6 +105,10 @@ class Universal_Dataset(Dataset):
         self.hetero_data_getter = (lambda x: x) if hetero_data_getter is None else hetero_data_getter # return the timestamp
         self.timezone = timezone
         self.downsample = downsample
+        
+        # Time feature generation (for FEDformer and similar models)
+        self.generate_time_features = generate_time_features
+        self.time_feature_freq = time_feature_freq
 
         self.__read_data__()
         self.preload_hetero = preload_hetero
@@ -330,9 +336,17 @@ class Universal_Dataset(Dataset):
                 hetero_general = y_hetero[1]
                 hetero_channel = y_hetero[2]
                 y_hetero = y_hetero[3]
+        
+        # Generate time features if enabled (for FEDformer and similar models)
+        x_time_features = None
+        y_time_features = None
+        if self.generate_time_features:
+            x_time_features = time_features(x_time, freq=self.time_feature_freq)
+            y_time_features = time_features(y_time, freq=self.time_feature_freq)
+        
         # Return sample_id as first element for consistent sample tracking across models
         # still return everything for compatibility, but unwanted set as 0 for efficiency
-        return sample_id, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel
+        return sample_id, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel, x_time_features, y_time_features
 
     def __len__(self):
         """

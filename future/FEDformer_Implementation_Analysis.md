@@ -1187,6 +1187,178 @@ model_config_overrides:
 
 ---
 
+## Framework Integration: Temporal Marks (Time Features) Support
+
+### Current Issue
+
+FEDformer requires temporal marks (`x_mark_enc`, `x_mark_dec`) which are time features extracted from timestamps. These are used by `TimeFeatureEmbedding` or `TemporalEmbedding` in the `DataEmbedding_wo_pos` layer.
+
+**Framework Interface:**
+- The framework calls: `model(x=batch_x, ...)` where `x` is `[B, seq_len, C]`
+- Timestamps (`timestamp_x`, `timestamp_y`) exist in the data loader but are NOT passed to the model
+- No temporal marks are provided
+
+**FEDformer Requirements:**
+- Needs: `forward(x_enc, x_mark_enc, x_dec, x_mark_dec, ...)`
+- `x_mark_enc`: `[B, seq_len, time_features]` - encoder temporal marks
+- `x_mark_dec`: `[B, label_len + pred_len, time_features]` - decoder temporal marks
+- Temporal marks are **required** (not optional) for proper temporal embedding
+
+**Current Status:**
+- The model will raise an explicit error if temporal marks are not provided
+- No dummy values are used (fail-fast approach to prevent silent failures)
+
+### Integration Plan: Two Approaches
+
+#### Option A: Add FEDformer-Compatible Mode to Existing Dataloader
+
+**Implementation Plan:**
+
+1. **Add configuration option to data config:**
+   ```yaml
+   # In data_configs/*/config.yaml
+   generate_time_features: true  # Enable time feature generation
+   time_feature_freq: h  # Frequency for time features: 'h', 't', 'd', etc.
+   ```
+
+2. **Modify `Universal_Dataset.__getitem__()`:**
+   - Add conditional logic to generate time features from `x_time` and `y_time`
+   - Use time feature extraction utility (see benchmark models for reference)
+   - Return time features as part of the batch tuple
+
+3. **Modify `exp_universal.py._forward_step()`:**
+   - Extract time features from batch tuple
+   - Pass `x_mark_enc` and `x_mark_dec` to model if available
+   - Update model forward call to include temporal marks
+
+4. **Create time feature extraction utility:**
+   - Create `utils/timefeatures.py` (mirror from benchmark models)
+   - Function: `time_features(timestamps, freq='h')` → `[seq_len, d_inp]`
+   - Supports frequencies: 'h' (hourly), 't' (minutely), 'd' (daily), etc.
+   - Returns features: month, day, weekday, hour (and minute for 't')
+
+5. **Update FEDformer forward method:**
+   - Accept temporal marks from kwargs when using framework interface
+   - Support: `forward(x, x_mark_enc=None, x_mark_dec=None, **kwargs)`
+   - Extract from kwargs if not provided directly
+   - Raise clear error if still missing
+
+**Pros:**
+- Minimal code duplication
+- Backward compatible (optional feature)
+- Works with existing datasets
+
+**Cons:**
+- Adds conditional logic to dataloader
+- May impact performance if time features computed on-the-fly
+- Requires coordination between data loader and experiment framework
+
+---
+
+#### Option B: Separate FEDformer-Compatible Dataloader
+
+**Implementation Plan:**
+
+1. **Create `data_provider/fedformer_data_loader.py`:**
+   - Mirror structure of `data_loader.py` (Universal_Dataset)
+   - Always generate time features from timestamps
+   - Return time features as part of batch tuple
+   - Can inherit from Universal_Dataset and override `__getitem__()`
+
+2. **Create `data_provider/fedformer_data_factory.py`:**
+   - Factory class similar to `Data_Provider`
+   - Uses FEDformer-compatible dataloader
+   - Handles time feature generation
+   - Returns batches with temporal marks
+
+3. **Create time feature extraction utility:**
+   - Same as Option A: `utils/timefeatures.py`
+   - Can be shared between approaches
+
+4. **Update experiment framework:**
+   - Detect if model requires temporal marks (e.g., check model class name)
+   - Use FEDformer dataloader factory when needed
+   - Pass temporal marks to model forward call
+
+5. **Update FEDformer forward method:**
+   - Accept temporal marks from framework
+   - Support framework interface with temporal marks
+   - Clear error messages if missing
+
+**Pros:**
+- Clean separation of concerns
+- No conditional logic in main dataloader
+- Easier to test and maintain
+- Can optimize for FEDformer-specific needs
+
+**Cons:**
+- Code duplication (mirroring dataloader structure)
+- Need to maintain two dataloader paths
+- May need separate data factory
+
+---
+
+### Recommended Approach: Option A (Enhanced Universal Dataset)
+
+**Rationale:**
+- Time features are useful for other models (Informer, Autoformer, etc.) too
+- Conditional logic is acceptable since it's feature-gated
+- Backward compatible (only enabled when needed)
+- Can be optimized with caching if needed
+
+**Implementation Steps:**
+
+1. **Phase 1: Time Feature Utility**
+   - Create `utils/timefeatures.py` with extraction functions
+   - Test with sample timestamps
+   - Support all frequencies used by models
+
+2. **Phase 2: Data Config Option**
+   - Add `generate_time_features` and `time_feature_freq` to config schema
+   - Update data config files as needed
+
+3. **Phase 3: Dataset Modification**
+   - Modify `Universal_Dataset.__getitem__()` to generate time features conditionally
+   - Add time features to return tuple: `(..., x_time_features, y_time_features)`
+
+4. **Phase 4: Experiment Framework Update**
+   - Extract time features from batch tuple in `_forward_step()`
+   - Construct `x_mark_enc` and `x_mark_dec` from time features
+   - Pass to model forward call
+
+5. **Phase 5: FEDformer Forward Update**
+   - Accept temporal marks from kwargs
+   - Support framework interface: `forward(x, x_mark_enc=..., x_mark_dec=..., **kwargs)`
+   - Remove error, use provided temporal marks
+
+6. **Phase 6: Testing**
+   - Test with FEDformer test suite
+   - Verify temporal embeddings are non-zero
+   - Compare with benchmark results
+
+---
+
+### Time Feature Format
+
+Time features are extracted from timestamps (int64 format: YYYYMMDDHHMMSS) and converted to numerical features:
+
+**For freq='h' (hourly):**
+- Shape: `[seq_len, 4]`
+- Features: `[month, day, weekday, hour]`
+- Normalized to appropriate ranges (0-11 for month, 0-6 for weekday, etc.)
+
+**For freq='t' (minutely):**
+- Shape: `[seq_len, 5]`
+- Features: `[month, day, weekday, hour, minute]`
+
+**For freq='d' (daily):**
+- Shape: `[seq_len, 3]`
+- Features: `[month, day, weekday]`
+
+These match the `TimeFeatureEmbedding` requirements (see `layers/Embed.py` lines 94-104).
+
+---
+
 ## Conclusion
 
 FEDformer represents a significant advance in efficient time series forecasting through frequency-domain operations and seasonal-trend decomposition. While it lacks multimodal capabilities, its O(N) complexity makes it suitable for very long sequences.

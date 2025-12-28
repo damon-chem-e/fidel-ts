@@ -133,6 +133,7 @@ suite:
           enc_in: 1  # Single target variable (OT)
           modes: 32
           use_norm: true
+          freq: m  # Monthly data (US_VMT_Month.csv)
     
     # ==========================================================================
     # NYC Traffic Speed Dataset

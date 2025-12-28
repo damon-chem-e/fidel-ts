@@ -449,6 +449,11 @@ class Data_Provider(object):
         # Get required indicator columns (ensures consistent feature dimensions)
         required_indicators = getattr(self, 'required_indicator_columns', [])
         
+        # Determine if time features should be generated (for FEDformer, Informer, etc.)
+        model_name = getattr(self.args, 'model', '').lower()
+        generate_time_features = model_name in ['fedformer', 'informer', 'autoformer']
+        time_feature_freq = getattr(self.args.model_config, 'freq', 'h') if hasattr(self.args, 'model_config') else 'h'
+        
         return TimeMMD_Dataset(
             root_path=self.dataset_config.root_path,
             data_path=data_path,
@@ -480,7 +485,9 @@ class Data_Provider(object):
             device=device,
             missing_value_strategy=missing_value_strategy,
             required_indicators=required_indicators,
-            aggregation_method=aggregation_method
+            aggregation_method=aggregation_method,
+            generate_time_features=generate_time_features,
+            time_feature_freq=time_feature_freq
         )
     
     def get_train(self, return_type='loader'):
@@ -615,6 +622,12 @@ class Data_Provider(object):
                         missing_value_strategy = self.dataset_config.get('missing_value_strategy', 'none')
                         # Get required indicator columns (ensures consistent feature dimensions)
                         required_indicators = getattr(self, 'required_indicator_columns', [])
+                        
+                        # Determine if time features should be generated (for FEDformer, Informer, etc.)
+                        # Check if model requires temporal marks
+                        model_name = getattr(self.args, 'model', '').lower()
+                        generate_time_features = model_name in ['fedformer', 'informer', 'autoformer']
+                        time_feature_freq = getattr(self.args.model_config, 'freq', 'h') if hasattr(self.args, 'model_config') else 'h'
                         dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path, 
                                                     flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len, 
                                                     spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col, 
@@ -623,7 +636,8 @@ class Data_Provider(object):
                                                     hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
                                                     task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
                                                     timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample,
-                                                    entity_id=i, missing_value_strategy=missing_value_strategy, required_indicators=required_indicators)  # Pass entity_id, missing_value_strategy, and required_indicators
+                                                    entity_id=i, missing_value_strategy=missing_value_strategy, required_indicators=required_indicators,
+                                                    generate_time_features=generate_time_features, time_feature_freq=time_feature_freq)  # Pass time feature parameters
                     datasets[i] = dataset
                     # Collect indicator columns for aggregated logging
                     if hasattr(dataset, 'missing_indicators') and dataset.missing_indicators:
@@ -646,6 +660,12 @@ class Data_Provider(object):
                     missing_value_strategy = self.dataset_config.get('missing_value_strategy', 'none')
                     # Get required indicator columns (ensures consistent feature dimensions)
                     required_indicators = getattr(self, 'required_indicator_columns', [])
+                    
+                    # Determine if time features should be generated (for FEDformer, Informer, etc.)
+                    # Check if model requires temporal marks
+                    model_name = getattr(self.args, 'model', '').lower()
+                    generate_time_features = model_name in ['fedformer', 'informer', 'autoformer']
+                    time_feature_freq = getattr(self.args.model_config, 'freq', 'h') if hasattr(self.args, 'model_config') else 'h'
                     dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path,
                                                 flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len, 
                                                 spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col, 
@@ -654,7 +674,8 @@ class Data_Provider(object):
                                                 hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
                                                 task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
                                                 timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample,
-                                                entity_id=i, missing_value_strategy=missing_value_strategy, required_indicators=required_indicators)  # Pass entity_id, missing_value_strategy, and required_indicators
+                                                entity_id=i, missing_value_strategy=missing_value_strategy, required_indicators=required_indicators,
+                                                generate_time_features=generate_time_features, time_feature_freq=time_feature_freq)  # Pass time feature parameters
                 datasets[i] = dataset
                 # Collect indicator columns for aggregated logging
                 if hasattr(dataset, 'missing_indicators') and dataset.missing_indicators:

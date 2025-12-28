@@ -14,8 +14,12 @@ Key features:
 - Self-attention Distilling: Halves sequence length between encoder layers
 - Generative-style Decoder: Start token + zero placeholders for prediction
 - Standard Encoder-Decoder architecture with cross-attention
+- Temporal marks (time features) REQUIRED - matching original implementation
 
 Usage in fidel-ts:
+    # Temporal marks are automatically generated when model name is 'Informer'
+    # The dataloader will provide x_mark_enc and x_mark_dec
+    
     configs = dotdict({
         'seq_len': 96,
         'pred_len': 24,
@@ -24,12 +28,15 @@ Usage in fidel-ts:
         'n_heads': 8,
         'e_layers': 2,
         'd_layers': 1,
-        'attn': 'prob',  # ProbSparse attention
-        'distil': True,  # Enable distilling
+        'attn': 'prob',   # ProbSparse attention
+        'distil': True,   # Enable distilling
+        'embed': 'timeF', # Time feature embedding (or 'fixed' for sinusoidal)
+        'freq': 'h',      # Hourly frequency
         # ... other config parameters
     })
     model = Model(configs)
-    output = model(x)  # x: [B, seq_len, channels]
+    # Framework provides temporal marks automatically
+    output = model(x=batch_x, x_mark_enc=x_mark_enc, x_mark_dec=x_mark_dec)
 """
 
 import torch
@@ -206,36 +213,67 @@ class Model(nn.Module):
             projection=nn.Linear(self.d_model, self.c_out, bias=True)
         )
 
-    def forward(self, x_enc, x_mark_enc=None, x_dec=None, x_mark_dec=None,
+    def forward(self, x=None, x_enc=None, x_mark_enc=None, x_dec=None, x_mark_dec=None,
                 enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None,
                 **kwargs):
         """
         Forward pass for Informer.
 
-        Supports both full interface (with temporal marks and decoder input)
-        and simplified interface (encoder input only).
+        Supports both framework interface (x as keyword) and original interface (x_enc as positional).
+        
+        IMPORTANT: Like the original Informer2020, temporal marks (x_mark_enc, x_mark_dec) are 
+        REQUIRED for proper operation. The DataEmbedding layer uses temporal features as part of
+        its embedding computation.
 
         Args:
-            x_enc: Encoder input [B, seq_len, enc_in]
-            x_mark_enc: Encoder temporal marks [B, seq_len, time_features] (optional)
+            x: Input time series [B, seq_len, C] (framework interface - mapped to x_enc)
+            x_enc: Encoder input [B, seq_len, enc_in] (original interface)
+            x_mark_enc: Encoder temporal marks [B, seq_len, time_features] (REQUIRED)
             x_dec: Decoder input [B, label_len + pred_len, dec_in] (optional)
-                   If None, auto-constructed from x_enc
-            x_mark_dec: Decoder temporal marks (optional)
+                   If None, auto-constructed from x_enc using generative decoding approach
+            x_mark_dec: Decoder temporal marks [B, label_len + pred_len, time_features] (REQUIRED)
             enc_self_mask: Optional encoder self-attention mask
             dec_self_mask: Optional decoder self-attention mask
             dec_enc_mask: Optional decoder cross-attention mask
-            **kwargs: Additional arguments (ignored for compatibility)
+            **kwargs: Additional arguments (ignored for compatibility, e.g., historical_events, news)
 
         Returns:
             predictions: [B, pred_len, c_out]
             attns: (optional) attention weights if output_attention=True
         """
         # =====================================================================
-        # Handle simplified interface (only x_enc provided)
+        # Handle framework interface: convert x to x_enc
         # =====================================================================
+        if x is not None:
+            x_enc = x
+        
+        # Validate required inputs
+        if x_enc is None:
+            raise ValueError("Either 'x' (framework interface) or 'x_enc' (original interface) must be provided")
+        
+        # =====================================================================
+        # Validate temporal marks (REQUIRED - matching original Informer2020)
+        # =====================================================================
+        # The original Informer DataEmbedding always adds temporal_embedding(x_mark)
+        # without any None check - temporal marks are essential for the model
+        if x_mark_enc is None:
+            raise ValueError(
+                "x_mark_enc (encoder temporal marks) is required for Informer. "
+                "Ensure the dataloader provides time features. The model name should be 'Informer' "
+                "for automatic time feature generation."
+            )
+        if x_mark_dec is None:
+            raise ValueError(
+                "x_mark_dec (decoder temporal marks) is required for Informer. "
+                "Ensure the dataloader provides time features. The model name should be 'Informer' "
+                "for automatic time feature generation."
+            )
+        
+        # =====================================================================
+        # Auto-construct decoder input if not provided (generative decoding)
+        # =====================================================================
+        # Original Informer uses: last label_len timesteps + zero-padding for pred_len
         if x_dec is None:
-            # Create decoder input: last label_len of input + zeros for prediction
-            # This matches the original Informer generative decoding approach
             x_dec = torch.zeros(
                 x_enc.size(0), self.label_len + self.pred_len, x_enc.size(2),
                 device=x_enc.device, dtype=x_enc.dtype
@@ -254,7 +292,7 @@ class Model(nn.Module):
         # =====================================================================
         # Decoder forward pass
         # =====================================================================
-        # Embed decoder input
+        # Embed decoder input: value embedding + positional + temporal
         dec_out = self.dec_embedding(x_dec, x_mark_dec)
         # Pass through decoder layers with cross-attention to encoder output
         dec_out = self.decoder(
@@ -275,7 +313,7 @@ class Model(nn.Module):
 # Quick test when run directly
 # =============================================================================
 if __name__ == '__main__':
-    """Quick test of the Informer model."""
+    """Quick test of the Informer model (matches original Informer2020 interface)."""
 
     class Configs:
         """Test configuration matching original Informer defaults."""
@@ -295,8 +333,8 @@ if __name__ == '__main__':
         distil = True
         dropout = 0.05
         activation = 'gelu'
-        embed = 'timeF'
-        freq = 'h'
+        embed = 'timeF'  # 'timeF' uses linear projection, 'fixed' uses sinusoidal (original paper)
+        freq = 'h'       # hourly frequency -> 4 time features
         output_attention = False
 
     configs = Configs()
@@ -304,26 +342,42 @@ if __name__ == '__main__':
 
     print(f'Informer parameter count: {sum(p.numel() for p in model.parameters()):,}')
 
-    # Test with simplified interface (encoder input only)
-    enc = torch.randn(2, 96, 7)
-    out = model(enc)
-    print(f'Simplified interface output shape: {out.shape}')
+    # Create test inputs (temporal marks REQUIRED - matching original Informer2020)
+    # For freq='h', time features have 4 dimensions: [month, day, weekday, hour]
+    enc = torch.randn(2, 96, 7)           # [B, seq_len, enc_in]
+    enc_mark = torch.randn(2, 96, 4)      # [B, seq_len, time_features]
+    dec_mark = torch.randn(2, 48 + 24, 4) # [B, label_len + pred_len, time_features]
+
+    # Test with framework interface (x=..., auto-constructed x_dec)
+    out = model(x=enc, x_mark_enc=enc_mark, x_mark_dec=dec_mark)
+    print(f'Framework interface output shape: {out.shape}')
     assert out.shape == (2, 24, 7), f"Expected (2, 24, 7), got {out.shape}"
 
-    # Test with full interface (includes temporal marks)
-    enc_mark = torch.randn(2, 96, 4)
-    dec = torch.randn(2, 48 + 24, 7)
-    dec_mark = torch.randn(2, 48 + 24, 4)
-    out_full = model(enc, enc_mark, dec, dec_mark)
-    print(f'Full interface output shape: {out_full.shape}')
+    # Test with full interface (explicit x_dec - matches original Informer2020)
+    dec = torch.randn(2, 48 + 24, 7)  # [B, label_len + pred_len, dec_in]
+    out_full = model(x_enc=enc, x_mark_enc=enc_mark, x_dec=dec, x_mark_dec=dec_mark)
+    print(f'Original interface output shape: {out_full.shape}')
     assert out_full.shape == (2, 24, 7), f"Expected (2, 24, 7), got {out_full.shape}"
 
     # Test with full attention (no ProbSparse)
     configs.attn = 'full'
     configs.distil = False
     model_full = Model(configs)
-    out_full_attn = model_full(enc)
+    out_full_attn = model_full(x=enc, x_mark_enc=enc_mark, x_mark_dec=dec_mark)
     print(f'Full attention output shape: {out_full_attn.shape}')
+    assert out_full_attn.shape == (2, 24, 7), f"Expected (2, 24, 7), got {out_full_attn.shape}"
+
+    # Test with fixed embedding (original Informer paper default)
+    configs.embed = 'fixed'
+    configs.attn = 'prob'
+    configs.distil = True
+    model_fixed = Model(configs)
+    # Fixed embedding expects integer temporal indices [month, day, weekday, hour, ...]
+    enc_mark_fixed = torch.randint(0, 12, (2, 96, 4))       # Integer indices for temporal embedding
+    dec_mark_fixed = torch.randint(0, 12, (2, 48 + 24, 4))
+    out_fixed = model_fixed(x=enc, x_mark_enc=enc_mark_fixed, x_mark_dec=dec_mark_fixed)
+    print(f'Fixed embedding output shape: {out_fixed.shape}')
+    assert out_fixed.shape == (2, 24, 7), f"Expected (2, 24, 7), got {out_fixed.shape}"
 
     print('All Informer tests passed!')
 

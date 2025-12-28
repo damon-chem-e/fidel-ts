@@ -164,22 +164,77 @@ class Experiment(Exp_Basic):
                   - ground_truth: True target values for comparison
                   - sample_ids: Sample identifiers for metrics tracking
         """
-        # iteration: sample_ids, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel
+        # iteration: sample_ids, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel, x_time_features, y_time_features
 
-        sample_ids, batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel = iter
+        sample_ids, batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel, x_time_features, y_time_features = iter
 
         if hasattr(self.model, 'move_to_device'):
             batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel = self.model.move_to_device(batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel, self.device) # move only the ones needed to device according to model's definition to save VRAM
         else:
             # only move batch_x, batch_y to device for TSF models
             batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel = general_move_to_device(batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel, self.device)
-
-        output = self.model(x=batch_x, historical_events =batch_x_hetero, news = batch_y_hetero, dataset_description=hetero_general, channel_description=hetero_channel)
+        
+        # Handle time features for models that require them (FEDformer, Informer, etc.)
+        x_mark_enc, x_mark_dec = self._prepare_temporal_marks(
+            x_time_features, y_time_features, batch_x.shape[0]
+        )
+        
+        # Call model with appropriate interface based on temporal marks availability
+        if x_mark_enc is not None and x_mark_dec is not None:
+            output = self.model(x=batch_x, x_mark_enc=x_mark_enc, x_mark_dec=x_mark_dec, 
+                              historical_events=batch_x_hetero, news=batch_y_hetero, 
+                              dataset_description=hetero_general, channel_description=hetero_channel)
+        else:
+            # Standard framework interface
+            output = self.model(x=batch_x, historical_events =batch_x_hetero, news = batch_y_hetero, dataset_description=hetero_general, channel_description=hetero_channel)
 
         output = output[:, -self.args.output_len:, :]
         gt = batch_y
 
         return output, gt, sample_ids
+
+    def _prepare_temporal_marks(self, x_time_features, y_time_features, batch_size):
+        """
+        Prepare temporal marks (x_mark_enc, x_mark_dec) for models that require them.
+        
+        Converts time feature numpy arrays to tensors, moves them to device, and constructs
+        the proper format for decoder temporal marks (label_len + pred_len) for models like
+        FEDformer, Informer, and Autoformer.
+        
+        Args:
+            x_time_features: Encoder time features [B, seq_len, time_features] as numpy array or None
+            y_time_features: Target time features [B, pred_len, time_features] as numpy array or None
+            batch_size: Batch size for validation (not currently used but available for future use)
+        
+        Returns:
+            tuple: (x_mark_enc, x_mark_dec) as torch.Tensor or (None, None) if not applicable
+                   - x_mark_enc: [B, seq_len, time_features] encoder temporal marks
+                   - x_mark_dec: [B, label_len + pred_len, time_features] decoder temporal marks
+        """
+        # Check if model requires temporal marks
+        model_name = getattr(self.args, 'model', '').lower()
+        if model_name not in ['fedformer', 'informer', 'autoformer']:
+            return None, None
+        
+        # If time features are not provided, return None (model will handle error)
+        if x_time_features is None or y_time_features is None:
+            return None, None
+        
+        # Convert numpy arrays to tensors and move to device
+        x_mark_enc = torch.from_numpy(x_time_features).float().to(self.device)
+        x_mark_dec = torch.from_numpy(y_time_features).float().to(self.device)
+        
+        # For FEDformer and similar models, x_mark_dec needs to cover label_len + pred_len
+        # y_time_features only covers pred_len, so we need to extend it by taking
+        # the last label_len timestamps from x_mark_enc and prepending to x_mark_dec
+        if hasattr(self.model, 'label_len'):
+            label_len = self.model.label_len
+            # Take last label_len time features from encoder
+            x_mark_dec_label = x_mark_enc[:, -label_len:, :]
+            # Concatenate with prediction horizon time features
+            x_mark_dec = torch.cat([x_mark_dec_label, x_mark_dec], dim=1)
+        
+        return x_mark_enc, x_mark_dec
 
     def _setup_training(self):
         """
