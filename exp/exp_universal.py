@@ -197,13 +197,16 @@ class Experiment(Exp_Basic):
         """
         Prepare temporal marks (x_mark_enc, x_mark_dec) for models that require them.
         
-        Converts time feature numpy arrays to tensors, moves them to device, and constructs
+        Converts time feature arrays (numpy or tensor) to tensors, moves them to device, and constructs
         the proper format for decoder temporal marks (label_len + pred_len) for models like
         FEDformer, Informer, and Autoformer.
         
         Args:
-            x_time_features: Encoder time features [B, seq_len, time_features] as numpy array or None
-            y_time_features: Target time features [B, pred_len, time_features] as numpy array or None
+            x_time_features: Encoder time features [B, seq_len, time_features] as numpy array, 
+                            torch.Tensor, or None. Note: DataLoader's default_collate may convert
+                            numpy arrays to tensors automatically.
+            y_time_features: Target time features [B, pred_len, time_features] as numpy array,
+                            torch.Tensor, or None
             batch_size: Batch size for validation (not currently used but available for future use)
         
         Returns:
@@ -220,9 +223,18 @@ class Experiment(Exp_Basic):
         if x_time_features is None or y_time_features is None:
             return None, None
         
-        # Convert numpy arrays to tensors and move to device
-        x_mark_enc = torch.from_numpy(x_time_features).float().to(self.device)
-        x_mark_dec = torch.from_numpy(y_time_features).float().to(self.device)
+        # Convert to tensors and move to device
+        # DataLoader's default_collate may already convert numpy arrays to tensors
+        # Handle both cases: numpy arrays and tensors
+        if isinstance(x_time_features, torch.Tensor):
+            x_mark_enc = x_time_features.float().to(self.device)
+        else:
+            x_mark_enc = torch.from_numpy(x_time_features).float().to(self.device)
+        
+        if isinstance(y_time_features, torch.Tensor):
+            x_mark_dec = y_time_features.float().to(self.device)
+        else:
+            x_mark_dec = torch.from_numpy(y_time_features).float().to(self.device)
         
         # For FEDformer and similar models, x_mark_dec needs to cover label_len + pred_len
         # y_time_features only covers pred_len, so we need to extend it by taking
