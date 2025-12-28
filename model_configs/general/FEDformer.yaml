@@ -1,0 +1,31 @@
+# FEDformer: Frequency Enhanced Decomposed Transformer
+# Reference: Zhou et al., ICML 2022
+# https://arxiv.org/abs/2201.12740
+
+model: FEDformer
+
+# Model dimensions
+d_model: 128          # Model embedding dimension
+d_ff: 256             # Feed-forward network dimension
+n_heads: 8            # Number of attention heads
+e_layers: 2           # Number of encoder layers
+d_layers: 1           # Number of decoder layers
+
+# FEDformer specific
+modes: 32             # Number of frequency modes to keep
+mode_select: random   # Mode selection: 'random' or 'low'
+moving_avg: 25        # Kernel size for trend extraction (can be list like [12, 24])
+
+# General settings
+dropout: 0.05         # Dropout rate
+activation: gelu      # Activation function: 'relu' or 'gelu'
+output_attention: False  # Whether to output attention weights
+use_norm: True        # Whether to use instance normalization
+
+# Embedding settings
+embed: timeF          # Embedding type: 'timeF', 'fixed', or 'learned'
+freq: h               # Time frequency for embeddings: 'h' (hourly), 'd' (daily), etc.
+
+# Task type
+task: TSF             # Time Series Forecasting
+

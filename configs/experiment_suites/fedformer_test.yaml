@@ -1,0 +1,172 @@
+# Experiment Suite: FEDformer Test Suite
+# Description: Test FEDformer (unimodal frequency-enhanced transformer) on various datasets
+# This tests the FEDformer implementation on TTC, Time-MMD, and NYC Traffic datasets
+# Usage: python -m cli.suite run configs/experiment_suites/fedformer_test.yaml
+
+suite:
+  name: "fedformer_test"
+  description: "Test FEDformer (unimodal) on TTC, Time-MMD, and NYC Traffic datasets (1 epoch each)"
+  tags: ["fedformer", "unimodal", "pytorch", "test", "frequency"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/fedformer_test"
+    
+  # Experiments in this suite
+  experiments:
+    # ==========================================================================
+    # TTC Datasets
+    # ==========================================================================
+    
+    # TTC Climate
+    - name: "fedformer_ttc_climate_24"
+      description: "FEDformer on TTC Climate dataset with 24-step prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "FEDformer"
+          config_path: "model_configs/general/FEDformer.yaml"
+        data:
+          name: "ttc_climate"
+          config_path: "data_configs/ttc/climate/config.yaml"
+        training:
+          input_len: 96
+          output_len: 24
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        wandb:
+          enabled: false
+        model_config_overrides:
+          enc_in: 4  # temp, precip, humidity, windspeed
+          modes: 32
+          use_norm: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/fedformer_test"
+    
+    # TTC Medical
+    - name: "fedformer_ttc_medical_7"
+      description: "FEDformer on TTC Medical dataset with 7-step prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "FEDformer"
+          config_path: "model_configs/general/FEDformer.yaml"
+        data:
+          name: "ttc_medical"
+          config_path: "data_configs/ttc/medical/config.yaml"
+        data_config:
+          filter_insufficient_entities: true
+          missing_value_strategy: forward_fill_indicators
+        training:
+          input_len: 7
+          output_len: 7
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        wandb:
+          enabled: false
+        model_config_overrides:
+          enc_in: 4  # Respiratory_Rate, Heart_Rate, SaO2, FiO2
+          modes: 4   # Fewer modes for short sequences
+          moving_avg: 3  # Smaller moving average for short sequences
+          use_norm: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/fedformer_test"
+    
+    # ==========================================================================
+    # Time-MMD Dataset (Traffic)
+    # ==========================================================================
+    
+    - name: "fedformer_time_mmd_traffic_24"
+      description: "FEDformer on Time-MMD Traffic dataset with 24-step prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "FEDformer"
+          config_path: "model_configs/general/FEDformer.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          experiment_output: "./output"
+          epochs: 1
+          batch_size: 4
+          learning_rate: 1e-4
+          patience: 3
+          loss: mse
+          lradj: type3
+          scale: true
+          disable_buffer: false
+          preload_hetero: false
+          prefetch_factor: 2
+          noise: 0.0
+          input_len: 96
+          output_len: 24
+          num_workers: 0
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/fedformer_test"
+        # Base data path override
+        base_data_path: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/data/
+        model_config_overrides:
+          enc_in: 1  # Single target variable (OT)
+          modes: 32
+          use_norm: true
+    
+    # ==========================================================================
+    # NYC Traffic Speed Dataset
+    # ==========================================================================
+    
+    - name: "fedformer_nyc_traffic_speed_24"
+      description: "FEDformer on NYC Traffic Speed dataset with 24-step prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "FEDformer"
+          config_path: "model_configs/general/FEDformer.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_H.yaml"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 64
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        wandb:
+          enabled: false
+        model_config_overrides:
+          enc_in: 1  # SPEED channel
+          modes: 64  # More modes for longer sequences
+          d_model: 128
+          d_ff: 256
+          use_norm: true
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/fedformer_test"
+
