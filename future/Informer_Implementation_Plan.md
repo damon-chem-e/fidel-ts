@@ -11,14 +11,17 @@ This document outlines a detailed plan for implementing Informer as an additiona
 ## Table of Contents
 
 1. [Architecture Analysis](#1-architecture-analysis)
-2. [Component Mapping](#2-component-mapping)
-3. [Implementation Strategy](#3-implementation-strategy)
-4. [File Structure](#4-file-structure)
-5. [Detailed Implementation Steps](#5-detailed-implementation-steps)
-6. [Configuration Files](#6-configuration-files)
-7. [Testing Plan](#7-testing-plan)
-8. [Potential Challenges](#8-potential-challenges)
-9. [Timeline Estimate](#9-timeline-estimate)
+2. [Embedding Architecture in fidel-ts](#2-embedding-architecture-in-fidel-ts)
+3. [Component Mapping](#3-component-mapping)
+4. [Implementation Strategy](#4-implementation-strategy)
+5. [File Structure](#5-file-structure)
+6. [Detailed Implementation Steps](#6-detailed-implementation-steps)
+7. [Configuration Files](#7-configuration-files)
+8. [Testing Plan](#8-testing-plan)
+9. [Potential Challenges](#9-potential-challenges)
+10. [Timeline Estimate](#10-timeline-estimate)
+11. [Future Extension: Multimodal Informer](#11-future-extension-multimodal-informer)
+12. [Summary](#12-summary)
 
 ---
 
@@ -61,9 +64,96 @@ The original repository provides two variants:
 
 ---
 
-## 2. Component Mapping
+## 2. Embedding Architecture in fidel-ts
 
-### 2.1 Existing Components in fidel-ts
+### 2.1 Two Distinct Embedding Systems
+
+The fidel-ts repository has **two distinct embedding systems** serving different purposes:
+
+| System | Location | Purpose | Used By |
+|--------|----------|---------|---------|
+| **Time Series Embeddings** | `layers/Embed.py` | Convert raw time series values → model dimension | Informer, FEDformer, iTransformer, etc. |
+| **Text Embeddings** | `embedder/` | Convert textual metadata → BERT embeddings | Multimodal models (Lynx, etc.) |
+
+### 2.2 Time Series Embeddings (`layers/Embed.py`)
+
+These are the embeddings Informer will use. They transform raw time series data into the model's hidden dimension:
+
+```
+Raw Input: x [B, seq_len, channels]
+    ↓
+TokenEmbedding (1D Conv): [B, seq_len, channels] → [B, seq_len, d_model]
+    ↓
+PositionalEmbedding (sinusoidal): adds positional information
+    ↓  
+TemporalEmbedding (time features): adds temporal context (hour, day, month, etc.)
+    ↓
+Output: [B, seq_len, d_model]
+```
+
+**Components in `layers/Embed.py`:**
+
+| Class | Description |
+|-------|-------------|
+| `TokenEmbedding` | 1D convolution to project input channels to d_model |
+| `PositionalEmbedding` | Fixed sinusoidal positional encoding |
+| `TemporalEmbedding` | Learnable temporal features (hour, weekday, day, month) |
+| `TimeFeatureEmbedding` | Linear projection of continuous time features |
+| `DataEmbedding` | Combined: Token + Position + Temporal |
+| `DataEmbedding_inverted` | For iTransformer (channel-first processing) |
+
+### 2.3 Text Embeddings (`embedder/`)
+
+This is the **centralized text embedding system** for multimodal forecasting. It provides BERT-based embeddings for textual metadata associated with time series:
+
+```
+embedder/
+├── embedder.py              # TextEmbedder: Main embedding interface
+├── registry.py              # EmbeddingModelRegistry: Shared model/tokenizer registry
+├── aggregation.py           # CLS token, average pooling, no pooling
+├── metadata.py              # Track embedding configurations
+├── cache_manager.py         # Hash-based cache directories
+├── fidel_ts_embedder.py     # FidelTSEmbeddingLoader: Dataset-specific loading
+└── fidel_ts_path_resolver.py # Path resolution for different datasets
+```
+
+**Key Features:**
+
+| Feature | Description |
+|---------|-------------|
+| **Shared Registry** | `EmbeddingModelRegistry` prevents loading duplicate BERT models |
+| **Caching** | Hash-based cache system for efficient embedding reuse |
+| **Aggregation** | Multiple strategies: CLS token, average pooling, none |
+| **Thread-safe** | Safe for concurrent DataLoader worker access |
+
+### 2.4 Implications for Informer
+
+**For the base Informer implementation (unimodal):**
+- ✅ Use only `layers/Embed.py` components
+- ✅ `DataEmbedding` provides all necessary embeddings
+- ❌ No need for `embedder/` module
+
+**For future multimodal extension:**
+- Would integrate with `embedder/` for text-aware forecasting
+- See [Section 11: Future Extension](#11-future-extension-multimodal-informer)
+
+### 2.5 Comparison with Original Informer2020
+
+| Embedding Component | Informer2020 Location | fidel-ts Location | Compatible? |
+|---------------------|----------------------|-------------------|-------------|
+| `TokenEmbedding` | `models/embed.py` | `layers/Embed.py` | ✅ Identical |
+| `PositionalEmbedding` | `models/embed.py` | `layers/Embed.py` | ✅ Identical |
+| `TemporalEmbedding` | `models/embed.py` | `layers/Embed.py` | ✅ Identical |
+| `TimeFeatureEmbedding` | `models/embed.py` | `layers/Embed.py` | ✅ Identical |
+| `DataEmbedding` | `models/embed.py` | `layers/Embed.py` | ✅ Identical |
+
+**The fidel-ts embedding layer is a direct port from the original Informer codebase**, ensuring full compatibility.
+
+---
+
+## 3. Component Mapping
+
+### 3.1 Existing Components in fidel-ts
 
 The fidel-ts repository already has several components that can be reused:
 
@@ -86,7 +176,7 @@ The fidel-ts repository already has several components that can be reused:
 | `ProbMask` | `ProbMask` | `utils/masking.py` | ✅ Yes |
 | `EncoderStack` | ❌ Not present | - | ⚠️ Needs implementation |
 
-### 2.2 Key Finding
+### 3.2 Key Finding
 
 **Almost all Informer components already exist in fidel-ts!** The implementation can be very lightweight since:
 
@@ -99,9 +189,9 @@ Only `EncoderStack` (for InformerStack variant) needs to be added if desired.
 
 ---
 
-## 3. Implementation Strategy
+## 4. Implementation Strategy
 
-### 3.1 Approach: Minimal New Code
+### 4.1 Approach: Minimal New Code
 
 Given the existing infrastructure, we can implement Informer by:
 
@@ -109,7 +199,7 @@ Given the existing infrastructure, we can implement Informer by:
 2. **Adding a model config file** (`model_configs/general/Informer.yaml`) ~30 lines
 3. **Optionally** adding `EncoderStack` to `Transformer_EncDec.py` for InformerStack variant ~20 lines
 
-### 3.2 Pattern to Follow
+### 4.2 Pattern to Follow
 
 Follow the exact pattern used by `FEDformer.py`:
 
@@ -134,9 +224,9 @@ models/Informer.py
 
 ---
 
-## 4. File Structure
+## 5. File Structure
 
-### 4.1 Files to Create
+### 5.1 Files to Create
 
 ```
 fidel-ts-worktree-lynx/
@@ -152,7 +242,7 @@ fidel-ts-worktree-lynx/
     └── Transformer_EncDec.py          # MODIFY: Add EncoderStack class (optional)
 ```
 
-### 4.2 Files to Modify (Optional)
+### 5.2 Files to Modify (Optional)
 
 If adding InformerStack support:
 
@@ -165,7 +255,7 @@ class EncoderStack(nn.Module):
 
 ---
 
-## 5. Detailed Implementation Steps
+## 6. Detailed Implementation Steps
 
 ### Step 1: Create `models/Informer.py`
 
@@ -562,9 +652,9 @@ class EncoderStack(nn.Module):
 
 ---
 
-## 6. Configuration Files
+## 7. Configuration Files
 
-### 6.1 Recommended Configurations for Different Horizons
+### 7.1 Recommended Configurations for Different Horizons
 
 | Prediction Length | `label_len` | `e_layers` | `d_layers` | `d_model` | `d_ff` |
 |-------------------|-------------|------------|------------|-----------|--------|
@@ -574,7 +664,7 @@ class EncoderStack(nn.Module):
 | 192 (long) | 96 | 3 | 2 | 512 | 2048 |
 | 336+ (very long) | 168 | 3 | 2 | 512 | 2048 |
 
-### 6.2 Attention Type Selection
+### 7.2 Attention Type Selection
 
 | Scenario | `attn` | `distil` | Notes |
 |----------|--------|----------|-------|
@@ -585,9 +675,9 @@ class EncoderStack(nn.Module):
 
 ---
 
-## 7. Testing Plan
+## 8. Testing Plan
 
-### 7.1 Unit Tests
+### 8.1 Unit Tests
 
 ```python
 # tests/test_informer.py
@@ -636,14 +726,14 @@ def test_informer_distilling():
     assert model_no_distil is not None
 ```
 
-### 7.2 Integration Tests
+### 8.2 Integration Tests
 
 1. Run `informer_test.yaml` suite
 2. Compare metrics with published Informer results
 3. Verify GPU memory usage is lower with ProbSparse vs Full attention
 4. Test on multiple datasets (TTC, Time-MMD, etc.)
 
-### 7.3 Benchmark Validation
+### 8.3 Benchmark Validation
 
 Run on ETTh1 dataset and compare with published results:
 
@@ -656,9 +746,9 @@ Run on ETTh1 dataset and compare with published results:
 
 ---
 
-## 8. Potential Challenges
+## 9. Potential Challenges
 
-### 8.1 Interface Alignment
+### 9.1 Interface Alignment
 
 **Challenge:** Original Informer uses `(x_enc, x_mark_enc, x_dec, x_mark_dec)` interface but fidel-ts models may expect simpler `forward(x)`.
 
@@ -666,19 +756,19 @@ Run on ETTh1 dataset and compare with published results:
 - Full interface for maximum control
 - Simplified interface that auto-constructs decoder input
 
-### 8.2 Temporal Marks
+### 9.2 Temporal Marks
 
 **Challenge:** Not all fidel-ts datasets provide temporal marks (time features).
 
 **Solution:** Make temporal embeddings optional. When `x_mark_enc=None`, skip temporal embedding (already supported in `DataEmbedding`).
 
-### 8.3 Label Length Configuration
+### 9.3 Label Length Configuration
 
 **Challenge:** Informer uses `label_len` (start token length) which differs from `seq_len`.
 
 **Solution:** Default `label_len = seq_len // 2` if not specified.
 
-### 8.4 Encoder Sequence Shrinking with Distilling
+### 9.4 Encoder Sequence Shrinking with Distilling
 
 **Challenge:** Distilling halves sequence length after each encoder layer, which can cause dimension mismatches with decoder cross-attention.
 
@@ -686,7 +776,7 @@ Run on ETTh1 dataset and compare with published results:
 
 ---
 
-## 9. Timeline Estimate
+## 10. Timeline Estimate
 
 | Phase | Task | Time Estimate |
 |-------|------|---------------|
@@ -701,7 +791,106 @@ Run on ETTh1 dataset and compare with published results:
 
 ---
 
-## 10. Summary
+## 11. Future Extension: Multimodal Informer
+
+### 11.1 Concept
+
+While the base Informer implementation is **unimodal** (time series only), fidel-ts's centralized `embedder/` module enables future extension to **multimodal forecasting** by incorporating textual information.
+
+### 11.2 Architecture for Multimodal Extension
+
+```
+                    ┌─────────────────────────────────┐
+                    │     Multimodal Informer         │
+                    └─────────────────────────────────┘
+                                    │
+            ┌───────────────────────┼───────────────────────┐
+            │                       │                       │
+            ▼                       ▼                       ▼
+    ┌──────────────┐      ┌──────────────────┐     ┌──────────────┐
+    │ Time Series  │      │  Text Metadata   │     │   Static     │
+    │  x [B,L,C]   │      │  (news, weather) │     │   Context    │
+    └──────────────┘      └──────────────────┘     └──────────────┘
+            │                       │                       │
+            ▼                       ▼                       ▼
+    ┌──────────────┐      ┌──────────────────┐     ┌──────────────┐
+    │ layers/      │      │ embedder/        │     │ embedder/    │
+    │ Embed.py     │      │ TextEmbedder     │     │ static emb   │
+    │ DataEmbed    │      │ (BERT-based)     │     │              │
+    └──────────────┘      └──────────────────┘     └──────────────┘
+            │                       │                       │
+            ▼                       ▼                       ▼
+    [B, L, d_model]        [B, L, bert_dim]         [1, bert_dim]
+            │                       │                       │
+            └───────────────────────┼───────────────────────┘
+                                    │
+                            ┌───────▼───────┐
+                            │    Fusion     │
+                            │  (concat/add/ │
+                            │   cross-attn) │
+                            └───────────────┘
+                                    │
+                                    ▼
+                            ┌───────────────┐
+                            │   Informer    │
+                            │   Encoder     │
+                            └───────────────┘
+```
+
+### 11.3 Integration Points with embedder/
+
+| Component | Purpose | Usage |
+|-----------|---------|-------|
+| `TextEmbedder` | Embed dynamic text (news, weather reports) | Per-timestamp text → BERT embeddings |
+| `EmbeddingModelRegistry` | Share BERT model across instances | Prevents memory duplication |
+| `FidelTSEmbeddingLoader` | Load cached embeddings | Efficient dataset loading |
+| `EmbeddingCacheManager` | Cache embeddings to disk | Avoid recomputation |
+
+### 11.4 Example Configuration for Multimodal Informer
+
+```yaml
+# Future: model_configs/multimodal/InformerText.yaml
+
+model: InformerText  # New multimodal variant
+
+# Time series embeddings (layers/Embed.py)
+d_model: 512
+embed: timeF
+freq: h
+
+# Text embeddings (embedder/)
+text_embedding:
+  model_name: bert-base-uncased
+  aggregation_method: cls
+  max_length: 512
+
+# Fusion strategy
+fusion:
+  method: cross_attention  # or 'concat', 'add', 'film'
+  text_projection_dim: 512
+
+# Standard Informer params
+e_layers: 2
+d_layers: 1
+attn: prob
+distil: true
+```
+
+### 11.5 Implementation Notes
+
+To create a multimodal Informer:
+
+1. Create `models/InformerText.py` extending base `Informer.py`
+2. Add text embedding projection layer
+3. Implement fusion mechanism (cross-attention recommended)
+4. Handle text caching via `FidelTSEmbeddingLoader`
+5. Update DataLoader to provide text embeddings
+
+This is a **future enhancement** and not part of the base implementation.
+
+---
+
+## 12. Summary
 
 ### Why Implementation is Straightforward
 

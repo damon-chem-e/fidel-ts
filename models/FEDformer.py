@@ -137,8 +137,14 @@ class Model(nn.Module):
                 "enc_in (number of input channels) must be provided in model_config_overrides. "
                 "Example: model_config_overrides: {enc_in: 4}"
             )
-        self.dec_in = getattr(configs, 'dec_in', self.enc_in)
-        self.c_out = getattr(configs, 'c_out', self.enc_in)
+        # Note: dotdict.__getattr__ returns None for missing keys, so getattr() won't use defaults
+        # Need explicit None check to fall back to enc_in
+        self.dec_in = getattr(configs, 'dec_in', None)
+        if self.dec_in is None:
+            self.dec_in = self.enc_in
+        self.c_out = getattr(configs, 'c_out', None)
+        if self.c_out is None:
+            self.c_out = self.enc_in
         
         # Model dimensions
         self.d_model = getattr(configs, 'd_model', 512)
