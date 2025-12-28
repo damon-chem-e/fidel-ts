@@ -239,8 +239,23 @@ class Experiment(Exp_Basic):
         # For FEDformer and similar models, x_mark_dec needs to cover label_len + pred_len
         # y_time_features only covers pred_len, so we need to extend it by taking
         # the last label_len timestamps from x_mark_enc and prepending to x_mark_dec
-        if hasattr(self.model, 'label_len'):
+        # Get label_len from model, args, or calculate default (seq_len // 2)
+        label_len = None
+        if hasattr(self.model, 'label_len') and self.model.label_len is not None:
             label_len = self.model.label_len
+        elif hasattr(self.args, 'label_len') and self.args.label_len is not None:
+            label_len = self.args.label_len
+        elif hasattr(self.model, 'seq_len') and self.model.seq_len is not None:
+            # Default: label_len = seq_len // 2 (matching FEDformer/Informer default)
+            label_len = self.model.seq_len // 2
+        elif hasattr(self.args, 'seq_len') and self.args.seq_len is not None:
+            label_len = self.args.seq_len // 2
+        elif hasattr(self.args, 'input_len') and self.args.input_len is not None:
+            # Some configs use input_len instead of seq_len
+            label_len = self.args.input_len // 2
+        
+        # Only extend x_mark_dec if we have a valid label_len
+        if label_len is not None and label_len > 0:
             # Take last label_len time features from encoder
             x_mark_dec_label = x_mark_enc[:, -label_len:, :]
             # Concatenate with prediction horizon time features
