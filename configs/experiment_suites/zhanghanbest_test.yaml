@@ -83,9 +83,9 @@ suite:
         wandb:
           enabled: false
     
-    # ZhangHanBest with Sundial encoder
+    # ZhangHanBest with Sundial encoder (Foundation model - requires input_len=360)
     - name: "zhanghanbest_sundial_nyc_traffic_speed"
-      description: "ZhangHanBest with Sundial encoder on NYC Traffic Speed (1 epoch test)"
+      description: "ZhangHanBest with Sundial encoder on NYC Traffic Speed (1 epoch test) - Foundation model requires input_len=360"
       enabled: true
       template: "configs/templates/pytorch_training.yaml"
       overrides:
@@ -94,8 +94,8 @@ suite:
           config_path: "model_configs/general/ZhangHanBest.yaml"
         model_config_overrides:
           unimodal_model_type: "Sundial"
-          seq_len: 96
-          pred_len: 96
+          seq_len: 360  # Foundation model requires seq_len=360
+          pred_len: 24  # Foundation model standard pred_len
           d_model: 512  # ZhangHanBest will add projection layer if hidden_size != d_model
           # Sundial-specific configs (merged from model_configs/FM/Sundial.yaml)
           model_name: "thuml/sundial-base-128m"
@@ -104,8 +104,8 @@ suite:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
         training:
-          input_len: 96
-          output_len: 96
+          input_len: 360  # Foundation model requires input_len=360
+          output_len: 24  # Foundation model standard pred_len
           batch_size: 256
           learning_rate: 1e-3
           patience: 10
@@ -118,9 +118,9 @@ suite:
         wandb:
           enabled: false
     
-    # ZhangHanBest with TimeMoE encoder
+    # ZhangHanBest with TimeMoE encoder (Foundation model - requires input_len=360)
     - name: "zhanghanbest_timemoe_nyc_traffic_speed"
-      description: "ZhangHanBest with TimeMoE encoder on NYC Traffic Speed (1 epoch test)"
+      description: "ZhangHanBest with TimeMoE encoder on NYC Traffic Speed (1 epoch test) - Foundation model requires input_len=360"
       enabled: true
       template: "configs/templates/pytorch_training.yaml"
       overrides:
@@ -129,8 +129,8 @@ suite:
           config_path: "model_configs/general/ZhangHanBest.yaml"
         model_config_overrides:
           unimodal_model_type: "TimeMoE"
-          seq_len: 96
-          pred_len: 96
+          seq_len: 360  # Foundation model requires seq_len=360
+          pred_len: 24  # Foundation model standard pred_len
           d_model: 512  # ZhangHanBest will add projection layer if hidden_size != d_model
           # TimeMoE-specific configs (merged from model_configs/FM/TimeMoE.yaml)
           model_name: "Maple728/TimeMoE-50M"
@@ -138,8 +138,8 @@ suite:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
         training:
-          input_len: 96
-          output_len: 96
+          input_len: 360  # Foundation model requires input_len=360
+          output_len: 24  # Foundation model standard pred_len
           batch_size: 256
           learning_rate: 1e-3
           patience: 10
@@ -227,78 +227,3 @@ suite:
         wandb:
           enabled: false
     
-    # ZhangHanBest with Sundial encoder on Time-MMD Traffic dataset
-    - name: "zhanghanbest_sundial_time_mmd"
-      description: "ZhangHanBest with Sundial encoder on Time-MMD Traffic (1 epoch test)"
-      enabled: true
-      template: "configs/templates/pytorch_training.yaml"
-      overrides:
-        model:
-          name: "ZhangHanBest"
-          config_path: "model_configs/general/ZhangHanBest.yaml"
-        model_config_overrides:
-          unimodal_model_type: "Sundial"
-          seq_len: 24
-          pred_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
-          d_model: 512  # ZhangHanBest will add projection layer if hidden_size != d_model
-          input_text_dim: 768  # BERT embedding dimension
-          # Sundial-specific configs (merged from model_configs/FM/Sundial.yaml)
-          model_name: "thuml/sundial-base-128m"
-          num_samples: 10
-        data:
-          name: "time_mmd_traffic"
-          config_path: "data_configs/time_mmd/Traffic/config.yaml"
-        data_config:
-          timemmd_text_output: embedding  # Use embeddings for ZhangHanBest model
-        training:
-          input_len: 24
-          output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
-          batch_size: 256
-          learning_rate: 1e-3
-          patience: 10
-          epochs: 1
-          track_per_sample: false
-          evaluate_test_during_training: false
-        experiment:
-          type: "pytorch"
-          output_dir: "outputs/suites/zhanghanbest_test"
-        wandb:
-          enabled: false
-    
-    # ZhangHanBest with TimeMoE encoder on Time-MMD Traffic dataset
-    - name: "zhanghanbest_timemoe_time_mmd"
-      description: "ZhangHanBest with TimeMoE encoder on Time-MMD Traffic (1 epoch test)"
-      enabled: true
-      template: "configs/templates/pytorch_training.yaml"
-      overrides:
-        model:
-          name: "ZhangHanBest"
-          config_path: "model_configs/general/ZhangHanBest.yaml"
-        model_config_overrides:
-          unimodal_model_type: "TimeMoE"
-          seq_len: 24
-          pred_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
-          d_model: 512  # ZhangHanBest will add projection layer if hidden_size != d_model
-          input_text_dim: 768  # BERT embedding dimension
-          # TimeMoE-specific configs (merged from model_configs/FM/TimeMoE.yaml)
-          model_name: "Maple728/TimeMoE-50M"
-        data:
-          name: "time_mmd_traffic"
-          config_path: "data_configs/time_mmd/Traffic/config.yaml"
-        data_config:
-          timemmd_text_output: embedding  # Use embeddings for ZhangHanBest model
-        training:
-          input_len: 24
-          output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
-          batch_size: 256
-          learning_rate: 1e-3
-          patience: 10
-          epochs: 1
-          track_per_sample: false
-          evaluate_test_during_training: false
-        experiment:
-          type: "pytorch"
-          output_dir: "outputs/suites/zhanghanbest_test"
-        wandb:
-          enabled: false
-
