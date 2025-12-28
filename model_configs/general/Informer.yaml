@@ -1,0 +1,66 @@
+# Informer: Beyond Efficient Transformer for Long Sequence Time-Series Forecasting
+# Reference: Zhou et al., AAAI 2021
+# https://arxiv.org/abs/2012.07436
+#
+# Key innovations:
+# - ProbSparse Attention: O(n log n) complexity via query sparsity measurement
+# - Self-attention Distilling: Conv + MaxPool between layers to halve sequence length
+# - Generative-style Decoder: Start token + zero placeholders for prediction
+
+model: Informer
+
+# =============================================================================
+# Model Architecture
+# =============================================================================
+
+# Model dimensions
+d_model: 512          # Model embedding dimension
+d_ff: 2048            # Feed-forward network dimension
+n_heads: 8            # Number of attention heads
+e_layers: 2           # Number of encoder layers
+d_layers: 1           # Number of decoder layers
+
+# =============================================================================
+# Informer-specific Parameters
+# =============================================================================
+
+# ProbSparse attention factor (c in paper)
+# Higher values = more queries selected = closer to full attention
+factor: 5
+
+# Attention type: 'prob' (ProbSparse) or 'full' (standard O(n^2))
+# Use 'prob' for long sequences, 'full' for short sequences or max accuracy
+attn: prob
+
+# Self-attention distilling: halves sequence length between encoder layers
+# Reduces complexity and extracts dominant attention features
+distil: true
+
+# =============================================================================
+# General Settings
+# =============================================================================
+
+dropout: 0.05         # Dropout rate
+activation: gelu      # Activation function: 'relu' or 'gelu'
+output_attention: false  # Whether to output attention weights
+
+# =============================================================================
+# Embedding Settings
+# =============================================================================
+
+# Embedding type for temporal features:
+# - 'timeF': Linear projection of continuous time features
+# - 'fixed': Fixed sinusoidal temporal embedding
+# - 'learned': Learnable temporal embedding
+embed: timeF
+
+# Time frequency for embeddings:
+# 'h': hourly, 'd': daily, 't': minutely, 'm': monthly, etc.
+freq: h
+
+# =============================================================================
+# Task Type
+# =============================================================================
+
+task: TSF             # Time Series Forecasting
+

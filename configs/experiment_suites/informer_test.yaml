@@ -1,0 +1,181 @@
+# Experiment Suite: Informer Test Suite
+# Description: Test Informer (unimodal efficient transformer) on Time-MMD Traffic dataset
+# Usage: python -m cli.suite run configs/experiment_suites/informer_test.yaml
+#
+# This suite tests the Informer model implementation with:
+# - ProbSparse attention (O(n log n) complexity)
+# - Self-attention distilling
+# - Comparison with full attention variant
+
+suite:
+  name: "informer_test"
+  description: "Test Informer model on Time-MMD Traffic dataset (1 epoch each)"
+  tags: ["informer", "unimodal", "pytorch", "test", "probsparse", "efficient"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/informer_test"
+    
+  # Experiments in this suite
+  experiments:
+    # =========================================================================
+    # Informer with ProbSparse Attention (default - recommended for efficiency)
+    # =========================================================================
+    - name: "informer_probsparse_time_mmd_traffic"
+      description: "Informer with ProbSparse attention on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "Informer"
+          config_path: "model_configs/general/Informer.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        model_config_overrides:
+          # Channel configuration (Time-MMD Traffic has 1 target variable)
+          enc_in: 1
+          dec_in: 1
+          c_out: 1
+          # Informer-specific: ProbSparse attention with distilling
+          attn: prob
+          distil: true
+          factor: 5
+          # Model dimensions (smaller for quick testing)
+          d_model: 128
+          d_ff: 256
+          n_heads: 4
+          e_layers: 2
+          d_layers: 1
+          # Sequence configuration
+          seq_len: 24
+          pred_len: 6
+          label_len: 12  # Half of seq_len
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/informer_test"
+    
+    # =========================================================================
+    # Informer with Full Attention (for comparison)
+    # =========================================================================
+    - name: "informer_full_attn_time_mmd_traffic"
+      description: "Informer with full attention on Time-MMD Traffic (1 epoch test, for comparison)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "Informer"
+          config_path: "model_configs/general/Informer.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        model_config_overrides:
+          # Channel configuration
+          enc_in: 1
+          dec_in: 1
+          c_out: 1
+          # Full attention (no ProbSparse, no distilling)
+          attn: full
+          distil: false
+          factor: 5
+          # Model dimensions
+          d_model: 128
+          d_ff: 256
+          n_heads: 4
+          e_layers: 2
+          d_layers: 1
+          # Sequence configuration
+          seq_len: 24
+          pred_len: 6
+          label_len: 12
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/informer_test"
+    
+    # =========================================================================
+    # Informer with larger model (production-like config)
+    # =========================================================================
+    - name: "informer_large_time_mmd_traffic"
+      description: "Informer with larger model dimensions on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "Informer"
+          config_path: "model_configs/general/Informer.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 16  # Smaller batch for larger model
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        model_config_overrides:
+          # Channel configuration
+          enc_in: 1
+          dec_in: 1
+          c_out: 1
+          # ProbSparse attention with distilling
+          attn: prob
+          distil: true
+          factor: 5
+          # Larger model dimensions (closer to paper defaults)
+          d_model: 512
+          d_ff: 2048
+          n_heads: 8
+          e_layers: 2
+          d_layers: 1
+          # Sequence configuration
+          seq_len: 24
+          pred_len: 6
+          label_len: 12
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/informer_test"
+
