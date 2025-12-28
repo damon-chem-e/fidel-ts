@@ -167,8 +167,8 @@ suite:
           config_path: "model_configs/general/ZhangHanBest.yaml"
         model_config_overrides:
           unimodal_model_type: "PatchTST"
-          seq_len: 96
-          pred_len: 96
+          seq_len: 24
+          pred_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
           d_model: 512
           revin: true
           input_text_dim: 768  # BERT embedding dimension
@@ -178,8 +178,8 @@ suite:
         data_config:
           timemmd_text_output: embedding  # Use embeddings for ZhangHanBest model
         training:
-          input_len: 96
-          output_len: 96
+          input_len: 24
+          output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
           batch_size: 256
           learning_rate: 1e-3
           patience: 10
@@ -203,8 +203,8 @@ suite:
           config_path: "model_configs/general/ZhangHanBest.yaml"
         model_config_overrides:
           unimodal_model_type: "DLinear"
-          seq_len: 96
-          pred_len: 96
+          seq_len: 24
+          pred_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
           d_model: 512  # ZhangHanBest will add projection layer if needed
           input_text_dim: 768  # BERT embedding dimension
         data:
@@ -213,8 +213,8 @@ suite:
         data_config:
           timemmd_text_output: embedding  # Use embeddings for ZhangHanBest model
         training:
-          input_len: 96
-          output_len: 96
+          input_len: 24
+          output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
           batch_size: 256
           learning_rate: 1e-3
           patience: 10
@@ -238,8 +238,8 @@ suite:
           config_path: "model_configs/general/ZhangHanBest.yaml"
         model_config_overrides:
           unimodal_model_type: "Sundial"
-          seq_len: 96
-          pred_len: 96
+          seq_len: 24
+          pred_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
           d_model: 512  # ZhangHanBest will add projection layer if hidden_size != d_model
           input_text_dim: 768  # BERT embedding dimension
           # Sundial-specific configs (merged from model_configs/FM/Sundial.yaml)
@@ -251,8 +251,8 @@ suite:
         data_config:
           timemmd_text_output: embedding  # Use embeddings for ZhangHanBest model
         training:
-          input_len: 96
-          output_len: 96
+          input_len: 24
+          output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
           batch_size: 256
           learning_rate: 1e-3
           patience: 10
@@ -276,8 +276,8 @@ suite:
           config_path: "model_configs/general/ZhangHanBest.yaml"
         model_config_overrides:
           unimodal_model_type: "TimeMoE"
-          seq_len: 96
-          pred_len: 96
+          seq_len: 24
+          pred_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
           d_model: 512  # ZhangHanBest will add projection layer if hidden_size != d_model
           input_text_dim: 768  # BERT embedding dimension
           # TimeMoE-specific configs (merged from model_configs/FM/TimeMoE.yaml)
@@ -288,8 +288,8 @@ suite:
         data_config:
           timemmd_text_output: embedding  # Use embeddings for ZhangHanBest model
         training:
-          input_len: 96
-          output_len: 96
+          input_len: 24
+          output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
           batch_size: 256
           learning_rate: 1e-3
           patience: 10
