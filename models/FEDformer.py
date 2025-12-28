@@ -130,9 +130,15 @@ class Model(nn.Module):
         self.output_attention = getattr(configs, 'output_attention', False)
         
         # Channel configuration
-        self.enc_in = configs.enc_in
-        self.dec_in = getattr(configs, 'dec_in', configs.enc_in)
-        self.c_out = getattr(configs, 'c_out', configs.enc_in)
+        # enc_in must be explicitly provided in model_config_overrides
+        self.enc_in = getattr(configs, 'enc_in', None)
+        if self.enc_in is None:
+            raise ValueError(
+                "enc_in (number of input channels) must be provided in model_config_overrides. "
+                "Example: model_config_overrides: {enc_in: 4}"
+            )
+        self.dec_in = getattr(configs, 'dec_in', self.enc_in)
+        self.c_out = getattr(configs, 'c_out', self.enc_in)
         
         # Model dimensions
         self.d_model = getattr(configs, 'd_model', 512)
