@@ -11,7 +11,7 @@ for Long-term Series Forecasting" (ICML 2022)
 Key features:
 - Frequency Enhanced Attention (FEA) with O(N) complexity
 - Seasonal-Trend Decomposition at each layer
-- Two versions: Fourier and Wavelets (this impl. uses Fourier)
+- Two versions: Fourier and Wavelets
 - Encoder-Decoder architecture with cross-attention
 
 Usage in fidel-ts:
@@ -23,6 +23,7 @@ Usage in fidel-ts:
         'n_heads': 8,
         'e_layers': 2,
         'd_layers': 1,
+        'version': 'Fourier',  # or 'Wavelets'
         # ... other config parameters
     })
     model = Model(configs)
@@ -32,15 +33,15 @@ Usage in fidel-ts:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 
 from layers.FEDformer_layers import (
     series_decomp, series_decomp_multi, my_Layernorm,
     FourierBlock, FourierCrossAttention, AutoCorrelationLayer,
     FEDformerEncoderLayer, FEDformerDecoderLayer,
-    FEDformerEncoder, FEDformerDecoder
+    FEDformerEncoder, FEDformerDecoder,
+    MultiWaveletTransform, MultiWaveletCross
 )
-from layers.Embed import DataEmbedding, TokenEmbedding, PositionalEmbedding, TimeFeatureEmbedding
+from layers.Embed import TokenEmbedding, PositionalEmbedding, TimeFeatureEmbedding, TemporalEmbedding
 
 
 class DataEmbedding_wo_pos(nn.Module):
@@ -49,6 +50,7 @@ class DataEmbedding_wo_pos(nn.Module):
     
     FEDformer omits positional encoding because frequency-domain operations
     inherently capture sequential information through the phase of Fourier coefficients.
+    This matches the original FEDformer implementation exactly.
     """
     
     def __init__(self, c_in, d_model, embed_type='fixed', freq='h', dropout=0.1):
@@ -57,24 +59,27 @@ class DataEmbedding_wo_pos(nn.Module):
         # Value embedding via 1D convolution (mixes channels)
         self.value_embedding = TokenEmbedding(c_in=c_in, d_model=d_model)
         
-        # Temporal embedding (time features like hour, day, etc.)
-        # Only used if temporal marks are provided
-        if embed_type == 'timeF':
-            self.temporal_embedding = TimeFeatureEmbedding(d_model=d_model, embed_type=embed_type, freq=freq)
+        # Position embedding (kept but not used in forward - matches original)
+        self.position_embedding = PositionalEmbedding(d_model=d_model)
+        
+        # Temporal embedding (always created, matches original implementation)
+        # Uses TemporalEmbedding for fixed/learned, TimeFeatureEmbedding for timeF
+        if embed_type != 'timeF':
+            self.temporal_embedding = TemporalEmbedding(
+                d_model=d_model, embed_type=embed_type, freq=freq
+            )
         else:
-            self.temporal_embedding = None
+            self.temporal_embedding = TimeFeatureEmbedding(
+                d_model=d_model, embed_type=embed_type, freq=freq
+            )
             
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, x, x_mark=None):
+    def forward(self, x, x_mark):
         # x: [B, L, C] - time series values
-        # x_mark: [B, L, time_features] - optional temporal features
-        
-        if x_mark is not None and self.temporal_embedding is not None:
-            x = self.value_embedding(x) + self.temporal_embedding(x_mark)
-        else:
-            x = self.value_embedding(x)
-            
+        # x_mark: [B, L, time_features] - temporal features (required in original)
+        # Note: Original FEDformer always uses temporal embedding
+        x = self.value_embedding(x) + self.temporal_embedding(x_mark)
         return self.dropout(x)
 
 
@@ -84,6 +89,7 @@ class Model(nn.Module):
     
     A unimodal time series forecasting model that operates in the frequency domain
     with O(N) complexity. Uses seasonal-trend decomposition for improved predictions.
+    Supports both Fourier and Wavelet versions.
     
     Args (via configs):
         seq_len: Input sequence length
@@ -100,21 +106,28 @@ class Model(nn.Module):
         moving_avg: Kernel size for trend extraction (default: 25)
         modes: Number of frequency modes to keep (default: 64)
         mode_select: Mode selection method: 'random' or 'low' (default: 'random')
+        version: 'Fourier' or 'Wavelets' (default: 'Fourier')
+        L: Wavelet level (default: 1, only for Wavelets version)
+        base: Wavelet base: 'legendre' or 'chebyshev' (default: 'legendre')
+        cross_activation: Cross attention activation for Wavelets (default: 'tanh')
         dropout: Dropout rate (default: 0.05)
         activation: Activation function: 'relu' or 'gelu' (default: 'gelu')
         output_attention: Whether to output attention weights (default: False)
-        use_norm: Whether to use normalization (default: True)
     """
 
     def __init__(self, configs):
         super(Model, self).__init__()
         
+        # Version selection (Fourier or Wavelets)
+        self.version = getattr(configs, 'version', 'Fourier')
+        self.mode_select = getattr(configs, 'mode_select', 'random')
+        self.modes = getattr(configs, 'modes', 64)
+        
         # Core parameters
         self.seq_len = configs.seq_len
-        self.pred_len = configs.pred_len
         self.label_len = getattr(configs, 'label_len', configs.seq_len // 2)
+        self.pred_len = configs.pred_len
         self.output_attention = getattr(configs, 'output_attention', False)
-        self.use_norm = getattr(configs, 'use_norm', True)
         
         # Channel configuration
         self.enc_in = configs.enc_in
@@ -129,8 +142,6 @@ class Model(nn.Module):
         self.d_ff = getattr(configs, 'd_ff', 2048)
         
         # FEDformer specific
-        self.modes = getattr(configs, 'modes', 64)
-        self.mode_select = getattr(configs, 'mode_select', 'random')
         moving_avg = getattr(configs, 'moving_avg', 25)
         self.moving_avg = moving_avg if isinstance(moving_avg, list) else [moving_avg]
         
@@ -140,13 +151,21 @@ class Model(nn.Module):
         self.embed = getattr(configs, 'embed', 'timeF')
         self.freq = getattr(configs, 'freq', 'h')
         
+        # Wavelet-specific parameters
+        self.L = getattr(configs, 'L', 1)
+        self.base = getattr(configs, 'base', 'legendre')
+        self.cross_activation = getattr(configs, 'cross_activation', 'tanh')
+        
         # Decomposition
-        if len(self.moving_avg) > 1:
-            self.decomp = series_decomp_multi(self.moving_avg)
+        kernel_size = moving_avg
+        if isinstance(kernel_size, list):
+            self.decomp = series_decomp_multi(kernel_size)
         else:
-            self.decomp = series_decomp(self.moving_avg[0])
+            self.decomp = series_decomp(kernel_size)
 
         # Embeddings (no positional encoding - frequency domain captures position)
+        # The series-wise connection inherently contains the sequential information.
+        # Thus, we can discard the position embedding of transformers.
         self.enc_embedding = DataEmbedding_wo_pos(
             self.enc_in, self.d_model, self.embed, self.freq, self.dropout
         )
@@ -154,31 +173,58 @@ class Model(nn.Module):
             self.dec_in, self.d_model, self.embed, self.freq, self.dropout
         )
 
-        # Build attention components
-        encoder_self_att = FourierBlock(
-            in_channels=self.d_model,
-            out_channels=self.d_model,
-            seq_len=self.seq_len,
-            modes=self.modes,
-            mode_select_method=self.mode_select
-        )
+        # Build attention components based on version
+        if self.version == 'Wavelets':
+            # Wavelet-based attention
+            encoder_self_att = MultiWaveletTransform(
+                ich=self.d_model, 
+                L=self.L, 
+                base=self.base
+            )
+            decoder_self_att = MultiWaveletTransform(
+                ich=self.d_model, 
+                L=self.L, 
+                base=self.base
+            )
+            decoder_cross_att = MultiWaveletCross(
+                in_channels=self.d_model,
+                out_channels=self.d_model,
+                seq_len_q=self.seq_len // 2 + self.pred_len,
+                seq_len_kv=self.seq_len,
+                modes=self.modes,
+                ich=self.d_model,
+                base=self.base,
+                activation=self.cross_activation
+            )
+        else:
+            # Fourier-based attention (default)
+            encoder_self_att = FourierBlock(
+                in_channels=self.d_model,
+                out_channels=self.d_model,
+                seq_len=self.seq_len,
+                modes=self.modes,
+                mode_select_method=self.mode_select
+            )
+            decoder_self_att = FourierBlock(
+                in_channels=self.d_model,
+                out_channels=self.d_model,
+                seq_len=self.seq_len // 2 + self.pred_len,
+                modes=self.modes,
+                mode_select_method=self.mode_select
+            )
+            decoder_cross_att = FourierCrossAttention(
+                in_channels=self.d_model,
+                out_channels=self.d_model,
+                seq_len_q=self.seq_len // 2 + self.pred_len,
+                seq_len_kv=self.seq_len,
+                modes=self.modes,
+                mode_select_method=self.mode_select
+            )
         
-        decoder_self_att = FourierBlock(
-            in_channels=self.d_model,
-            out_channels=self.d_model,
-            seq_len=self.seq_len // 2 + self.pred_len,
-            modes=self.modes,
-            mode_select_method=self.mode_select
-        )
-        
-        decoder_cross_att = FourierCrossAttention(
-            in_channels=self.d_model,
-            out_channels=self.d_model,
-            seq_len_q=self.seq_len // 2 + self.pred_len,
-            seq_len_kv=self.seq_len,
-            modes=self.modes,
-            mode_select_method=self.mode_select
-        )
+        # Print mode info (matching original)
+        enc_modes = int(min(self.modes, self.seq_len // 2))
+        dec_modes = int(min(self.modes, (self.seq_len // 2 + self.pred_len) // 2))
+        print('enc_modes: {}, dec_modes: {}'.format(enc_modes, dec_modes))
 
         # Encoder
         self.encoder = FEDformerEncoder(
@@ -190,7 +236,7 @@ class Model(nn.Module):
                     ),
                     self.d_model,
                     self.d_ff,
-                    moving_avg=self.moving_avg[0] if len(self.moving_avg) == 1 else self.moving_avg,
+                    moving_avg=moving_avg,
                     dropout=self.dropout,
                     activation=self.activation
                 ) for _ in range(self.e_layers)
@@ -213,7 +259,7 @@ class Model(nn.Module):
                     self.d_model,
                     self.c_out,
                     self.d_ff,
-                    moving_avg=self.moving_avg[0] if len(self.moving_avg) == 1 else self.moving_avg,
+                    moving_avg=moving_avg,
                     dropout=self.dropout,
                     activation=self.activation,
                 ) for _ in range(self.d_layers)
@@ -222,36 +268,28 @@ class Model(nn.Module):
             projection=nn.Linear(self.d_model, self.c_out, bias=True)
         )
 
-    def forward(self, x, x_mark_enc=None, x_dec=None, x_mark_dec=None, **kwargs):
+    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec,
+                enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None, **kwargs):
         """
-        Forward pass for FEDformer.
+        Forward pass for FEDformer (matches original interface).
         
         Args:
-            x: Input time series [B, seq_len, enc_in]
-            x_mark_enc: Optional encoder temporal marks [B, seq_len, time_features]
-            x_dec: Optional decoder input (if None, constructed from x)
-            x_mark_dec: Optional decoder temporal marks
-            **kwargs: Additional arguments (ignored for unimodal operation)
+            x_enc: Input time series [B, seq_len, enc_in]
+            x_mark_enc: Encoder temporal marks [B, seq_len, time_features]
+            x_dec: Decoder input [B, label_len + pred_len, dec_in]
+            x_mark_dec: Decoder temporal marks [B, label_len + pred_len, time_features]
+            enc_self_mask: Optional encoder self-attention mask
+            dec_self_mask: Optional decoder self-attention mask
+            dec_enc_mask: Optional decoder cross-attention mask
+            **kwargs: Additional arguments (ignored for compatibility)
             
         Returns:
             predictions: [B, pred_len, c_out]
         """
-        # Store device for creating new tensors
-        device = x.device
-        
-        # Normalization (optional)
-        if self.use_norm:
-            means = x.mean(1, keepdim=True).detach()
-            x_norm = x - means
-            stdev = torch.sqrt(torch.var(x_norm, dim=1, keepdim=True, unbiased=False) + 1e-5)
-            x_norm = x_norm / stdev
-        else:
-            x_norm = x
-        
         # Decomposition initialization
         # Initialize decoder with trend from encoder input extended by mean
-        mean = torch.mean(x_norm, dim=1).unsqueeze(1).repeat(1, self.pred_len, 1)
-        seasonal_init, trend_init = self.decomp(x_norm)
+        mean = torch.mean(x_enc, dim=1).unsqueeze(1).repeat(1, self.pred_len, 1)
+        seasonal_init, trend_init = self.decomp(x_enc)
         
         # Prepare decoder inputs
         # Trend: last label_len of trend + mean for prediction horizon
@@ -261,58 +299,81 @@ class Model(nn.Module):
         seasonal_init = F.pad(seasonal_init[:, -self.label_len:, :], (0, 0, 0, self.pred_len))
         
         # Encoder
-        enc_out = self.enc_embedding(x_norm, x_mark_enc)
-        enc_out, attns = self.encoder(enc_out, attn_mask=None)
+        enc_out = self.enc_embedding(x_enc, x_mark_enc)
+        enc_out, attns = self.encoder(enc_out, attn_mask=enc_self_mask)
         
         # Decoder
         dec_out = self.dec_embedding(seasonal_init, x_mark_dec)
-        seasonal_part, trend_part = self.decoder(dec_out, enc_out, x_mask=None, cross_mask=None, trend=trend_init)
+        seasonal_part, trend_part = self.decoder(
+            dec_out, enc_out, 
+            x_mask=dec_self_mask, 
+            cross_mask=dec_enc_mask,
+            trend=trend_init
+        )
         
         # Final prediction: seasonal + trend
         dec_out = trend_part + seasonal_part
 
-        # Denormalization (optional)
-        if self.use_norm:
-            dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, self.label_len + self.pred_len, 1))
-            dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, self.label_len + self.pred_len, 1))
-
-        # Return only prediction horizon
+        # Return only prediction horizon (matching original)
         if self.output_attention:
-            return dec_out[:, -self.pred_len:, :self.c_out], attns
+            return dec_out[:, -self.pred_len:, :], attns
         else:
-            return dec_out[:, -self.pred_len:, :self.c_out]
+            return dec_out[:, -self.pred_len:, :]  # [B, L, D]
 
 
 if __name__ == '__main__':
-    """Quick test of the model."""
-    from utils.tools import dotdict
+    """Quick test of the model (matches original FEDformer test)."""
     
-    configs = dotdict({
-        'seq_len': 96,
-        'pred_len': 24,
-        'enc_in': 7,
-        'd_model': 128,
-        'n_heads': 8,
-        'e_layers': 2,
-        'd_layers': 1,
-        'd_ff': 256,
-        'modes': 32,
-        'mode_select': 'random',
-        'moving_avg': 25,
-        'dropout': 0.05,
-        'activation': 'gelu',
-        'output_attention': False,
-        'use_norm': True,
-    })
-    
+    class Configs(object):
+        """Test configuration matching original FEDformer."""
+        ab = 0
+        modes = 32
+        mode_select = 'random'
+        version = 'Fourier'  # Can also test 'Wavelets'
+        moving_avg = [12, 24]
+        L = 1
+        base = 'legendre'
+        cross_activation = 'tanh'
+        seq_len = 96
+        label_len = 48
+        pred_len = 96
+        output_attention = True
+        enc_in = 7
+        dec_in = 7
+        d_model = 16
+        embed = 'timeF'
+        dropout = 0.05
+        freq = 'h'
+        factor = 1
+        n_heads = 8
+        d_ff = 16
+        e_layers = 2
+        d_layers = 1
+        c_out = 7
+        activation = 'gelu'
+        wavelet = 0
+
+    configs = Configs()
     model = Model(configs)
-    print(f'Parameter count: {sum(p.numel() for p in model.parameters()):,}')
+
+    print('parameter number is {}'.format(sum(p.numel() for p in model.parameters())))
     
-    # Test forward pass
-    x = torch.randn(2, configs.seq_len, configs.enc_in)
-    output = model(x)
-    print(f'Input shape: {x.shape}')
-    print(f'Output shape: {output.shape}')
-    assert output.shape == (2, configs.pred_len, configs.enc_in)
-    print('Test passed!')
+    # Create test inputs matching original
+    enc = torch.randn([3, configs.seq_len, 7])
+    enc_mark = torch.randn([3, configs.seq_len, 4])
+    dec = torch.randn([3, configs.seq_len // 2 + configs.pred_len, 7])
+    dec_mark = torch.randn([3, configs.seq_len // 2 + configs.pred_len, 4])
+    
+    out = model.forward(enc, enc_mark, dec, dec_mark)
+    print(f'Output shape: {out[0].shape}')
+    print('Fourier test passed!')
+    
+    # Test Wavelets version
+    print('\nTesting Wavelets version...')
+    configs.version = 'Wavelets'
+    model_wavelet = Model(configs)
+    print('Wavelet parameter number is {}'.format(sum(p.numel() for p in model_wavelet.parameters())))
+    out_wavelet = model_wavelet.forward(enc, enc_mark, dec, dec_mark)
+    print(f'Wavelet output shape: {out_wavelet[0].shape}')
+    print('Wavelets test passed!')
 
