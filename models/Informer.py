@@ -30,7 +30,7 @@ Usage in fidel-ts:
         'd_layers': 1,
         'attn': 'prob',   # ProbSparse attention
         'distil': True,   # Enable distilling
-        'embed': 'timeF', # Time feature embedding (or 'fixed' for sinusoidal)
+        'embed': 'fixed', # Sinusoidal temporal embedding (original paper default)
         'freq': 'h',      # Hourly frequency
         # ... other config parameters
     })
@@ -136,7 +136,7 @@ class Model(nn.Module):
         # =====================================================================
         self.dropout = getattr(configs, 'dropout', 0.05)
         self.activation = getattr(configs, 'activation', 'gelu')
-        self.embed = getattr(configs, 'embed', 'timeF')
+        self.embed = getattr(configs, 'embed', 'fixed')  # 'fixed' = sinusoidal (original paper default)
         self.freq = getattr(configs, 'freq', 'h')
 
         # =====================================================================
@@ -333,7 +333,7 @@ if __name__ == '__main__':
         distil = True
         dropout = 0.05
         activation = 'gelu'
-        embed = 'timeF'  # 'timeF' uses linear projection, 'fixed' uses sinusoidal (original paper)
+        embed = 'fixed'  # Sinusoidal temporal embedding (original paper default)
         freq = 'h'       # hourly frequency -> 4 time features
         output_attention = False
 
@@ -343,14 +343,16 @@ if __name__ == '__main__':
     print(f'Informer parameter count: {sum(p.numel() for p in model.parameters()):,}')
 
     # Create test inputs (temporal marks REQUIRED - matching original Informer2020)
-    # For freq='h', time features have 4 dimensions: [month, day, weekday, hour]
+    # For 'fixed' embedding with freq='h', temporal marks are integer indices:
+    # [month (0-11), day (0-31), weekday (0-6), hour (0-23)]
     enc = torch.randn(2, 96, 7)           # [B, seq_len, enc_in]
-    enc_mark = torch.randn(2, 96, 4)      # [B, seq_len, time_features]
-    dec_mark = torch.randn(2, 48 + 24, 4) # [B, label_len + pred_len, time_features]
+    # Fixed embedding expects integer temporal indices
+    enc_mark = torch.randint(0, 12, (2, 96, 4)).long()      # [B, seq_len, time_features]
+    dec_mark = torch.randint(0, 12, (2, 48 + 24, 4)).long() # [B, label_len + pred_len, time_features]
 
-    # Test with framework interface (x=..., auto-constructed x_dec)
+    # Test with framework interface (x=..., auto-constructed x_dec) - using fixed embedding
     out = model(x=enc, x_mark_enc=enc_mark, x_mark_dec=dec_mark)
-    print(f'Framework interface output shape: {out.shape}')
+    print(f'Framework interface (fixed embedding) output shape: {out.shape}')
     assert out.shape == (2, 24, 7), f"Expected (2, 24, 7), got {out.shape}"
 
     # Test with full interface (explicit x_dec - matches original Informer2020)
@@ -367,17 +369,17 @@ if __name__ == '__main__':
     print(f'Full attention output shape: {out_full_attn.shape}')
     assert out_full_attn.shape == (2, 24, 7), f"Expected (2, 24, 7), got {out_full_attn.shape}"
 
-    # Test with fixed embedding (original Informer paper default)
-    configs.embed = 'fixed'
+    # Test with timeF embedding (alternative to fixed)
+    configs.embed = 'timeF'
     configs.attn = 'prob'
     configs.distil = True
-    model_fixed = Model(configs)
-    # Fixed embedding expects integer temporal indices [month, day, weekday, hour, ...]
-    enc_mark_fixed = torch.randint(0, 12, (2, 96, 4))       # Integer indices for temporal embedding
-    dec_mark_fixed = torch.randint(0, 12, (2, 48 + 24, 4))
-    out_fixed = model_fixed(x=enc, x_mark_enc=enc_mark_fixed, x_mark_dec=dec_mark_fixed)
-    print(f'Fixed embedding output shape: {out_fixed.shape}')
-    assert out_fixed.shape == (2, 24, 7), f"Expected (2, 24, 7), got {out_fixed.shape}"
+    model_timef = Model(configs)
+    # timeF embedding expects continuous time features (not integer indices)
+    enc_mark_timef = torch.randn(2, 96, 4)      # Continuous time features
+    dec_mark_timef = torch.randn(2, 48 + 24, 4)
+    out_timef = model_timef(x=enc, x_mark_enc=enc_mark_timef, x_mark_dec=dec_mark_timef)
+    print(f'timeF embedding output shape: {out_timef.shape}')
+    assert out_timef.shape == (2, 24, 7), f"Expected (2, 24, 7), got {out_timef.shape}"
 
     print('All Informer tests passed!')
 

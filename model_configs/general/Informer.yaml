@@ -49,10 +49,10 @@ output_attention: false  # Whether to output attention weights
 # =============================================================================
 
 # Embedding type for temporal features:
+# - 'fixed': Fixed sinusoidal temporal embedding (original paper default)
 # - 'timeF': Linear projection of continuous time features
-# - 'fixed': Fixed sinusoidal temporal embedding
 # - 'learned': Learnable temporal embedding
-embed: timeF
+embed: fixed
 
 # Time frequency for embeddings:
 # 'h': hourly, 'd': daily, 't': minutely, 'm': monthly, etc.

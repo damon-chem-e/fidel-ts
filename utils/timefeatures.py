@@ -31,8 +31,11 @@ def timestamp_int64_to_datetime(timestamps: np.ndarray) -> pd.DatetimeIndex:
     timestamps_str = timestamps.astype(str)
     
     # Pad with zeros if needed (some timestamps might not have seconds/minutes)
+    # Convert numpy.str_ to Python str to avoid pandas TypeError
     timestamps_padded = []
     for ts in timestamps_str:
+        # Convert numpy string to Python string
+        ts = str(ts)
         if len(ts) == 8:  # YYYYMMDD
             ts = ts + '000000'  # Add HHMMSS
         elif len(ts) == 10:  # YYYYMMDDHH
