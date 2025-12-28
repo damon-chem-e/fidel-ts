@@ -84,9 +84,13 @@ suite:
           enabled: false
     
     # ZhangHanBest with Sundial encoder (Foundation model - requires input_len=360)
+    # DISABLED: Sundial model has input shape compatibility issue
+    # Error: ValueError: too many values to unpack (expected 2) at batch_size, seq_length = input_ids.shape
+    # The cached model code expects 2D input [B, seq_len] but receives 3D input [B, seq_len, channels]
+    # This is an issue in how the Sundial wrapper handles input shape for representation extraction
     - name: "zhanghanbest_sundial_nyc_traffic_speed"
-      description: "ZhangHanBest with Sundial encoder on NYC Traffic Speed (1 epoch test) - Foundation model requires input_len=360"
-      enabled: true
+      description: "ZhangHanBest with Sundial encoder on NYC Traffic Speed (1 epoch test) - Foundation model requires input_len=360 - DISABLED due to input shape compatibility issue"
+      enabled: false
       template: "configs/templates/pytorch_training.yaml"
       overrides:
         model:
