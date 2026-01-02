@@ -34,6 +34,16 @@ def model_init(model_name, configs, all_args, is_LLM=False, is_FM=False):
         configs['seq_len'] = all_args.input_len
         configs['pred_len'] = all_args.output_len
         configs['gpu'] = all_args.gpu if all_args.use_gpu else None
+        
+        # Automatically adjust enc_in for missing value indicator columns
+        # enc_in in config represents the raw number of channels (without indicators)
+        # We increment it by the number of indicator columns that will be added
+        num_indicator_columns = getattr(all_args, 'num_indicator_columns', 0)
+        if num_indicator_columns > 0 and 'enc_in' in configs:
+            original_enc_in = configs['enc_in']
+            configs['enc_in'] = original_enc_in + num_indicator_columns
+            print(f"[ info ] Adjusted enc_in from {original_enc_in} to {configs['enc_in']} "
+                  f"(added {num_indicator_columns} missing value indicator column(s))")
 
         data_configs = all_args.data_config
         try:

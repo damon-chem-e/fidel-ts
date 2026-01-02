@@ -153,11 +153,15 @@ class Model(nn.Module):
         
         # Channel configuration
         # enc_in must be explicitly provided in model_config_overrides
+        # Note: enc_in in config represents raw channels; it's automatically incremented
+        # by indicator columns in model_init if missing value indicators are used
         self.enc_in = getattr(configs, 'enc_in', None)
         if self.enc_in is None:
             raise ValueError(
                 "enc_in (number of input channels) must be provided in model_config_overrides. "
-                "Example: model_config_overrides: {enc_in: 4}"
+                "Example: model_config_overrides: {enc_in: 4}\n"
+                "Note: enc_in should be the raw number of channels (without indicator columns). "
+                "Indicator columns are automatically added if missing_value_strategy is 'forward_fill_indicators'."
             )
         # Note: dotdict.__getattr__ returns None for missing keys, so getattr() won't use defaults
         # Need explicit None check to fall back to enc_in

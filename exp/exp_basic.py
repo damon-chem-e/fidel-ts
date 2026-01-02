@@ -55,10 +55,18 @@ class Exp_Basic(object):
         self.args = args
         self.exp_manager = exp_manager
         self.device = self._acquire_device()
-        self.model = self._build_model().to(self.device)
-        # Pass console from exp_manager to Data_Provider for Rich progress bars
+        
+        # Get indicator column count before building model (needed for enc_in adjustment)
+        # Create data_provider first to access required_indicator_columns
         console = exp_manager.get_console() if exp_manager else None
         self.data_provider = Data_Provider(args, buffer=(not args.disable_buffer), console=console)
+        
+        # Get number of indicator columns that will be added to the data
+        num_indicator_columns = len(getattr(self.data_provider, 'required_indicator_columns', []))
+        # Store in args for model_init to access
+        args.num_indicator_columns = num_indicator_columns
+        
+        self.model = self._build_model().to(self.device)
 
     def _build_model(self):
         """
