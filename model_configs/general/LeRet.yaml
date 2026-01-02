@@ -1,0 +1,90 @@
+# LeRet: Language-Enhanced Retention Network for Time Series
+# 
+# A time series forecasting model based on RetNet architecture with:
+# - Multi-Scale Retention mechanism (O(n) complexity)
+# - Patch-based input processing
+# - Optional language knowledge integration
+# - Two-stage training support (pretrain + finetune)
+
+model: LeRet
+
+# =============================================================================
+# Architecture Parameters
+# =============================================================================
+# Model dimension (hidden size)
+d_model: 128
+
+# Number of retention heads
+n_heads: 8
+
+# Number of retention layers  
+e_layers: 3
+
+# Feedforward network dimension
+d_ff: 256
+
+# =============================================================================
+# Patching Parameters (similar to PatchTST)
+# =============================================================================
+# Length of each patch
+patch_len: 16
+
+# Stride for patch extraction
+stride: 8
+
+# Padding mode for patching ('end' or null)
+padding_patch: end
+
+# =============================================================================
+# RevIN (Reversible Instance Normalization)
+# =============================================================================
+# Enable RevIN normalization
+revin: True
+
+# Enable learnable affine parameters in RevIN
+affine: False
+
+# Subtract last value instead of mean
+subtract_last: False
+
+# =============================================================================
+# Series Decomposition (optional)
+# =============================================================================
+# Enable trend-residual decomposition
+decomposition: False
+
+# Kernel size for moving average decomposition
+kernel_size: 25
+
+# =============================================================================
+# Prediction Heads
+# =============================================================================
+# Use individual heads per channel (vs shared)
+individual: False
+
+# Dropout rates
+dropout: 0.05
+fc_dropout: 0.05
+head_dropout: 0.0
+
+# =============================================================================
+# Language Integration (optional)
+# =============================================================================
+# Enable language knowledge integration
+use_language: False
+
+# Language embedding dimension (768 for BERT-base, 4096 for LLaMA)
+language_dim: 768
+
+# =============================================================================
+# Input/Output Configuration
+# NOTE: enc_in should be set via model_config_overrides in experiment config
+# based on the specific dataset being used
+# =============================================================================
+# enc_in: 7  # Set this via model_config_overrides
+
+# =============================================================================
+# Task specification
+# =============================================================================
+task: TSF
+
