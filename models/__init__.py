@@ -10,6 +10,12 @@ def model_init(model_name, configs, all_args, is_LLM=False, is_FM=False):
         return Time_R1_socket(configs) if model_name.startwith("Time-R1") else LLM_Socket(configs)
 
     elif is_FM:
+        # Validate required parameters before setting
+        if all_args.input_len is None:
+            raise ValueError(f"input_len must be provided in training config for model {model_name}, got None")
+        if all_args.output_len is None:
+            raise ValueError(f"output_len must be provided in training config for model {model_name}, got None")
+        
         configs['hist_len'] = all_args.input_len
         configs['pred_len'] = all_args.output_len
         configs['gpu'] = all_args.gpu if all_args.use_gpu else None
@@ -19,6 +25,12 @@ def model_init(model_name, configs, all_args, is_LLM=False, is_FM=False):
         return model_class(configs)
     
     else:
+        # Validate required parameters before setting
+        if all_args.input_len is None:
+            raise ValueError(f"input_len must be provided in training config for model {model_name}, got None")
+        if all_args.output_len is None:
+            raise ValueError(f"output_len must be provided in training config for model {model_name}, got None")
+        
         configs['seq_len'] = all_args.input_len
         configs['pred_len'] = all_args.output_len
         configs['gpu'] = all_args.gpu if all_args.use_gpu else None

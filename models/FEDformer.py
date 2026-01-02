@@ -123,10 +123,32 @@ class Model(nn.Module):
         self.mode_select = getattr(configs, 'mode_select', 'random')
         self.modes = getattr(configs, 'modes', 64)
         
-        # Core parameters
-        self.seq_len = configs.seq_len
-        self.label_len = getattr(configs, 'label_len', configs.seq_len // 2)
-        self.pred_len = configs.pred_len
+        # Core parameters with validation
+        # Validate seq_len is provided and not None
+        self.seq_len = getattr(configs, 'seq_len', None)
+        if self.seq_len is None:
+            raise ValueError(
+                "seq_len must be provided in configs for FEDformer, got None. "
+                "This is typically set from training.input_len in the experiment config."
+            )
+        
+        # Validate pred_len is provided and not None
+        self.pred_len = getattr(configs, 'pred_len', None)
+        if self.pred_len is None:
+            raise ValueError(
+                "pred_len must be provided in configs for FEDformer, got None. "
+                "This is typically set from training.output_len in the experiment config."
+            )
+        
+        # Get label_len from config, or default to seq_len // 2
+        # Note: getattr returns None if attribute exists but is None, so we need explicit check
+        label_len_from_config = getattr(configs, 'label_len', None)
+        if label_len_from_config is not None:
+            self.label_len = label_len_from_config
+        else:
+            # Default: label_len = seq_len // 2 (matching original FEDformer implementation)
+            self.label_len = self.seq_len // 2
+        
         self.output_attention = getattr(configs, 'output_attention', False)
         
         # Channel configuration
