@@ -1,0 +1,63 @@
+# LLM Embedding Configuration - Qwen 7B (Development / Small GPU)
+# For GPUs with 16-24GB VRAM (consumer GPUs, development)
+#
+# Uses Qwen 2.5 7B Instruct - a good balance of quality and speed.
+# Can run in fp16 on 24GB GPUs, or with 4-bit on 16GB GPUs.
+#
+# Memory requirements:
+#   - fp16 (no quantization): ~14GB (RTX 4090, etc.)
+#   - 4bit quantization: ~5GB (any modern GPU)
+#
+# USAGE:
+#   python -m cli.inference generate <dataset> model_configs/llm_embedding/qwen_7b.yaml
+
+llm_embedding:
+  # ============================================================================
+  # LLM Model Settings
+  # ============================================================================
+  
+  # Qwen 2.5 7B Instruct - efficient for development
+  model_name: "Qwen/Qwen2.5-7B-Instruct"
+  
+  # Local cache directory
+  cache_dir: "./LLM_cache/"
+  
+  # Device for inference
+  device: "cuda:0"
+  
+  # ============================================================================
+  # Quantization Settings
+  # ============================================================================
+  
+  # No quantization needed - 7B fits comfortably on 24GB+ GPUs
+  # Use "4bit" for 16GB GPUs
+  quantization: null
+  
+  # ============================================================================
+  # Extraction Settings
+  # ============================================================================
+  
+  extraction_mode: "last_token"
+  max_length: 512
+  
+  # ============================================================================
+  # Prompt Settings
+  # ============================================================================
+  
+  prompt_template: "timecma_v1"
+  prompt_config:
+    value_format: "integer"
+    include_timestamps: true
+  
+  # ============================================================================
+  # Data Settings
+  # ============================================================================
+  
+  data_root: "./data/"
+  
+  # ============================================================================
+  # Batch Processing
+  # ============================================================================
+  
+  # Larger batch size for smaller model
+  batch_size: 32

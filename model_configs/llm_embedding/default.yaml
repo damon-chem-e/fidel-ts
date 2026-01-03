@@ -1,0 +1,81 @@
+# LLM Embedding Configuration - Default (H200 + Qwen 72B)
+# Optimized for high-quality embeddings on H200 GPU (141GB VRAM)
+#
+# This configuration uses Qwen 2.5 72B WITHOUT quantization for maximum quality.
+# The H200's 141GB VRAM can comfortably hold the model in fp16 (~140GB).
+#
+# For smaller GPUs, use:
+#   - qwen_7b.yaml (24GB+ GPUs)
+#   - qwen_72b.yaml with 4-bit quantization (48GB+ GPUs)
+#
+# USAGE:
+#   python -m cli.inference generate <dataset> model_configs/llm_embedding/default.yaml
+
+llm_embedding:
+  # ============================================================================
+  # LLM Model Settings
+  # ============================================================================
+  
+  # Qwen 2.5 72B Instruct - highest quality embeddings
+  # H200 (141GB) can run this in fp16 without quantization
+  model_name: "Qwen/Qwen2.5-72B-Instruct"
+  
+  # Local cache directory for model weights (~140GB)
+  cache_dir: "./LLM_cache/"
+  
+  # Device for LLM inference
+  device: "cuda:0"
+  
+  # ============================================================================
+  # Quantization Settings
+  # ============================================================================
+  
+  # No quantization needed on H200 - use full fp16 for best quality
+  # Set to "4bit" if running on smaller GPUs (L40S, A100-80GB)
+  quantization: null
+  
+  # ============================================================================
+  # Extraction Settings
+  # ============================================================================
+  
+  # How to extract embeddings from LLM output
+  # "last_token": Use the last token's hidden state (TimeCMA default)
+  # "pooled": Mean pooling over all non-padding tokens
+  extraction_mode: "last_token"
+  
+  # Maximum prompt token length (longer prompts are truncated)
+  max_length: 512
+  
+  # ============================================================================
+  # Prompt Settings (Time Series → Text)
+  # ============================================================================
+  
+  # Prompt template name (used by TSPromptBuilder)
+  # Options:
+  #   - "timecma_v1": TimeCMA paper format (with timestamps, values, trend)
+  #   - "simple": Minimal format (just values)
+  prompt_template: "timecma_v1"
+  
+  # Template-specific configuration
+  prompt_config:
+    # Value format: "integer" or "float2" (2 decimal places)
+    value_format: "integer"
+    # Include timestamp information in prompt
+    include_timestamps: true
+  
+  # ============================================================================
+  # Data Settings
+  # ============================================================================
+  
+  # Root directory for datasets
+  # Can be overridden via CLI: --data-root
+  data_root: "./data/"
+  
+  # ============================================================================
+  # Batch Processing
+  # ============================================================================
+  
+  # Batch size for LLM inference
+  # Lower for 72B model to avoid OOM
+  # Can be overridden via CLI: --batch-size
+  batch_size: 8
