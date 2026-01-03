@@ -794,11 +794,18 @@ class LLMEmbedder:
             data_config = yaml.safe_load(f)
         
         # Build minimal args structure for Data_Provider
+        # Note: dotdict returns None for missing keys (not AttributeError),
+        # so we must explicitly set all required fields
         args = dotdict({
             'data_config': dotdict(data_config),
             'model_config': dotdict({
                 'task': 'TimeCMA',  # Use TimeCMA task for simple loading
+                'stride': 1,
+                'hetero_align_stride': False,
+                'custom_input': False,
+                'freq': 'h',
             }),
+            'model': 'TimeCMA',  # Required for model name checks in data loader
             'batch_size': 32,
             'input_len': 96,
             'output_len': 96,
@@ -807,6 +814,9 @@ class LLMEmbedder:
             'num_workers': 0,
             'prefetch_factor': None,
             'disable_buffer': True,
+            'preload_hetero': False,  # Don't preload hetero data for embedding generation
+            'gpu': 0,
+            'use_gpu': False,  # CPU is fine for data loading
         })
         
         try:
