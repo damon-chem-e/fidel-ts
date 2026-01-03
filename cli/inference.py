@@ -439,7 +439,13 @@ def list_datasets():
     List available datasets for LLM embedding generation.
     
     Shows all datasets that can be used with the 'generate' command,
-    organized by type (Time-MMD, Fidel-TS, etc.).
+    organized by type (Time-MMD, TTC, Fidel-TS).
+    
+    Dataset naming conventions:
+        - Time-MMD: time_mmd_<domain>     (e.g., time_mmd_traffic)
+        - TTC:      ttc_<domain>          (e.g., ttc_climate)
+        - Fidel-TS: fidel_<dataset>       (e.g., fidel_ETT)
+        - Fidel-TS: fidel_<dataset>:<cfg> (e.g., fidel_ETT:fullETT_M)
     
     Examples:
         python -m cli.inference list-datasets
@@ -454,7 +460,7 @@ def list_datasets():
     time_mmd_path = Path("data_configs/time_mmd")
     
     if time_mmd_path.exists():
-        console.print("[bold]Time-MMD Datasets[/bold]")
+        console.print("[bold magenta]1. Time-MMD Datasets[/bold magenta]")
         console.print("[dim]Usage: python -m cli.inference generate time_mmd_<domain> <config>[/dim]\n")
         
         table = Table()
@@ -480,15 +486,104 @@ def list_datasets():
         console.print("[yellow]Time-MMD datasets not found at data_configs/time_mmd/[/yellow]\n")
     
     # ==========================================================================
+    # TTC Datasets
+    # ==========================================================================
+    ttc_path = Path("data_configs/ttc")
+    
+    if ttc_path.exists():
+        console.print("[bold magenta]2. TTC Datasets (Time-Text Corpus)[/bold magenta]")
+        console.print("[dim]Usage: python -m cli.inference generate ttc_<domain> <config>[/dim]\n")
+        
+        table = Table()
+        table.add_column("Dataset Name", style="cyan")
+        table.add_column("Domain", style="green")
+        table.add_column("Config Path", style="dim")
+        
+        domains = sorted([d.name for d in ttc_path.iterdir() if d.is_dir() and not d.name.startswith('.')])
+        
+        for domain in domains:
+            config_file = ttc_path / domain / "config.yaml"
+            if config_file.exists():
+                dataset_name = f"ttc_{domain.lower()}"
+                table.add_row(
+                    dataset_name,
+                    domain,
+                    str(config_file),
+                )
+        
+        console.print(table)
+        console.print()
+    else:
+        console.print("[yellow]TTC datasets not found at data_configs/ttc/[/yellow]\n")
+    
+    # ==========================================================================
+    # Fidel-TS Datasets
+    # ==========================================================================
+    console.print("[bold magenta]3. Fidel-TS Datasets[/bold magenta]")
+    console.print("[dim]Usage: python -m cli.inference generate fidel_<dataset> <config>[/dim]")
+    console.print("[dim]       python -m cli.inference generate fidel_<dataset>:<config_name> <config>[/dim]\n")
+    
+    # Default config mappings for Fidel-TS datasets
+    fidel_datasets = {
+        'Bear_room': ('fullBear', 'Bear room temperature & weather'),
+        'California_ISO': ('fullCAISO', 'California energy grid data'),
+        'Canada_photovoltaics_plants': ('fullCPP', 'Canadian solar power plants'),
+        'electricity': ('fullelectricity', 'Electricity consumption'),
+        'ETT': ('fullETT_H', 'Electricity Transformer Temperature'),
+        'Germany_Renewable_Power_Grid': ('fullGRPG', 'German renewable energy grid'),
+        'Jena_Atmospheric_Physics': ('fullJAP', 'Jena weather station data'),
+        'NYC_traffic_speed': ('fullNYCTS', 'NYC traffic speed data'),
+        'traffic': ('fulltraffic', 'Road traffic data'),
+        'weather': ('weather', 'Weather forecasting data'),
+    }
+    
+    table = Table()
+    table.add_column("Dataset Name", style="cyan")
+    table.add_column("Default Config", style="green")
+    table.add_column("Description", style="dim")
+    table.add_column("Other Configs", style="yellow")
+    
+    data_configs_path = Path("data_configs")
+    
+    for dataset_name, (default_config, description) in sorted(fidel_datasets.items()):
+        dataset_dir = data_configs_path / dataset_name
+        if dataset_dir.exists():
+            # Get all yaml configs in this directory
+            all_configs = sorted([f.stem for f in dataset_dir.glob('*.yaml')])
+            other_configs = [c for c in all_configs if c != default_config]
+            other_configs_str = ", ".join(other_configs[:3])  # Show first 3
+            if len(other_configs) > 3:
+                other_configs_str += f" (+{len(other_configs) - 3} more)"
+            
+            table.add_row(
+                f"fidel_{dataset_name}",
+                default_config,
+                description,
+                other_configs_str if other_configs else "-",
+            )
+    
+    console.print(table)
+    console.print()
+    
+    console.print("[dim]To use a non-default config: fidel_<dataset>:<config_name>[/dim]")
+    console.print("[dim]Example: fidel_ETT:fullETT_M uses fullETT_M.yaml instead of fullETT_H.yaml[/dim]\n")
+    
+    # ==========================================================================
     # Example Commands
     # ==========================================================================
     console.print("[bold]Example Commands[/bold]\n")
     
-    console.print("  [dim]# Generate embeddings with GPT-2 (fast, for testing)[/dim]")
+    console.print("  [dim]# Time-MMD dataset with GPT-2 (fast, for testing)[/dim]")
     console.print("  python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/gpt2.yaml\n")
     
-    console.print("  [dim]# Generate embeddings with Qwen 7B (better quality)[/dim]")
-    console.print("  python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/qwen_7b.yaml\n")
+    console.print("  [dim]# TTC dataset[/dim]")
+    console.print("  python -m cli.inference generate ttc_climate model_configs/llm_embedding/gpt2.yaml\n")
+    
+    console.print("  [dim]# Fidel-TS dataset with default config[/dim]")
+    console.print("  python -m cli.inference generate fidel_ETT model_configs/llm_embedding/gpt2.yaml\n")
+    
+    console.print("  [dim]# Fidel-TS dataset with specific config[/dim]")
+    console.print("  python -m cli.inference generate fidel_ETT:fullETT_M model_configs/llm_embedding/qwen_7b.yaml\n")
     
     console.print("  [dim]# Generate only test split[/dim]")
     console.print("  python -m cli.inference generate time_mmd_traffic config.yaml --splits test\n")

@@ -90,39 +90,97 @@ embedder.embed_texts(my_custom_adapter.to_text(data))
 
 ## Dataset Types
 
-Fidel-TS works with two types of datasets that have different directory structures:
+Fidel-TS works with three types of datasets, each with different directory structures and CLI naming conventions:
+
+### Dataset Naming Conventions (CLI)
+
+| Dataset Type | CLI Format | Example |
+|--------------|------------|---------|
+| Time-MMD | `time_mmd_<domain>` | `time_mmd_traffic`, `time_mmd_energy` |
+| TTC | `ttc_<domain>` | `ttc_climate`, `ttc_medical` |
+| Fidel-TS | `fidel_<dataset>` | `fidel_ETT`, `fidel_California_ISO` |
+| Fidel-TS (specific config) | `fidel_<dataset>:<config>` | `fidel_ETT:fullETT_M` |
 
 ### Time-MMD Datasets
 
-Standard time series datasets with simple structure.
+Standard time series benchmark datasets with text annotations.
 
-**Examples:** ETTh1, ETTm1, Weather, Electricity, Traffic
+**CLI Usage:** `time_mmd_<domain>` (e.g., `time_mmd_traffic`, `time_mmd_energy`)
+
+**Config Location:** `data_configs/time_mmd/<Domain>/config.yaml`
+
+**Available Domains:** Algriculture, Climate, Economy, Energy, Environment, Public_Health, Security, SocialGood, Traffic
 
 **Structure:**
 ```
 data/
-└── ETTh1/
-    ├── ETTh1.csv              # Raw time series data
-    ├── embeddings_cache/      # Text embeddings (if using hetero)
-    │   └── embeddings_{hash}/
-    └── llm_embeddings/        # LLM embeddings
-        └── llm_{hash}/
-            ├── metadata.json
-            ├── train/
-            ├── val/
-            └── test/
+└── time_mmd/
+    └── Traffic/
+        ├── US_VMT_Month.csv       # Raw time series data
+        ├── embeddings_cache/      # Text embeddings (if using hetero)
+        │   └── embeddings_{hash}/
+        └── llm_embeddings/        # LLM embeddings
+            └── llm_{hash}/
+                ├── metadata.json
+                ├── train/
+                ├── val/
+                └── test/
 ```
 
 **Characteristics:**
 - Simple CSV with timestamp + features
+- May include text columns (Final_Search_*, Final_Output)
 - Standard data loading via `data_provider`
 - Embeddings indexed by sample index
+
+### TTC Datasets (Time-Text Corpus)
+
+Time series datasets with associated text descriptions.
+
+**CLI Usage:** `ttc_<domain>` (e.g., `ttc_climate`, `ttc_medical`)
+
+**Config Location:** `data_configs/ttc/<domain>/config.yaml`
+
+**Available Domains:** climate, medical
+
+**Structure:**
+```
+data/
+└── ttc/
+    └── climate/
+        ├── climate_2014_2023_final.csv   # Time series with text column
+        └── llm_embeddings/
+            └── llm_{hash}/
+```
+
+**Characteristics:**
+- CSV with explicit text column
+- Weather/climate or medical domain
+- Similar to Time-MMD but with richer text integration
 
 ### Fidel-TS Datasets
 
 Complex multimodal datasets with nested directory structures.
 
-**Examples:** Bear_room, California_ISO, Canada_photovoltaics_plants, Germany_Renewable_Power_Grid, Jena_Atmospheric_Physics, NYC_traffic_speed
+**CLI Usage:** 
+- `fidel_<dataset>` uses default config (e.g., `fidel_ETT` → `fullETT_H.yaml`)
+- `fidel_<dataset>:<config>` uses specific config (e.g., `fidel_ETT:fullETT_M`)
+
+**Config Location:** `data_configs/<Dataset>/<config>.yaml`
+
+**Available Datasets:** 
+| Dataset | Default Config | Description |
+|---------|----------------|-------------|
+| Bear_room | fullBear | Bear room temperature & weather |
+| California_ISO | fullCAISO | California energy grid data |
+| Canada_photovoltaics_plants | fullCPP | Canadian solar power plants |
+| electricity | fullelectricity | Electricity consumption |
+| ETT | fullETT_H | Electricity Transformer Temperature |
+| Germany_Renewable_Power_Grid | fullGRPG | German renewable energy grid |
+| Jena_Atmospheric_Physics | fullJAP | Jena weather station data |
+| NYC_traffic_speed | fullNYCTS | NYC traffic speed data |
+| traffic | fulltraffic | Road traffic data |
+| weather | weather | Weather forecasting data |
 
 **Structure:**
 ```
@@ -373,18 +431,25 @@ embeddings = cache.load_embeddings(metadata, 'train')
 ### CLI Reference
 
 ```bash
-# Generate embeddings
-python -m cli.inference generate <dataset> [OPTIONS]
-  --model, -m       Model name (e.g., 'gpt2', 'Qwen/Qwen2.5-7B-Instruct')
-  --quantization    '4bit', '8bit', or None
-  --splits          train,val,test
+# List available datasets
+python -m cli.inference list-datasets
+
+# Generate embeddings (examples for each dataset type)
+python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/gpt2.yaml
+python -m cli.inference generate ttc_climate model_configs/llm_embedding/gpt2.yaml
+python -m cli.inference generate fidel_ETT model_configs/llm_embedding/gpt2.yaml
+python -m cli.inference generate fidel_ETT:fullETT_M model_configs/llm_embedding/qwen_7b.yaml
+
+# Options
+  --splits          train,val,test (comma-separated)
   --force           Regenerate existing cache
+  --data-root       Override base data path
 
 # Verify cache
-python -m cli.inference verify <dataset>
+python -m cli.inference verify time_mmd_traffic model_configs/llm_embedding/gpt2.yaml
 
 # Estimate memory
-python -m cli.inference estimate-memory <model> --quantization 4bit
+python -m cli.inference estimate-memory Qwen/Qwen2.5-72B-Instruct --quantization 4bit
 
 # List models
 python -m cli.inference list-models
@@ -550,17 +615,26 @@ llm_embedding:
 
 ### For Time-MMD Datasets
 
-1. Use simple data loading via `data_provider`
-2. Embeddings cache in `data/{dataset}/llm_embeddings/`
-3. Standard train/val/test splits
+1. Use CLI format: `time_mmd_<domain>` (lowercase domain)
+2. Use simple data loading via `data_provider`
+3. Embeddings cache in `data/time_mmd/{Domain}/llm_embeddings/`
+4. Standard train/val/test splits
+
+### For TTC Datasets
+
+1. Use CLI format: `ttc_<domain>` (lowercase domain)
+2. Structure similar to Time-MMD
+3. Embeddings cache in `data/ttc/{domain}/llm_embeddings/`
 
 ### For Fidel-TS Datasets
 
-1. Use `FidelTSPathResolver` for path resolution
-2. Don't manually construct paths - they're hardcoded per subdataset
-3. Text embeddings stay in `hetero/` or `embeddings_cache/`
-4. LLM embeddings go to `llm_embeddings/` (separate directory)
-5. Static embeddings handled via `static_info.json`
+1. Use CLI format: `fidel_<dataset>` or `fidel_<dataset>:<config>`
+2. Use `FidelTSPathResolver` for path resolution in custom code
+3. Don't manually construct paths - they're hardcoded per subdataset
+4. Text embeddings stay in `hetero/` or `embeddings_cache/`
+5. LLM embeddings go to `llm_embeddings/` (separate directory)
+6. Static embeddings handled via `static_info.json`
+7. Multiple configs available - use `list-datasets` to see options
 
 ### For LLM Embeddings
 
@@ -586,13 +660,35 @@ llm_embedding:
 ### "No cached embeddings found"
 
 ```bash
-python -m cli.inference generate <dataset>
+# Generate embeddings for your dataset type
+python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/gpt2.yaml
+python -m cli.inference generate ttc_climate model_configs/llm_embedding/gpt2.yaml
+python -m cli.inference generate fidel_ETT model_configs/llm_embedding/gpt2.yaml
 ```
+
+### "Unknown dataset format"
+
+Use correct naming convention:
+- Time-MMD: `time_mmd_<domain>` (e.g., `time_mmd_traffic`)
+- TTC: `ttc_<domain>` (e.g., `ttc_climate`)
+- Fidel-TS: `fidel_<dataset>` (e.g., `fidel_ETT`, `fidel_California_ISO`)
+
+Run `python -m cli.inference list-datasets` to see all available datasets.
+
+### "Dataset config not found"
+
+Check the expected config path:
+- Time-MMD: `data_configs/time_mmd/<Domain>/config.yaml`
+- TTC: `data_configs/ttc/<domain>/config.yaml`
+- Fidel-TS: `data_configs/<Dataset>/<config>.yaml`
+
+Note: Time-MMD domain directories use capitalized names (e.g., `Traffic`, not `traffic`).
 
 ### "CUDA out of memory"
 
 ```bash
-python -m cli.inference generate <dataset> --quantization 4bit --batch-size 8
+# Use quantization and smaller batch size
+python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/qwen_72b.yaml
 ```
 
 ### "Unknown Fidel-TS dataset"

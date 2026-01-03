@@ -63,6 +63,7 @@ Example:
 
 import time
 import yaml
+from pathlib import Path
 from typing import Dict, Any, Optional, Callable, List
 
 import numpy as np
@@ -599,6 +600,150 @@ class LLMEmbedder:
             dataset_name=dataset,
         )
     
+    def _resolve_dataset_config(self, dataset: str) -> Path:
+        """
+        Resolve dataset name to its configuration file path.
+        
+        This method supports three dataset types with distinct naming conventions:
+        
+        1. Time-MMD datasets (time_mmd_<domain>):
+           - Config: data_configs/time_mmd/<Domain>/config.yaml
+           - Example: time_mmd_traffic -> data_configs/time_mmd/Traffic/config.yaml
+        
+        2. TTC datasets (ttc_<domain>):
+           - Config: data_configs/ttc/<domain>/config.yaml
+           - Example: ttc_climate -> data_configs/ttc/climate/config.yaml
+        
+        3. Fidel-TS datasets (fidel_<dataset> or fidel_<dataset>:<config>):
+           - Config: data_configs/<Dataset>/<config>.yaml
+           - Example: fidel_ETT -> data_configs/ETT/fullETT_H.yaml (default)
+           - Example: fidel_ETT:fullETT_M -> data_configs/ETT/fullETT_M.yaml
+        
+        Args:
+            dataset: Dataset identifier string
+        
+        Returns:
+            Path to the configuration YAML file
+        
+        Raises:
+            FileNotFoundError: If the configuration file does not exist
+            ValueError: If the dataset type cannot be determined
+        """
+        
+        # ==========================================================================
+        # Time-MMD datasets: time_mmd_<domain>
+        # ==========================================================================
+        if dataset.startswith('time_mmd_'):
+            domain = dataset.replace('time_mmd_', '')
+            # Handle case variants: traffic -> Traffic, public_health -> Public_Health
+            domain_parts = domain.split('_')
+            domain_capitalized = '_'.join(p.capitalize() for p in domain_parts)
+            config_path = Path(f'data_configs/time_mmd/{domain_capitalized}/config.yaml')
+            
+            if not config_path.exists():
+                # List available domains for helpful error message
+                time_mmd_dir = Path('data_configs/time_mmd')
+                available = []
+                if time_mmd_dir.exists():
+                    available = [d.name for d in time_mmd_dir.iterdir() 
+                                if d.is_dir() and (d / 'config.yaml').exists()]
+                raise FileNotFoundError(
+                    f"Time-MMD dataset config not found: {config_path}\n"
+                    f"Available Time-MMD domains: {available}"
+                )
+            return config_path
+        
+        # ==========================================================================
+        # TTC datasets: ttc_<domain>
+        # ==========================================================================
+        if dataset.startswith('ttc_'):
+            domain = dataset.replace('ttc_', '')
+            config_path = Path(f'data_configs/ttc/{domain}/config.yaml')
+            
+            if not config_path.exists():
+                # List available domains for helpful error message
+                ttc_dir = Path('data_configs/ttc')
+                available = []
+                if ttc_dir.exists():
+                    available = [d.name for d in ttc_dir.iterdir() 
+                                if d.is_dir() and (d / 'config.yaml').exists()]
+                raise FileNotFoundError(
+                    f"TTC dataset config not found: {config_path}\n"
+                    f"Available TTC domains: {available}"
+                )
+            return config_path
+        
+        # ==========================================================================
+        # Fidel-TS datasets: fidel_<dataset> or fidel_<dataset>:<config_name>
+        # ==========================================================================
+        if dataset.startswith('fidel_'):
+            parts = dataset.replace('fidel_', '').split(':')
+            dataset_name = parts[0]
+            
+            # Default config mappings for Fidel-TS datasets
+            # Maps dataset folder name to default config file (without .yaml)
+            default_configs = {
+                'Bear_room': 'fullBear',
+                'California_ISO': 'fullCAISO',
+                'Canada_photovoltaics_plants': 'fullCPP',
+                'electricity': 'fullelectricity',
+                'ETT': 'fullETT_H',
+                'Germany_Renewable_Power_Grid': 'fullGRPG',
+                'Jena_Atmospheric_Physics': 'fullJAP',
+                'NYC_traffic_speed': 'fullNYCTS',
+                'traffic': 'fulltraffic',
+                'weather': 'weather',
+            }
+            
+            if len(parts) > 1:
+                # Explicit config specified: fidel_ETT:fullETT_M
+                config_name = parts[1]
+                # Remove .yaml if user included it
+                if config_name.endswith('.yaml'):
+                    config_name = config_name[:-5]
+            elif dataset_name in default_configs:
+                # Use default config
+                config_name = default_configs[dataset_name]
+            else:
+                raise ValueError(
+                    f"Unknown Fidel-TS dataset: {dataset_name}\n"
+                    f"Available Fidel-TS datasets: {list(default_configs.keys())}\n"
+                    f"Specify config explicitly: fidel_{dataset_name}:<config_name>"
+                )
+            
+            config_path = Path(f'data_configs/{dataset_name}/{config_name}.yaml')
+            
+            if not config_path.exists():
+                # List available configs for this dataset
+                dataset_dir = Path(f'data_configs/{dataset_name}')
+                available = []
+                if dataset_dir.exists():
+                    available = [f.stem for f in dataset_dir.glob('*.yaml')]
+                raise FileNotFoundError(
+                    f"Fidel-TS dataset config not found: {config_path}\n"
+                    f"Available configs for {dataset_name}: {available}"
+                )
+            return config_path
+        
+        # ==========================================================================
+        # Fallback: Try direct path interpretation
+        # ==========================================================================
+        # Try as a direct config path (for backwards compatibility or custom paths)
+        if dataset.endswith('.yaml'):
+            config_path = Path(dataset)
+            if config_path.exists():
+                return config_path
+        
+        raise ValueError(
+            f"Unknown dataset format: {dataset}\n"
+            f"Supported formats:\n"
+            f"  - time_mmd_<domain>: Time-MMD datasets (e.g., time_mmd_traffic)\n"
+            f"  - ttc_<domain>: TTC datasets (e.g., ttc_climate)\n"
+            f"  - fidel_<dataset>: Fidel-TS datasets (e.g., fidel_ETT)\n"
+            f"  - fidel_<dataset>:<config>: Fidel-TS with specific config\n"
+            f"Use 'python -m cli.inference list-datasets' to see available datasets."
+        )
+    
     def _load_dataset(
         self, 
         dataset: str, 
@@ -607,20 +752,23 @@ class LLMEmbedder:
         """
         Load dataset values and timestamps.
         
-        This method handles both Time-MMD datasets (simple CSV structure)
-        and Fidel-TS datasets (complex nested directories).
+        This method handles three dataset types:
         
-        For Time-MMD datasets:
-            - Uses Data_Provider with proper configuration
-            - Loads from data_configs/time_mmd/<Domain>/config.yaml
+        1. Time-MMD datasets (time_mmd_<domain>):
+           - Simple CSV structure with text columns
+           - Uses TimeMMD_Dataset via Data_Provider
         
-        For Fidel-TS datasets:
-            - Has complex nested directory structures
-            - Path resolution is handled by FidelTSPathResolver
-            - Each subdataset (Bear_room, California_ISO, etc.) has unique paths
+        2. TTC datasets (ttc_<domain>):
+           - Similar structure to Time-MMD with text descriptions
+           - Uses TimeMMD_Dataset via Data_Provider
+        
+        3. Fidel-TS datasets (fidel_<dataset>):
+           - Complex nested directory structures
+           - Path resolution via FidelTSPathResolver for embeddings
+           - Uses Universal_Dataset via Data_Provider
         
         Args:
-            dataset: Dataset name (e.g., 'time_mmd_traffic', 'ETTh1')
+            dataset: Dataset name (e.g., 'time_mmd_traffic', 'ttc_climate', 'fidel_ETT')
             split: Data split ('train', 'val', 'test')
         
         Returns:
@@ -633,29 +781,13 @@ class LLMEmbedder:
             This uses the fidel-ts Data_Provider infrastructure for proper
             data loading with all preprocessing steps applied.
         """
-        import yaml
-        from pathlib import Path
         from utils.tools import dotdict
         from data_provider.data_factory import Data_Provider
         
         print(f"[ LLM Embedder ] Loading data for {dataset}/{split}")
         
-        # Determine dataset config path
-        # Format: time_mmd_<domain> -> data_configs/time_mmd/<Domain>/config.yaml
-        if dataset.startswith('time_mmd_'):
-            domain = dataset.replace('time_mmd_', '')
-            # Capitalize first letter to match directory structure
-            domain_capitalized = domain.capitalize()
-            config_path = Path(f'data_configs/time_mmd/{domain_capitalized}/config.yaml')
-        else:
-            # Try direct path for other datasets (ETTh1, etc.)
-            config_path = Path(f'data_configs/{dataset}/config.yaml')
-        
-        if not config_path.exists():
-            raise FileNotFoundError(
-                f"Dataset config not found: {config_path}\n"
-                f"Available Time-MMD datasets: time_mmd_traffic, time_mmd_energy, etc."
-            )
+        # Resolve dataset name to config path using unified resolver
+        config_path = self._resolve_dataset_config(dataset)
         
         # Load data config
         with open(config_path, 'r') as f:
