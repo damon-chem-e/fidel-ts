@@ -68,6 +68,11 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     args.track_per_sample = config.training.track_per_sample
     args.evaluate_test_during_training = config.training.evaluate_test_during_training
     
+    # Apply model-specific training configs (e.g., LeRet two-stage training)
+    # This abstracts away model-specific config handling
+    from cli.config.model_training import apply_model_configs_to_args
+    apply_model_configs_to_args(args, config.training, config.model.name)
+    
     # GPU
     args.use_gpu = config.device.use_gpu
     args.gpu = config.device.gpu
@@ -88,6 +93,11 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
         model_config = merge_configs(model_config, config.model_config_overrides)
     
     args.model_config = dotdict(model_config)
+    
+    # Extract model architecture parameters from model config
+    # (These are used by model-specific trainers for loss computation)
+    args.patch_len = model_config.get('patch_len', 16)
+    args.stride = model_config.get('stride', 8)
     
     with open(args.data_config, 'r') as f:
         data_configs = yaml.safe_load(f)
@@ -217,8 +227,17 @@ def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: 
     
     # Run experiment with GPU monitoring context
     with gpu_monitoring_context(args, exp_manager, log_interval_s=30.0):
-        # Initialize and run experiment (pass exp_manager for tracking)
-        exp = Experiment(args, exp_manager=exp_manager)
-        print(f'>>>>>>>start training : {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>')
-        exp.train()
+        # Check for model-specific training handler
+        from exp.model_specific import has_custom_trainer, get_model_trainer
+        
+        if has_custom_trainer(args.model, framework="pytorch"):
+            # Use model-specific trainer (e.g., LeRet two-stage training)
+            trainer_fn = get_model_trainer(args.model, framework="pytorch")
+            print(f'>>>>>>>start training : {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>')
+            trainer_fn(args, exp_manager=exp_manager)
+        else:
+            # Standard PyTorch training via Experiment class
+            exp = Experiment(args, exp_manager=exp_manager)
+            print(f'>>>>>>>start training : {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>')
+            exp.train()
 

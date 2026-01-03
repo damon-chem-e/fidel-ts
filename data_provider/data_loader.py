@@ -353,13 +353,14 @@ class Universal_Dataset(Dataset):
                 y_hetero = y_hetero[3]
         
         # Generate time features if enabled (for FEDformer and similar models)
-        # Use empty arrays instead of None to avoid collate errors
+        # Return empty arrays instead of None to avoid collate issues
         if self.generate_time_features:
             x_time_features = time_features(x_time, freq=self.time_feature_freq)
             y_time_features = time_features(y_time, freq=self.time_feature_freq)
         else:
-            x_time_features = np.zeros((1), dtype=np.float32)
-            y_time_features = np.zeros((1), dtype=np.float32)
+            # Return empty arrays instead of None to avoid PyTorch collate errors
+            x_time_features = np.array([]).astype(np.float32)
+            y_time_features = np.array([]).astype(np.float32)
         
         # Return sample_id as first element for consistent sample tracking across models
         # still return everything for compatibility, but unwanted set as 0 for efficiency

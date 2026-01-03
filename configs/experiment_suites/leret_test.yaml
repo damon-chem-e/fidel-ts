@@ -1,0 +1,181 @@
+# Experiment Suite: LeRet Test Suite
+# Description: Test LeRet (Language-Enhanced Retention Network) on Time-MMD Traffic dataset
+# Usage: python -m cli.suite run configs/experiment_suites/leret_test.yaml
+#
+# This suite tests the LeRet model implementation with:
+# - Multi-Scale Retention mechanism (O(n) complexity)
+# - Patch-based input processing
+# - Two-stage training (pretrain + finetune)
+
+suite:
+  name: "leret_test"
+  description: "Test LeRet model on Time-MMD Traffic dataset with two-stage training"
+  tags: ["leret", "retention", "pytorch", "test", "two-stage", "patching"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: false
+    log_dir: "./logs/suites/leret_test"
+    
+  # Experiments in this suite
+  experiments:
+    # =========================================================================
+    # LeRet with Two-Stage Training (pretrain + finetune)
+    # =========================================================================
+    - name: "leret_two_stage_time_mmd_traffic"
+      description: "LeRet with two-stage training on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "LeRet"
+          config_path: "model_configs/general/LeRet.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+          # LeRet-specific two-stage training configuration
+          leret:
+            training_stage: "both"
+            pretrain_epochs: 1
+            pretrain_loss: "mse"
+            finetune_loss: "mse"
+            pretrain_learning_rate: 1e-3
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        model_config_overrides:
+          # Channel configuration (Time-MMD Traffic has 1 target variable)
+          enc_in: 1
+          # Model dimensions (smaller for quick testing)
+          d_model: 64
+          d_ff: 128
+          n_heads: 4
+          e_layers: 2
+          # Patching configuration
+          patch_len: 8
+          stride: 4
+          # Sequence configuration
+          seq_len: 24
+          pred_len: 6
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/leret_test"
+    
+    # =========================================================================
+    # LeRet Pretrain Only (Stage 1)
+    # =========================================================================
+    - name: "leret_pretrain_only_time_mmd_traffic"
+      description: "LeRet pretrain stage only on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "LeRet"
+          config_path: "model_configs/general/LeRet.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 32
+          learning_rate: 1e-3
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+          # LeRet pretrain stage only
+          leret:
+            training_stage: "pretrain"
+            pretrain_epochs: 1
+            pretrain_loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        model_config_overrides:
+          enc_in: 1
+          d_model: 64
+          d_ff: 128
+          n_heads: 4
+          e_layers: 2
+          patch_len: 8
+          stride: 4
+          seq_len: 24
+          pred_len: 6
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/leret_test"
+    
+    # =========================================================================
+    # LeRet with Larger Model (production-like config)
+    # =========================================================================
+    - name: "leret_large_time_mmd_traffic"
+      description: "LeRet with larger model dimensions on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "LeRet"
+          config_path: "model_configs/general/LeRet.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 16  # Smaller batch for larger model
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+          # LeRet two-stage training
+          leret:
+            training_stage: "both"
+            pretrain_epochs: 1
+            pretrain_loss: "mse"
+            finetune_loss: "mse"
+            pretrain_learning_rate: 1e-3
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        model_config_overrides:
+          enc_in: 1
+          # Larger model dimensions (closer to paper defaults)
+          d_model: 128
+          d_ff: 256
+          n_heads: 8
+          e_layers: 3
+          # Patching configuration
+          patch_len: 16
+          stride: 8
+          # Sequence configuration
+          seq_len: 24
+          pred_len: 6
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/leret_test"
+
+
