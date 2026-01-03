@@ -1,0 +1,87 @@
+# TimeCMA Model Configuration
+# Cross-Modality Alignment for Time Series Forecasting (AAAI 2025)
+#
+# TimeCMA uses dual-branch encoding with cross-modal attention:
+# - Time Series Encoder (Transformer)
+# - Prompt Encoder (for LLM embeddings)
+# - Cross-Modal Alignment Layer
+# - Transformer Decoder
+#
+# Reference:
+#   TimeCMA: Towards LLM-Empowered Multivariate Time Series Forecasting
+#   via Cross-Modality Alignment (AAAI 2025)
+
+model: TimeCMA
+
+# =============================================================================
+# Model Architecture
+# =============================================================================
+
+# Hidden dimension for time series encoding (C in paper)
+# This is the dimension after length_to_feature projection
+channel: 32
+
+# Feed-forward dimension for cross-modal attention
+d_ff: 32
+
+# Number of encoder layers (both TS encoder and prompt encoder)
+e_layers: 1
+
+# Number of decoder layers
+d_layers: 1
+
+# Number of attention heads
+n_heads: 8
+
+# Dropout rate
+dropout: 0.2
+
+# =============================================================================
+# LLM Embedding Settings
+# =============================================================================
+
+# LLM embedding dimension
+# - 768 for GPT-2 base
+# - 1024 for GPT-2 medium
+# - 1280 for GPT-2 large
+# - 1600 for GPT-2 xl
+# - 3584 for Qwen2.5-7B
+# - 8192 for Qwen2.5-72B
+d_llm: 768
+
+# =============================================================================
+# Normalization
+# =============================================================================
+
+# Use RevIN normalization (recommended)
+# TimeCMA always uses RevIN with affine=False
+revin: true
+
+# =============================================================================
+# Task Configuration
+# =============================================================================
+
+# Task type for data loading compatibility
+# TimeCMA uses hetero_channel for LLM embeddings
+task: TimeCMA
+
+# enc_in will be set dynamically based on dataset
+enc_in: 7
+
+# =============================================================================
+# LLM Embedding Precomputation (Reference)
+# =============================================================================
+# 
+# TimeCMA requires precomputed LLM embeddings. Generate them using:
+#
+#   python -m cli.inference generate <dataset> model_configs/llm_embedding/default.yaml
+#
+# The embeddings are stored in the cache and loaded via hetero_channel.
+# See docs/embedder.md for full documentation.
+#
+# Embedding configuration reference:
+#   llm_embedding:
+#     model_name: "gpt2"  # or "Qwen/Qwen2.5-72B-Instruct"
+#     extraction_mode: "last_token"
+#     prompt_template: "timecma_v1"
+
