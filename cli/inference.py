@@ -160,11 +160,12 @@ def generate(
         console.print("[red]Error: Experiment config missing data.name[/red]")
         raise typer.Exit(code=1)
     
-    # Load embedder from experiment config
+    # Load embedder from experiment config with console for progress bars
     try:
         embedder = LLMEmbedder.from_experiment_config(
             experiment_config_path=str(config_path),
             device=device,
+            console=console,
         )
     except ValueError as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -184,62 +185,42 @@ def generate(
     console.print(f"  Splits: [green]{', '.join(splits)}[/green]")
     console.print()
     
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TimeRemainingColumn(),
-        console=console
-    ) as progress:
+    succeeded = []
+    failed = []
+    
+    for split in splits:
+        console.print(f"[bold]━━━ {split} ━━━[/bold]")
         
-        overall_task = progress.add_task(
-            f"[cyan]Processing {dataset}...",
-            total=len(splits)
-        )
-        
-        succeeded = []
-        failed = []
-        
-        for split in splits:
-            progress.update(overall_task, description=f"[cyan]Processing {split} split...")
+        try:
+            embedder.generate_ts_embeddings(
+                dataset=dataset,
+                split=split,
+                batch_size=effective_batch_size,
+                force=force,
+            )
             
-            try:
-                # Create a sub-progress for batches
-                def progress_callback(current, total):
-                    # Update would be too frequent, skip for now
-                    pass
-                
-                embedder.generate_ts_embeddings(
-                    dataset=dataset,
-                    split=split,
-                    batch_size=effective_batch_size,
-                    force=force,
-                    progress_callback=progress_callback,
-                )
-                
-                console.print(f"  [green]✓[/green] {split} complete")
-                succeeded.append(split)
-                
-            except Exception as e:
-                console.print(f"  [red]✗[/red] {split} failed: {str(e)}")
-                console.print_exception(show_locals=False)
-                if not force:
-                    console.print("    [dim]Use --force to regenerate[/dim]")
-                failed.append(split)
+            console.print(f"  [green]✓[/green] {split} complete")
+            succeeded.append(split)
             
-            progress.advance(overall_task)
+        except Exception as e:
+            console.print(f"  [red]✗[/red] {split} failed: {str(e)}")
+            console.print_exception(show_locals=False)
+            if not force:
+                console.print("    [dim]Use --force to regenerate[/dim]")
+            failed.append(split)
+        
+        console.print()  # Blank line between splits
     
     # Print appropriate summary based on results
     if failed and not succeeded:
-        console.print(f"\n[red]✗ All splits failed for {dataset}[/red]")
+        console.print(f"[red]✗ All splits failed for {dataset}[/red]")
         raise typer.Exit(code=1)
     elif failed:
-        console.print(f"\n[yellow]⚠ Partial success for {dataset}: {len(succeeded)}/{len(splits)} splits completed[/yellow]")
+        console.print(f"[yellow]⚠ Partial success for {dataset}: {len(succeeded)}/{len(splits)} splits completed[/yellow]")
         console.print(f"  [green]Succeeded:[/green] {', '.join(succeeded)}")
         console.print(f"  [red]Failed:[/red] {', '.join(failed)}")
     else:
-        console.print(f"\n[green]✓ Embeddings generated for {dataset} ({len(succeeded)} splits)[/green]")
+        console.print(f"[green]✓ Embeddings generated for {dataset} ({len(succeeded)} splits)[/green]")
 
 
 @app.command()
@@ -663,7 +644,7 @@ def generate_suite(
             use_gpu = device_config.get('use_gpu', True)
             effective_device = f'cuda:{gpu}' if use_gpu else 'cpu'
         
-        # Create embedder manually with merged config values
+        # Create embedder manually with merged config values and console for progress bars
         embedder = LLMEmbedder(
             model_name=llm_config.get('model_name', 'gpt2'),
             device=effective_device,
@@ -678,6 +659,7 @@ def generate_suite(
             output_len=output_len,
             scale=training.get('scale', True),
             data_config_path=final_config.get('data', {}).get('config_path'),
+            console=console,
         )
         embedder.default_batch_size = llm_config.get('batch_size', 64)
         
@@ -685,6 +667,7 @@ def generate_suite(
         effective_batch_size = batch_size if batch_size is not None else embedder.default_batch_size
         
         for split in splits:
+            console.print(f"  [bold]{split}:[/bold]")
             try:
                 embedder.generate_ts_embeddings(
                     dataset=dataset,
@@ -692,10 +675,10 @@ def generate_suite(
                     batch_size=effective_batch_size,
                     force=force,
                 )
-                console.print(f"  [green]✓[/green] {split} complete")
+                console.print(f"    [green]✓[/green] {split} complete")
                 succeeded.append(f"{dataset}/{split}")
             except Exception as e:
-                console.print(f"  [red]✗[/red] {split}: {str(e)}")
+                console.print(f"    [red]✗[/red] {split}: {str(e)}")
                 console.print_exception(show_locals=False)
                 failed.append(f"{dataset}/{split}")
         

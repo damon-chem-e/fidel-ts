@@ -64,7 +64,7 @@ Example:
 import time
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable, List
+from typing import Dict, Any, Optional, Callable, List, TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -72,6 +72,9 @@ import torch
 from .llm_registry import LLMRegistry
 from .llm_cache import LLMEmbeddingCache, LLMEmbeddingMetadata
 from .prompt_builder import TSPromptBuilder
+
+if TYPE_CHECKING:
+    from rich.console import Console
 
 
 class LLMEmbedder:
@@ -130,6 +133,7 @@ class LLMEmbedder:
         output_len: int = 96,
         scale: bool = True,
         data_config_path: Optional[str] = None,
+        console: Optional['Console'] = None,
     ):
         """
         Initialize LLM embedder.
@@ -153,6 +157,7 @@ class LLMEmbedder:
             output_len: Output/prediction sequence length (from experiment config)
             scale: Whether to scale the data (from experiment config)
             data_config_path: Path to data config YAML (from experiment config)
+            console: Optional Rich Console for progress bar display
         
         Note:
             If prompt_template is None, the embedder can only be used for raw
@@ -167,6 +172,7 @@ class LLMEmbedder:
         self.prompt_template = prompt_template
         self.prompt_config = prompt_config or {}
         self.max_length = max_length
+        self.console = console  # Rich Console for progress bars
         
         # Experiment-driven parameters
         self.input_len = input_len
@@ -197,6 +203,7 @@ class LLMEmbedder:
         cls,
         experiment_config_path: str,
         device: Optional[str] = None,
+        console: Optional['Console'] = None,
     ) -> 'LLMEmbedder':
         """
         Create embedder from experiment configuration file.
@@ -208,6 +215,7 @@ class LLMEmbedder:
         Args:
             experiment_config_path: Path to experiment YAML configuration file
             device: Override device from config (defaults to cuda:0 or experiment's GPU)
+            console: Optional Rich Console for progress bar display
         
         Returns:
             Configured LLMEmbedder instance
@@ -266,6 +274,7 @@ class LLMEmbedder:
             output_len=output_len,
             scale=scale,
             data_config_path=data_config_path,
+            console=console,
         )
         
         # Store batch_size from config for use by generate_ts_embeddings
@@ -518,22 +527,25 @@ class LLMEmbedder:
         # Build metadata for cache key
         metadata = self._build_metadata(dataset)
         
-        # Check cache
+        # Check cache - return early if cache exists (with progress display if console available)
         if not force and cache.cache_exists(metadata, split):
-            print(f"[ LLM Embedder ] Loading cached embeddings for {dataset}/{split}")
-            return cache.load_embeddings(metadata, split)
+            if self.console is not None:
+                self.console.print(f"  [dim]Loading cached embeddings for {dataset}/{split}...[/dim]")
+            embeddings = cache.load_embeddings(metadata, split, quiet=True)
+            if self.console is not None:
+                self.console.print(f"  [dim]Loaded {embeddings.shape[0]} embeddings from cache[/dim]")
+            return embeddings
         
-        # Load data
-        print(f"[ LLM Embedder ] Loading data for {dataset}/{split}")
-        values, timestamps, data_metadata = self._load_dataset(dataset, split)
+        # Load data with progress display
+        values, timestamps, data_metadata = self._load_dataset_with_progress(dataset, split)
         
         N, L, C = values.shape
-        print(f"[ LLM Embedder ] Generating embeddings: {N} samples, {C} channels")
+        total_prompts = N * C
         
-        # Ensure model loaded
-        self._ensure_model_loaded()
+        # Ensure model loaded with progress display
+        self._ensure_model_loaded_with_progress()
         
-        # Generate embeddings
+        # Generate embeddings with full progress bar
         start_time = time.time()
         embeddings = self._generate_embeddings_from_timeseries(
             values=values,
@@ -541,8 +553,13 @@ class LLMEmbedder:
             metadata=data_metadata,
             batch_size=batch_size,
             progress_callback=progress_callback,
+            split=split,
         )
         generation_time = time.time() - start_time
+        
+        # Print completion message with time taken
+        if self.console is not None:
+            self.console.print(f"  [dim]Generated {N} embeddings in {generation_time:.1f}s[/dim]")
         
         # Update metadata with generation info
         metadata.generation_time_seconds = generation_time
@@ -554,12 +571,81 @@ class LLMEmbedder:
             values, timestamps, data_metadata
         )
         
-        # Save to cache
+        # Save to cache (with progress display if console available)
+        if self.console is not None:
+            self.console.print(f"  [dim]Saving {N} embeddings to cache...[/dim]")
         cache.save_embeddings(embeddings, metadata, split)
         
-        print(f"[ LLM Embedder ] Generated {N} embeddings in {generation_time:.1f}s")
-        
         return embeddings
+    
+    def _load_dataset_with_progress(
+        self,
+        dataset: str,
+        split: str,
+    ) -> tuple:
+        """
+        Load dataset with progress indication via Rich console.
+        
+        Wraps _load_dataset with a spinner/status indicator if console is available.
+        
+        Args:
+            dataset: Dataset name
+            split: Data split
+        
+        Returns:
+            Tuple of (values, timestamps, metadata) from _load_dataset
+        """
+        if self.console is not None:
+            from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+            
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                TimeElapsedColumn(),
+                console=self.console,
+                transient=True,
+            ) as progress:
+                task = progress.add_task(f"Loading {dataset}/{split}...", total=None)
+                result = self._load_dataset(dataset, split)
+                progress.update(task, completed=True)
+            
+            N, L, C = result[0].shape
+            self.console.print(f"  [dim]Loaded {N} samples ({C} channels, seq_len={L})[/dim]")
+            return result
+        else:
+            # Fallback: print statement
+            print(f"[ LLM Embedder ] Loading data for {dataset}/{split}")
+            result = self._load_dataset(dataset, split)
+            print(f"[ LLM Embedder ] Loaded {result[0].shape[0]} samples")
+            return result
+    
+    def _ensure_model_loaded_with_progress(self):
+        """
+        Load model and tokenizer with progress indication via Rich console.
+        
+        Shows a spinner while loading the model if console is available.
+        """
+        if self._model is not None:
+            return  # Already loaded
+        
+        if self.console is not None:
+            from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+            
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                TimeElapsedColumn(),
+                console=self.console,
+                transient=True,
+            ) as progress:
+                task = progress.add_task(f"Loading model {self.model_name}...", total=None)
+                self._ensure_model_loaded()
+                progress.update(task, completed=True)
+            
+            self.console.print(f"  [dim]Model loaded (embed_dim={self._embed_dim})[/dim]")
+        else:
+            # Fallback: use standard _ensure_model_loaded
+            self._ensure_model_loaded()
     
     def _generate_embeddings_from_timeseries(
         self,
@@ -568,6 +654,7 @@ class LLMEmbedder:
         metadata: Dict[str, Any],
         batch_size: int = 32,
         progress_callback: Optional[Callable[[int, int], None]] = None,
+        split: str = '',
     ) -> np.ndarray:
         """
         Generate LLM embeddings from time series data.
@@ -584,6 +671,7 @@ class LLMEmbedder:
             metadata: Dataset metadata dict (contains 'freq', etc.)
             batch_size: Batch size for inference
             progress_callback: Optional progress callback
+            split: Data split name (for progress display)
         
         Returns:
             embeddings: [N, embed_dim, C] LLM embeddings
@@ -591,45 +679,123 @@ class LLMEmbedder:
         N, L, C = values.shape
         
         # Step 1: Generate ALL prompts (flattened across samples and channels)
-        all_prompts = self.ts_prompt_builder.build_flat_prompts(values, timestamps, metadata)
-        total_prompts = len(all_prompts)  # N * C
+        if self.console is not None:
+            from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+            
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                TimeElapsedColumn(),
+                console=self.console,
+                transient=True,
+            ) as progress:
+                task = progress.add_task("Building prompts...", total=None)
+                all_prompts = self.ts_prompt_builder.build_flat_prompts(values, timestamps, metadata)
+                progress.update(task, completed=True)
+        else:
+            all_prompts = self.ts_prompt_builder.build_flat_prompts(values, timestamps, metadata)
         
-        # Step 2: Embed all prompts
+        total_prompts = len(all_prompts)  # N * C
+        num_batches = (total_prompts + batch_size - 1) // batch_size
+        
+        # Step 2: Embed all prompts with progress bar
         all_embeddings = []
         
-        for start_idx in range(0, total_prompts, batch_size):
-            end_idx = min(start_idx + batch_size, total_prompts)
-            batch_prompts = all_prompts[start_idx:end_idx]
+        if self.console is not None:
+            from rich.progress import (
+                Progress, BarColumn, TextColumn, TimeElapsedColumn, 
+                TimeRemainingColumn, MofNCompleteColumn, SpinnerColumn
+            )
             
-            # Tokenize batch
-            inputs = self._tokenizer(
-                batch_prompts,
-                return_tensors='pt',
-                padding=True,
-                truncation=True,
-                max_length=self.max_length
-            ).to(self.device)
+            # Create a visually distinct progress bar for embedding generation
+            progress_columns = (
+                SpinnerColumn(),
+                TextColumn("[bold blue]{task.description}"),
+                BarColumn(bar_width=40),
+                MofNCompleteColumn(),
+                TextColumn("•"),
+                TimeElapsedColumn(),
+                TextColumn("•"),
+                TimeRemainingColumn(),
+            )
             
-            # Get embeddings
-            with torch.no_grad():
-                outputs = self._model(**inputs, output_hidden_states=True)
-                hidden_states = outputs.hidden_states[-1]  # Last layer
+            with Progress(*progress_columns, console=self.console, transient=False) as progress:
+                task = progress.add_task(
+                    f"Embedding {split}",
+                    total=num_batches
+                )
                 
-                if self.extraction_mode == 'last_token':
-                    seq_lengths = inputs.attention_mask.sum(dim=1) - 1
-                    batch_embeddings = hidden_states[
-                        torch.arange(hidden_states.size(0), device=self.device),
-                        seq_lengths
-                    ]
-                else:  # pooled
-                    mask = inputs.attention_mask.unsqueeze(-1).float()
-                    batch_embeddings = (hidden_states * mask).sum(dim=1) / mask.sum(dim=1)
-            
-            all_embeddings.append(batch_embeddings.cpu().numpy())
-            
-            # Progress callback
-            if progress_callback:
-                progress_callback(end_idx, total_prompts)
+                for start_idx in range(0, total_prompts, batch_size):
+                    end_idx = min(start_idx + batch_size, total_prompts)
+                    batch_prompts = all_prompts[start_idx:end_idx]
+                    
+                    # Tokenize batch
+                    inputs = self._tokenizer(
+                        batch_prompts,
+                        return_tensors='pt',
+                        padding=True,
+                        truncation=True,
+                        max_length=self.max_length
+                    ).to(self.device)
+                    
+                    # Get embeddings
+                    with torch.no_grad():
+                        outputs = self._model(**inputs, output_hidden_states=True)
+                        hidden_states = outputs.hidden_states[-1]  # Last layer
+                        
+                        if self.extraction_mode == 'last_token':
+                            seq_lengths = inputs.attention_mask.sum(dim=1) - 1
+                            batch_embeddings = hidden_states[
+                                torch.arange(hidden_states.size(0), device=self.device),
+                                seq_lengths
+                            ]
+                        else:  # pooled
+                            mask = inputs.attention_mask.unsqueeze(-1).float()
+                            batch_embeddings = (hidden_states * mask).sum(dim=1) / mask.sum(dim=1)
+                    
+                    all_embeddings.append(batch_embeddings.cpu().numpy())
+                    
+                    # Update progress bar
+                    progress.advance(task)
+                    
+                    # Also call external callback if provided
+                    if progress_callback:
+                        progress_callback(end_idx, total_prompts)
+        else:
+            # Fallback: no progress bar, use callback if provided
+            for start_idx in range(0, total_prompts, batch_size):
+                end_idx = min(start_idx + batch_size, total_prompts)
+                batch_prompts = all_prompts[start_idx:end_idx]
+                
+                # Tokenize batch
+                inputs = self._tokenizer(
+                    batch_prompts,
+                    return_tensors='pt',
+                    padding=True,
+                    truncation=True,
+                    max_length=self.max_length
+                ).to(self.device)
+                
+                # Get embeddings
+                with torch.no_grad():
+                    outputs = self._model(**inputs, output_hidden_states=True)
+                    hidden_states = outputs.hidden_states[-1]  # Last layer
+                    
+                    if self.extraction_mode == 'last_token':
+                        seq_lengths = inputs.attention_mask.sum(dim=1) - 1
+                        batch_embeddings = hidden_states[
+                            torch.arange(hidden_states.size(0), device=self.device),
+                            seq_lengths
+                        ]
+                    else:  # pooled
+                        mask = inputs.attention_mask.unsqueeze(-1).float()
+                        batch_embeddings = (hidden_states * mask).sum(dim=1) / mask.sum(dim=1)
+                
+                all_embeddings.append(batch_embeddings.cpu().numpy())
+                
+                # Progress callback
+                if progress_callback:
+                    progress_callback(end_idx, total_prompts)
         
         # Step 3: Concatenate and reshape to [N, embed_dim, C]
         flat_embeddings = np.concatenate(all_embeddings, axis=0)  # [N*C, embed_dim]
@@ -882,8 +1048,6 @@ class LLMEmbedder:
         from utils.tools import dotdict
         from data_provider.data_factory import Data_Provider
         
-        print(f"[ LLM Embedder ] Loading data for {dataset}/{split}")
-        
         # Resolve dataset name to config path using unified resolver
         config_path = self._resolve_dataset_config(dataset)
         
@@ -962,8 +1126,6 @@ class LLMEmbedder:
             
             # Build metadata (freq already extracted above)
             metadata = {'freq': freq, 'dataset': dataset, 'split': split}
-            
-            print(f"[ LLM Embedder ] Loaded {len(values)} samples, shape: {values.shape}")
             
             return values, timestamps, metadata
             
