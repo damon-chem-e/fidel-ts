@@ -119,8 +119,14 @@ def _register_all_trainers():
     register_model_trainer("LeRet", "lightning", train_leret_lightning)
     register_model_trainer("LeRet", "pytorch", train_leret_pytorch)
     
-    # Future models can be registered here:
-    # register_model_trainer("SomeModel", "lightning", train_some_model_lightning)
+    # Time-LLM: Frozen LLM backbone with reprogramming
+    from exp.model_specific.time_llm import (
+        train_time_llm_lightning,
+        train_time_llm_pytorch
+    )
+    
+    register_model_trainer("TimeLLM", "lightning", train_time_llm_lightning)
+    register_model_trainer("TimeLLM", "pytorch", train_time_llm_pytorch)
 
 
 # Auto-register trainers when module is imported

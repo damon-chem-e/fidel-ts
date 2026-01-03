@@ -1,0 +1,43 @@
+# Time-LLM with Qwen backbone (balanced capacity)
+# Good balance between capacity and efficiency
+
+model: TimeLLM
+
+# =============================================================================
+# Qwen 2.5 7B Backbone (3584 hidden dim, 28 layers, 7B params)
+# Requires ~14GB VRAM with 4-bit quantization
+# =============================================================================
+llm_model: QWEN
+llm_layers: 6
+
+# =============================================================================
+# Architecture (tuned for Qwen's size)
+# =============================================================================
+patch_len: 16
+stride: 8
+d_model: 32
+d_ff: 64
+n_heads: 8
+dropout: 0.1
+
+# =============================================================================
+# Prompt Configuration
+# =============================================================================
+prompt_domain: true
+dataset_description: "Time series forecasting dataset for multivariate analysis"
+
+# =============================================================================
+# Task
+# =============================================================================
+task: TSF
+
+# =============================================================================
+# Usage Notes
+# =============================================================================
+# For Qwen models, use quantization in training config:
+#
+# training:
+#   time_llm:
+#     llm_backbone: "QWEN"
+#     quantization: "4bit"  # Recommended for 7B+ models
+

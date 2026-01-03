@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, model_validator, ConfigDict
 import yaml
 
 # Import model-specific training configs from dedicated module
-from cli.config.model_training import LeRetTrainingConfig
+from cli.config.model_training import LeRetTrainingConfig, TimeLLMTrainingConfig
 
 
 # =============================================================================
@@ -90,6 +90,15 @@ class TrainingConfig(BaseModel):
         description=(
             "LeRet-specific two-stage training configuration. "
             "Only used when model is LeRet. Controls pretrain/finetune stages."
+        )
+    )
+    
+    # Time-LLM specific training configuration
+    time_llm: Optional[TimeLLMTrainingConfig] = Field(
+        default=None,
+        description=(
+            "Time-LLM specific training configuration. "
+            "Only used when model is TimeLLM. Controls LLM backbone and quantization."
         )
     )
     

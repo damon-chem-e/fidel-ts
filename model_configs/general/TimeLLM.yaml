@@ -1,0 +1,84 @@
+# Time-LLM: Time Series Forecasting by Reprogramming Large Language Models
+# ICLR 2024 - Jin et al.
+#
+# Time-LLM uses a frozen LLM backbone and reprograms time series data
+# to be compatible with the LLM's embedding space through cross-attention.
+#
+# Key Features:
+# - Frozen LLM backbone (GPT-2, LLaMA, Qwen, etc.)
+# - PatchEmbedding for time series patching
+# - ReprogrammingLayer for TS-to-LLM space mapping
+# - Dynamic prompts with per-batch statistics
+#
+# Reference:
+#   Jin et al., "Time-LLM: Time Series Forecasting by Reprogramming 
+#   Large Language Models" (ICLR 2024)
+
+model: TimeLLM
+
+# =============================================================================
+# LLM Backbone Configuration
+# =============================================================================
+
+# LLM model to use. Supports aliases or full HuggingFace model names:
+# - Aliases: GPT2, GPT2-MEDIUM, GPT2-LARGE, GPT2-XL
+#            LLAMA, LLAMA-7B, LLAMA-70B
+#            QWEN, QWEN-7B, QWEN-14B, QWEN-72B
+#            BERT
+# - Full names: e.g., "meta-llama/Llama-3.1-8B-Instruct"
+llm_model: gpt2
+
+# Number of LLM layers to use (currently loads full model)
+llm_layers: 6
+
+# =============================================================================
+# Patch Embedding Configuration
+# =============================================================================
+
+# Length of each time series patch
+patch_len: 16
+
+# Stride between consecutive patches (overlap if stride < patch_len)
+stride: 8
+
+# Patch embedding dimension (before reprogramming)
+d_model: 16
+
+# Feed-forward dimension (also used for output projection)
+d_ff: 32
+
+# =============================================================================
+# Reprogramming Configuration
+# =============================================================================
+
+# Number of attention heads for reprogramming layer
+n_heads: 8
+
+# Dropout rate for all layers
+dropout: 0.1
+
+# =============================================================================
+# Dynamic Prompt Configuration
+# =============================================================================
+
+# Enable domain-specific prompts (use dataset_description)
+prompt_domain: false
+
+# Dataset description for dynamic prompts
+# Only used if prompt_domain is true
+dataset_description: ""
+
+# =============================================================================
+# Input/Output Configuration
+# =============================================================================
+
+# Number of input channels/variables
+# NOTE: Set via model_config_overrides in experiment config based on dataset
+# enc_in: 7
+
+# =============================================================================
+# Task Configuration
+# =============================================================================
+
+task: TSF
+

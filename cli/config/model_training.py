@@ -95,12 +95,71 @@ class LeRetTrainingConfig(BaseModel):
 
 
 # =============================================================================
-# Future model-specific configs can be added here
+# Time-LLM Configuration
 # =============================================================================
-# 
-# class SomeOtherModelConfig(BaseModel):
-#     """Config for another model with special training requirements."""
-#     ...
+
+class TimeLLMTrainingConfig(BaseModel):
+    """
+    Configuration for Time-LLM training.
+    
+    Time-LLM uses a frozen LLM backbone and only trains:
+    - PatchEmbedding layer
+    - ReprogrammingLayer  
+    - Word embedding mapping layer
+    - Output projection (FlattenHead)
+    
+    Special considerations:
+    - LLM is always frozen (requires_grad=False)
+    - Supports quantization for large LLMs (4-bit, 8-bit)
+    - Dynamic prompts generated per-batch during forward pass
+    
+    Example YAML config:
+        training:
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: true
+            dataset_description: "ETT dataset for power transformer monitoring"
+    
+    Attributes:
+        llm_backbone: HuggingFace model name or alias (GPT2, LLAMA, QWEN)
+        quantization: Quantization mode for LLM (4bit, 8bit, or null)
+        llm_cache_dir: Cache directory for LLM model weights
+        prompt_domain: If True, use provided dataset_description
+        dataset_description: Domain-specific description for dynamic prompts
+        loss: Loss function for training (mse or mae)
+    """
+    model_config = ConfigDict(extra="forbid")
+    
+    llm_backbone: str = Field(
+        default="gpt2",
+        description="HuggingFace model name or alias (GPT2, LLAMA, QWEN, or full HF name)"
+    )
+    
+    quantization: Optional[Literal["4bit", "8bit"]] = Field(
+        default=None,
+        description="Quantization mode for frozen LLM (4bit, 8bit, or null for fp16)"
+    )
+    
+    llm_cache_dir: str = Field(
+        default="./LLM_cache/",
+        description="Cache directory for LLM model weights"
+    )
+    
+    prompt_domain: bool = Field(
+        default=False,
+        description="If True, use dataset_description in dynamic prompts"
+    )
+    
+    dataset_description: str = Field(
+        default="",
+        description="Domain-specific dataset description for dynamic prompts"
+    )
+    
+    loss: Literal["mse", "mae"] = Field(
+        default="mse",
+        description="Loss function for forecasting"
+    )
 
 
 # =============================================================================
@@ -111,8 +170,7 @@ class LeRetTrainingConfig(BaseModel):
 # Format: {model_name: (attribute_name_in_TrainingConfig, ConfigClass)}
 _MODEL_CONFIG_REGISTRY: dict = {
     "LeRet": ("leret", LeRetTrainingConfig),
-    # Future models:
-    # "SomeModel": ("some_model", SomeModelConfig),
+    "TimeLLM": ("time_llm", TimeLLMTrainingConfig),
 }
 
 

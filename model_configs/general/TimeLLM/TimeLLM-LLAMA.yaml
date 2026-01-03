@@ -1,0 +1,43 @@
+# Time-LLM with LLaMA backbone (high capacity)
+# Requires significant GPU memory or quantization
+
+model: TimeLLM
+
+# =============================================================================
+# LLaMA 3.1 8B Backbone (4096 hidden dim, 32 layers, 8B params)
+# Requires ~16GB VRAM with 4-bit quantization
+# =============================================================================
+llm_model: LLAMA
+llm_layers: 6
+
+# =============================================================================
+# Architecture (tuned for LLaMA's larger size)
+# =============================================================================
+patch_len: 16
+stride: 8
+d_model: 32
+d_ff: 128
+n_heads: 8
+dropout: 0.1
+
+# =============================================================================
+# Prompt Configuration (domain-specific recommended for LLaMA)
+# =============================================================================
+prompt_domain: true
+dataset_description: "Time series forecasting dataset for multivariate analysis"
+
+# =============================================================================
+# Task
+# =============================================================================
+task: TSF
+
+# =============================================================================
+# Usage Notes
+# =============================================================================
+# For LLAMA models, use quantization in training config:
+#
+# training:
+#   time_llm:
+#     llm_backbone: "LLAMA"
+#     quantization: "4bit"  # Recommended for 8B+ models
+
