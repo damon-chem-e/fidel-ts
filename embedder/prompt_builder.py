@@ -163,8 +163,13 @@ class TimeCMATemplate(PromptTemplate):
         
         # Format timestamps
         if timestamps is not None and self.config.get('include_timestamps', True):
-            start_date = self._format_timestamp(timestamps[0], metadata)
-            end_date = self._format_timestamp(timestamps[-1], metadata)
+            # Extract first and last timestamps
+            # For Time-MMD: timestamps is 1D array [seq_len] of int64 values
+            # For standard datasets: timestamps is 2D array [seq_len, features] or 1D array [seq_len] of feature arrays
+            start_ts = timestamps[0]
+            end_ts = timestamps[-1]
+            start_date = self._format_timestamp(start_ts, metadata)
+            end_date = self._format_timestamp(end_ts, metadata)
         else:
             start_date = "[start]"
             end_date = "[end]"
@@ -182,18 +187,50 @@ class TimeCMATemplate(PromptTemplate):
         
         return prompt
     
-    def _format_timestamp(self, ts_features: np.ndarray, metadata: Optional[Dict]) -> str:
+    def _format_timestamp(self, ts_input, metadata: Optional[Dict]) -> str:
         """
-        Format timestamp features into readable date string.
+        Format timestamp into readable date string.
         
-        Assumes features order: [month, day, weekday, hour, minute] or similar.
-        Adjust based on your timestamp encoding.
+        Handles timestamps from all dataset types (Time-MMD, fidel-ts, TTC):
+        - All datasets use int64 timestamps in YYYYMMDDHHMMSS format
+        - When accessing timestamps[0] from a 1D array, we get a scalar numpy.int64
+        
+        Also supports (legacy/optional) timestamp feature arrays for compatibility.
+        
+        Args:
+            ts_input: Either scalar int64 timestamp (numpy.int64) or array of timestamp features
+            metadata: Optional metadata dict
         """
-        if len(ts_features) >= 4:
+        # Convert to numpy array to check dimensions
+        ts_array = np.asarray(ts_input)
+        
+        # Handle scalar or 0-d array (numpy.int64 from timestamps[0])
+        # np.isscalar() returns False for numpy scalars, so check ndim instead
+        if ts_array.ndim == 0:
+            ts_int = int(ts_array.item())  # Extract Python int from numpy scalar
+            # Parse YYYYMMDDHHMMSS format
+            ts_str = str(ts_int).zfill(14)  # Ensure 14 digits
+            if len(ts_str) >= 12:
+                month = int(ts_str[4:6])
+                day = int(ts_str[6:8])
+                hour = int(ts_str[8:10]) if len(ts_str) >= 10 else 0
+                minute = int(ts_str[10:12]) if len(ts_str) >= 12 else 0
+                
+                # Clamp values
+                month = max(1, min(12, month))
+                day = max(1, min(31, day))
+                hour = max(0, min(23, hour))
+                minute = max(0, min(59, minute))
+                
+                return f"{day:02d}/{month:02d} {hour:02d}:{minute:02d}"
+            return "[unknown]"
+        
+        # Handle array of timestamp features (legacy/optional format)
+        if ts_array.ndim > 0 and len(ts_array) >= 4:
             # Assuming: [month, day, weekday, hour, ...]
-            month = int(ts_features[0] * 12) if ts_features[0] <= 1 else int(ts_features[0])
-            day = int(ts_features[1] * 31) if ts_features[1] <= 1 else int(ts_features[1])
-            hour = int(ts_features[3] * 24) if len(ts_features) > 3 and ts_features[3] <= 1 else int(ts_features[3]) if len(ts_features) > 3 else 0
+            month = int(ts_array[0] * 12) if ts_array[0] <= 1 else int(ts_array[0])
+            day = int(ts_array[1] * 31) if ts_array[1] <= 1 else int(ts_array[1])
+            hour = int(ts_array[3] * 24) if len(ts_array) > 3 and ts_array[3] <= 1 else int(ts_array[3]) if len(ts_array) > 3 else 0
             
             # Clamp values
             month = max(1, min(12, month))
