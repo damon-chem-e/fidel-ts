@@ -850,7 +850,10 @@ class LLMEmbedder:
                     all_timestamps.append(x_time)
             
             if not all_values:
-                raise ValueError(f"No samples found for {dataset}/{split}")
+                raise ValueError(
+                    f"No samples found for {dataset}/{split}. "
+                    f"This may occur if the split is too small (needs at least seq_len + pred_len samples)."
+                )
             
             values = np.stack(all_values, axis=0)  # [N, seq_len, channels]
             timestamps = np.stack(all_timestamps, axis=0) if all_timestamps else None

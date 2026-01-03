@@ -106,7 +106,6 @@ class LLMRegistry:
         device: str, 
         cache_dir: str,
         quantization: Optional[str] = None,
-        use_flash_attention: bool = True
     ) -> Tuple[Any, int]:
         """
         Get or create a shared LLM model instance.
@@ -116,7 +115,6 @@ class LLMRegistry:
             device: Target device ('cpu', 'cuda:0', etc.)
             cache_dir: Local cache directory for model weights
             quantization: Quantization mode ('4bit', '8bit', or None for fp16)
-            use_flash_attention: Enable Flash Attention 2 (recommended for speed)
         
         Returns:
             Tuple of (model, embedding_dim)
@@ -159,7 +157,6 @@ class LLMRegistry:
                     device=device,
                     cache_dir=cache_dir,
                     quantization=quantization,
-                    use_flash_attention=use_flash_attention
                 )
                 
                 cls._models[key] = model

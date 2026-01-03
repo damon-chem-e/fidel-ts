@@ -93,23 +93,18 @@ def load_model_for_embedding(
     device: str,
     cache_dir: str,
     quantization: Optional[str] = None,
-    use_flash_attention: bool = True,
 ) -> Tuple[Any, int]:
     """
     Load a model configured for embedding extraction (hidden state access).
     
     This function loads models specifically for extracting the last hidden state,
-    NOT for text generation. Key differences from generation loading:
-    - output_hidden_states=True is enabled
-    - Flash Attention 2 is enabled by default for speed
-    - Quantization supported for large models
+    NOT for text generation. Uses PyTorch's default attention implementation.
     
     Args:
         model_name: HuggingFace model name
         device: Target device ('cuda:0', etc.)
         cache_dir: Local cache directory
         quantization: '4bit', '8bit', or None
-        use_flash_attention: Enable Flash Attention 2 (recommended)
     
     Returns:
         Tuple of (model, embedding_dim)
@@ -144,16 +139,8 @@ def load_model_for_embedding(
         model_kwargs['device_map'] = device
         model_kwargs['quantization_config'] = quant_config
     
-    # Flash Attention 2 for speed
-    if use_flash_attention:
-        try:
-            model_kwargs['attn_implementation'] = 'flash_attention_2'
-        except Exception:
-            # Flash Attention may not be available
-            print(f'[ LLM ] Flash Attention 2 not available, using default attention')
-    
-    # Load model
-    print(f"[ LLM ] Loading {model_name} (quantization={quantization}, flash_attn={use_flash_attention})")
+    # Load model (uses PyTorch's default attention implementation)
+    print(f"[ LLM ] Loading {model_name} (quantization={quantization})")
     model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
     
     # Move to device if not using quantization (quantization handles device_map)

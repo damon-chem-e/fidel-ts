@@ -356,9 +356,10 @@ class Universal_Dataset(Dataset):
         given the sequence length and prediction length constraints.
         
         Returns:
-            int: Number of valid data samples
+            int: Number of valid data samples (non-negative, returns 0 if dataset is too small)
         """
-        return len(self.data) - self.seq_len - self.pred_len + 1
+        length = len(self.data) - self.seq_len - self.pred_len + 1
+        return max(0, length)
 
     def inverse_transform(self, data):
         """
