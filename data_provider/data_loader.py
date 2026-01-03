@@ -75,7 +75,8 @@ class Universal_Dataset(Dataset):
                  preload_hetero=False, hetero_stride=1, task=None, custom_input=None, 
                  timezone=None, downsample=None, entity_id=None, 
                  missing_value_strategy='none', required_indicators=None,
-                 generate_time_features=False, time_feature_freq='h'):
+                 generate_time_features=False, time_feature_freq='h',
+                 llm_embedding_provider=None):
         # size [seq_len, label_len, pred_len]
         # info
         self.seq_len = seq_len
@@ -109,6 +110,10 @@ class Universal_Dataset(Dataset):
         # Time feature generation (for FEDformer and similar models)
         self.generate_time_features = generate_time_features
         self.time_feature_freq = time_feature_freq
+        
+        # LLM Embedding Provider (for TimeCMA-style models)
+        # When provided, LLM embeddings are used as hetero_channel
+        self.llm_embedding_provider = llm_embedding_provider
 
         self.__read_data__()
         self.preload_hetero = preload_hetero
@@ -302,27 +307,37 @@ class Universal_Dataset(Dataset):
             # Fallback if entity_id not provided (backward compatibility)
             sample_id = f"unknown|{timestamp_str}|{sequence_index}"
 
+        # Initialize defaults
         x_hetero = np.zeros((1), dtype=np.float32)
         y_hetero = np.zeros((1), dtype=np.float32)
         hetero_x_time = np.zeros((1), dtype=np.float32)
         hetero_y_time = np.zeros((1), dtype=np.float32)
         hetero_general = np.zeros((1), dtype=np.float32)
         hetero_channel = np.zeros((1), dtype=np.float32)
-
-        if self.preload_hetero:
+        
+        # Heterogeneous data loading - explicit paths, no fallback
+        # Path 1: LLM Embedding Provider (TimeCMA-style models)
+        # Path 2: Traditional hetero_data_getter (Fidel-TS, Time-MMD text embeddings)
+        
+        if self.llm_embedding_provider is not None:
+            # LLM embeddings mode: hetero_channel comes from precomputed LLM cache
+            # Other hetero fields (x_hetero, y_hetero, etc.) are not used in this mode
+            hetero_channel = self.llm_embedding_provider[index]
+            
+        elif self.preload_hetero:
+            # Preloaded hetero mode: all hetero data was loaded at init
             hetero_general = self.hetero_general
             hetero_channel = self.hetero_channel
 
-            # dynamically load hetero to reduce preprocess time
             if 'x_hetero' in self.custom_input:
                 hetero_x_time = self.hetero_time[s_begin:s_end:self.hetero_stride]
                 x_hetero = self.full_hetero[s_begin:s_end:self.hetero_stride]
             if 'y_hetero' in self.custom_input:
                 hetero_y_time = self.hetero_time[r_begin:r_end:self.hetero_stride]
                 y_hetero = self.full_hetero[r_begin:r_end:self.hetero_stride]
-
             
         else:
+            # On-demand hetero mode: fetch hetero data per sample via getter
             if 'x_hetero' in self.custom_input:
                 x_hetero = self.hetero_data_getter(x_time[::self.hetero_stride])
                 hetero_x_time = x_hetero[0]

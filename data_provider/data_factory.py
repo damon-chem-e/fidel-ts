@@ -8,7 +8,7 @@ import re
 from utils.tools import dotdict
 from functools import partial
 from .data_helper import timestamp_spliter, ratio_spliter, data_buffer
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
 from utils.entity_data_check import check_entity_sufficient, get_entity_data_size
 from utils.missing_value_handler import scan_missing_value_columns
@@ -159,6 +159,102 @@ class Data_Provider(object):
                                                         use_old_embeddings=use_old_embeddings,
                                                         base_data_path=base_data_path,
                                                         console=self.console)
+        
+        # LLM Embedding Provider - for TimeCMA and similar models
+        # Loaded lazily per-split in get_datasets() when llm_embedding config is present
+        self.llm_embedding_config = getattr(args, 'llm_embedding', None)
+        self._llm_embedding_providers: Dict[str, Any] = {}  # Cache providers per split
+
+    def _get_llm_embedding_provider(self, flag: str):
+        """
+        Get or create LLM embedding provider for a split.
+        
+        Loads precomputed LLM embeddings from cache for models like TimeCMA
+        that use GPT-2/LLM embeddings of time series data.
+        
+        Args:
+            flag: Dataset split ('train', 'val', 'test')
+        
+        Returns:
+            LLMEmbeddingProvider instance, or None if not configured
+        
+        Raises:
+            FileNotFoundError: If embeddings not found (user should run generate-suite)
+        """
+        # Return None if no LLM embedding config
+        if self.llm_embedding_config is None:
+            return None
+        
+        # Return cached provider if already loaded for this split
+        if flag in self._llm_embedding_providers:
+            return self._llm_embedding_providers[flag]
+        
+        # Load provider for this split
+        from embedder.llm_embedding_provider import LLMEmbeddingProvider
+        
+        # Build experiment config from args
+        experiment_config = self._build_experiment_config_for_llm()
+        
+        try:
+            provider = LLMEmbeddingProvider.from_experiment_config(
+                experiment_config, 
+                split=flag,
+                validate=True,
+                quiet=False,
+            )
+            self._llm_embedding_providers[flag] = provider
+            return provider
+        except FileNotFoundError as e:
+            # Re-raise with helpful context
+            raise FileNotFoundError(
+                f"LLM embeddings required but not found for '{flag}' split.\n"
+                f"The experiment config has 'llm_embedding' section, indicating "
+                f"this model requires precomputed LLM embeddings.\n\n"
+                f"Generate them with:\n"
+                f"  python -m cli.inference generate-suite <suite_config.yaml>\n"
+                f"Or:\n"
+                f"  python -m cli.inference generate <experiment_config.yaml>\n\n"
+                f"Original error: {e}"
+            ) from e
+    
+    def _build_experiment_config_for_llm(self) -> Dict[str, Any]:
+        """
+        Build experiment config dict for LLMEmbeddingProvider.
+        
+        Extracts relevant configuration from args to match the format
+        expected by LLMEmbeddingProvider.from_experiment_config().
+        
+        Returns:
+            Dict with data, training, llm_embedding, and other config
+        """
+        # Get dataset name - handle different config structures
+        dataset_name = None
+        if hasattr(self.dataset_config, 'name'):
+            dataset_name = self.dataset_config.name
+        elif hasattr(self.args, 'data_name'):
+            dataset_name = self.args.data_name
+        
+        if dataset_name is None:
+            raise ValueError(
+                "Cannot determine dataset name for LLM embedding loading. "
+                "Ensure data config has 'name' field."
+            )
+        
+        # Build config dict
+        return {
+            'data': {
+                'name': dataset_name,
+                'config_path': getattr(self.dataset_config, 'config_path', None),
+            },
+            'training': {
+                'input_len': self.args.input_len,
+                'output_len': self.args.output_len,
+                'scale': getattr(self.args, 'scale', True),
+            },
+            'llm_embedding': self.llm_embedding_config,
+            'base_data_path': getattr(self.args, 'base_data_path', './data/'),
+            'model_config_overrides': getattr(self.args, 'model_config_overrides', {}),
+        }
 
     def get_spliter(self):
         """
@@ -388,7 +484,7 @@ class Data_Provider(object):
             id_info_path = os.path.join(self.dataset_config.root_path, self.dataset_config.id_info)
             return json.load(open(id_info_path))
     
-    def _create_time_mmd_dataset(self, i, flag):
+    def _create_time_mmd_dataset(self, i, flag, llm_embedding_provider=None):
         """
         Create a TimeMMD_Dataset instance for the given ID and flag.
         
@@ -398,6 +494,7 @@ class Data_Provider(object):
         Args:
             i: Dataset ID
             flag: Dataset split identifier ('train', 'val', 'test')
+            llm_embedding_provider: Optional LLMEmbeddingProvider for TimeCMA-style models
             
         Returns:
             TimeMMD_Dataset: Configured TimeMMD_Dataset instance
@@ -487,7 +584,8 @@ class Data_Provider(object):
             required_indicators=required_indicators,
             aggregation_method=aggregation_method,
             generate_time_features=generate_time_features,
-            time_feature_freq=time_feature_freq
+            time_feature_freq=time_feature_freq,
+            llm_embedding_provider=llm_embedding_provider,
         )
     
     def get_train(self, return_type='loader'):
@@ -594,6 +692,9 @@ class Data_Provider(object):
         # Track missing value indicators across all entities for aggregated logging
         all_indicator_columns = set()
         
+        # Load LLM embedding provider if configured (for TimeCMA-style models)
+        llm_embedding_provider = self._get_llm_embedding_provider(flag)
+        
         # Use Rich Progress if console is available, otherwise fall back to simple iteration
         if self.console is not None:
             with Progress(
@@ -609,7 +710,7 @@ class Data_Provider(object):
                 task = progress.add_task(f"Loading {flag} datasets", total=len(self.id_list))
                 for i in self.id_list:
                     if self._is_time_mmd_dataset():
-                        dataset = self._create_time_mmd_dataset(i, flag)
+                        dataset = self._create_time_mmd_dataset(i, flag, llm_embedding_provider)
                     else:
                         # Use standard Universal_Dataset
                         if self.args.data_config.hetero_info is not None:
@@ -637,7 +738,8 @@ class Data_Provider(object):
                                                     task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
                                                     timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample,
                                                     entity_id=i, missing_value_strategy=missing_value_strategy, required_indicators=required_indicators,
-                                                    generate_time_features=generate_time_features, time_feature_freq=time_feature_freq)  # Pass time feature parameters
+                                                    generate_time_features=generate_time_features, time_feature_freq=time_feature_freq,
+                                                    llm_embedding_provider=llm_embedding_provider)  # Pass LLM provider
                     datasets[i] = dataset
                     # Collect indicator columns for aggregated logging
                     if hasattr(dataset, 'missing_indicators') and dataset.missing_indicators:
@@ -647,7 +749,7 @@ class Data_Provider(object):
             # Fallback: simple iteration without progress bar
             for i in self.id_list:
                 if self._is_time_mmd_dataset():
-                    dataset = self._create_time_mmd_dataset(i, flag)
+                    dataset = self._create_time_mmd_dataset(i, flag, llm_embedding_provider)
                 else:
                     # Use standard Universal_Dataset
                     if self.args.data_config.hetero_info is not None:
@@ -675,7 +777,8 @@ class Data_Provider(object):
                                                 task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
                                                 timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample,
                                                 entity_id=i, missing_value_strategy=missing_value_strategy, required_indicators=required_indicators,
-                                                generate_time_features=generate_time_features, time_feature_freq=time_feature_freq)  # Pass time feature parameters
+                                                generate_time_features=generate_time_features, time_feature_freq=time_feature_freq,
+                                                llm_embedding_provider=llm_embedding_provider)  # Pass LLM provider
                 datasets[i] = dataset
                 # Collect indicator columns for aggregated logging
                 if hasattr(dataset, 'missing_indicators') and dataset.missing_indicators:

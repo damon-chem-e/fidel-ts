@@ -109,6 +109,10 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     
     args.data_config = dotdict(data_configs)
     
+    # Store config_path in data_config for LLM embedding provider path resolution
+    args.data_config.config_path = config.data.config_path
+    args.data_config.name = config.data.name
+    
     # Handle ahead task
     if args.ahead is not None:
         assert args.ahead in ['day', 'week', 'month'], 'ahead task not supported, or add your own parser'
@@ -126,6 +130,26 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
         device_ids = args.devices.split(',')
         args.device_ids = [int(id_) for id_ in device_ids]
         args.gpu = args.device_ids[0]
+    
+    # LLM Embedding configuration (for TimeCMA-style models)
+    # This is passed to Data_Provider to load precomputed LLM embeddings
+    if config.llm_embedding is not None:
+        # Convert Pydantic model to dict for Data_Provider
+        args.llm_embedding = config.llm_embedding.model_dump() if hasattr(config.llm_embedding, 'model_dump') else dict(config.llm_embedding)
+    else:
+        args.llm_embedding = None
+    
+    # Store base_data_path for LLM embedding provider
+    args.base_data_path = config.base_data_path or './data/'
+    
+    # Store model_config_overrides for LLM embedding validation
+    if config.model_config_overrides is not None:
+        args.model_config_overrides = config.model_config_overrides
+    else:
+        args.model_config_overrides = {}
+    
+    # Store data.name for LLM embedding provider (dataset name)
+    args.data_name = config.data.name
     
     return args
 

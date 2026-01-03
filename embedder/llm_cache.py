@@ -85,7 +85,6 @@ Different input sources will produce different hashes and thus
 different cache directories.
 """
 
-import os
 import json
 import hashlib
 import h5py
@@ -354,6 +353,7 @@ class LLMEmbeddingCache:
         self, 
         metadata: LLMEmbeddingMetadata, 
         split: str,
+        quiet: bool = False,
     ) -> np.ndarray:
         """
         Load embeddings from cache.
@@ -361,6 +361,7 @@ class LLMEmbeddingCache:
         Args:
             metadata: LLMEmbeddingMetadata object (used to find cache dir)
             split: Data split ('train', 'val', 'test')
+            quiet: If True, suppress print statements
         
         Returns:
             Embeddings array [N, embed_dim, C]
@@ -377,7 +378,8 @@ class LLMEmbeddingCache:
         with h5py.File(embeddings_path, 'r') as hf:
             embeddings = hf['embeddings'][:]
         
-        print(f"[ LLM Cache ] Loaded {embeddings.shape[0]} embeddings from {cache_dir / split}")
+        if not quiet:
+            print(f"[ LLM Cache ] Loaded {embeddings.shape[0]} embeddings from {cache_dir / split}")
         return embeddings
     
     def load_metadata(self, metadata: LLMEmbeddingMetadata) -> LLMEmbeddingMetadata:

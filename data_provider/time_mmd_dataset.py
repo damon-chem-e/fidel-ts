@@ -561,7 +561,8 @@ class TimeMMD_Dataset(Universal_Dataset):
                  force_reembed=False, hf_cache_dir='./HF_cache/', device='cpu',
                  missing_value_strategy='none', required_indicators=None,
                  aggregation_method='cls', use_old_pkl=False,
-                 generate_time_features=False, time_feature_freq='h'):
+                 generate_time_features=False, time_feature_freq='h',
+                 llm_embedding_provider=None):
         """
         Initialize TimeMMD_Dataset.
         
@@ -620,7 +621,8 @@ class TimeMMD_Dataset(Universal_Dataset):
             missing_value_strategy=missing_value_strategy,
             required_indicators=required_indicators,  # Pass required_indicators to parent
             generate_time_features=generate_time_features,
-            time_feature_freq=time_feature_freq
+            time_feature_freq=time_feature_freq,
+            llm_embedding_provider=llm_embedding_provider,  # Pass LLM provider to parent
         )
         
         # Setup text getter after data is loaded (after parent.__init__ which loads data)
