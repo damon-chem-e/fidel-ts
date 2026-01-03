@@ -3,10 +3,26 @@
 # ============================================================================
 # Install with: pip install -r requirements/base.txt -r requirements/llm.txt
 #
-# These dependencies are required for LLM experiments (run_llm.py).
+# These dependencies are required for:
+#   1. LLM experiments (run_llm.py) - vllm, fschat, openai
+#   2. LLM embedding infrastructure (cli.inference) - h5py, bitsandbytes, accelerate
+#
 # They are build-heavy and memory-intensive, so omit for CPU-only setups.
 # ============================================================================
 
+# ----------------------------------------------------------------------------
+# LLM Embedding Infrastructure (for TimeCMA, LLMEmbedder)
+# ----------------------------------------------------------------------------
+# Used by: embedder/llm_*.py, cli/inference.py
+# Generate embeddings with: python -m cli.inference generate <dataset> <config>
+
+h5py>=3.10.0              # HDF5 file storage for LLM embeddings
+bitsandbytes>=0.42.0      # 4-bit/8-bit quantization for large models (70B)
+accelerate>=0.27.0        # Efficient model loading with device_map="auto"
+
+# ----------------------------------------------------------------------------
+# LLM Server / API (for run_llm.py experiments)
+# ----------------------------------------------------------------------------
 vllm==0.7.2  # 0.8.3 provides reasoning compatability but consumes more memory
 fschat[model_worker,webui]
 flashinfer-python
