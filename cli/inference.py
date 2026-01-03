@@ -33,24 +33,30 @@ This CLI provides commands for:
 - generate: Generate LLM embeddings using experiment config
 - generate-suite: Generate LLM embeddings for all experiments in a suite
 - verify: Verify that embeddings exist and are valid for an experiment
+- verify-suite: Verify embeddings for all experiments in a suite
+- list-cached: List cached embeddings for an experiment config
 - estimate-memory: Estimate GPU memory requirements for a model
 - list-models: List supported LLM models with specifications
-- list-cached: List cached embeddings for a dataset
-- list-datasets: List available datasets for embedding generation
 - gpu-info: Display current GPU memory information
 
 Examples:
-    # List available datasets
-    python -m cli.inference list-datasets
-    
-    # Generate embeddings for an experiment
+    # Generate embeddings for an experiment config
     python -m cli.inference generate configs/experiments/timecma_test.yaml
+    
+    # Generate embeddings for all experiments in a suite
+    python -m cli.inference generate-suite configs/experiment_suites/timecma_test.yaml
     
     # Force regeneration of test split only
     python -m cli.inference generate configs/experiments/timecma_test.yaml --splits test --force
     
     # Verify embeddings exist for an experiment
     python -m cli.inference verify configs/experiments/timecma_test.yaml
+    
+    # Verify embeddings for all experiments in a suite
+    python -m cli.inference verify-suite configs/experiment_suites/timecma_test.yaml
+    
+    # List cached embeddings for an experiment
+    python -m cli.inference list-cached configs/experiments/timecma_test.yaml
     
     # Check memory requirements
     python -m cli.inference estimate-memory Qwen/Qwen2.5-72B-Instruct --quantization 4bit
@@ -316,6 +322,177 @@ def verify(
         raise typer.Exit(code=1)
 
 
+@app.command("verify-suite")
+def verify_suite(
+    suite_config_path: str = typer.Argument(..., help="Path to experiment suite configuration file"),
+    filter_experiments: Optional[str] = typer.Option(
+        None,
+        "--filter",
+        help="Filter experiments by name pattern (case-insensitive)"
+    ),
+):
+    """
+    Verify that embeddings exist for all experiments in a suite.
+    
+    Iterates over enabled experiments in the suite, checks which ones
+    require LLM embeddings, and verifies the cache status for each.
+    
+    Examples:
+        # Verify all experiments in a suite
+        python -m cli.inference verify-suite configs/experiment_suites/timecma_test.yaml
+        
+        # Verify only specific experiments
+        python -m cli.inference verify-suite configs/experiment_suites/timecma_test.yaml --filter traffic
+    """
+    from runs.suite_executor import load_suite_config, load_template
+    from utils.config_utils import merge_configs
+    from embedder.llm_embedder import LLMEmbedder
+    
+    # Suite config is REQUIRED
+    config_path = Path(suite_config_path)
+    if not config_path.exists():
+        console.print(f"[red]Error: Suite config file not found: {config_path}[/red]")
+        raise typer.Exit(code=1)
+    
+    # Load suite config
+    try:
+        suite_config = load_suite_config(str(suite_config_path))
+    except Exception as e:
+        console.print(f"[red]Error loading suite config: {e}[/red]")
+        raise typer.Exit(code=1)
+    
+    suite_info = suite_config.get('suite', {})
+    suite_name = suite_info.get('name', 'unknown')
+    
+    # Get enabled experiments
+    experiments = [
+        exp for exp in suite_info.get('experiments', [])
+        if exp.get('enabled', True)
+    ]
+    
+    # Filter experiments if requested
+    if filter_experiments:
+        experiments = [
+            exp for exp in experiments
+            if filter_experiments.lower() in exp.get('name', '').lower()
+        ]
+        if not experiments:
+            console.print(f"[yellow]No experiments match filter '{filter_experiments}'[/yellow]")
+            raise typer.Exit(code=0)
+    
+    console.print(f"\n[bold cyan]LLM Embedding Verification for Suite: {suite_name}[/bold cyan]")
+    console.print(f"  Experiments: [green]{len(experiments)}[/green]\n")
+    
+    # Collect unique embedding configurations (same dedup as generate-suite)
+    embedding_configs = {}
+    skipped_experiments = []
+    
+    for exp in experiments:
+        exp_name = exp.get('name', 'unknown')
+        template_path = exp.get('template')
+        overrides = exp.get('overrides', {})
+        
+        if not template_path:
+            skipped_experiments.append(exp_name)
+            continue
+        
+        # Load template and merge with overrides
+        try:
+            template = load_template(template_path)
+            final_config = merge_configs(template, overrides)
+        except Exception as e:
+            console.print(f"  [yellow]⚠[/yellow] {exp_name}: Error loading config: {e}")
+            skipped_experiments.append(exp_name)
+            continue
+        
+        # Check for llm_embedding section
+        llm_embedding = final_config.get('llm_embedding')
+        if not llm_embedding:
+            console.print(f"  [dim]○[/dim] {exp_name}: No llm_embedding section")
+            skipped_experiments.append(exp_name)
+            continue
+        
+        # Extract key parameters
+        dataset = final_config.get('data', {}).get('name')
+        if not dataset:
+            skipped_experiments.append(exp_name)
+            continue
+        
+        training = final_config.get('training', {})
+        input_len = training.get('input_len', 96)
+        output_len = training.get('output_len', 96)
+        model_name = llm_embedding.get('model_name', 'gpt2')
+        
+        # Create deduplication key
+        config_key = (dataset, input_len, output_len, model_name)
+        
+        if config_key not in embedding_configs:
+            embedding_configs[config_key] = (exp_name, final_config)
+    
+    if not embedding_configs:
+        console.print(f"[yellow]No experiments require LLM embeddings[/yellow]")
+        raise typer.Exit(code=0)
+    
+    console.print(f"[bold]Verifying {len(embedding_configs)} unique configurations...[/bold]\n")
+    
+    all_valid = True
+    verified = []
+    failed = []
+    
+    for config_key, (exp_name, final_config) in embedding_configs.items():
+        dataset, input_len, output_len, model_name = config_key
+        
+        console.print(f"[bold cyan]━━━ {dataset} (in={input_len}, out={output_len}, model={model_name}) ━━━[/bold cyan]")
+        
+        # Create embedder to get proper paths
+        llm_config = final_config.get('llm_embedding', {})
+        training = final_config.get('training', {})
+        
+        embedder = LLMEmbedder(
+            model_name=llm_config.get('model_name', 'gpt2'),
+            cache_dir=llm_config.get('cache_dir', './LLM_cache/'),
+            data_root=final_config.get('base_data_path', './data/'),
+            prompt_template=llm_config.get('prompt_template', 'timecma_v1'),
+            prompt_config=llm_config.get('prompt_config', {}),
+            input_len=input_len,
+            output_len=output_len,
+            scale=training.get('scale', True),
+            data_config_path=final_config.get('data', {}).get('config_path'),
+        )
+        
+        # Verify cache
+        try:
+            status = embedder.verify_cache(dataset)
+            
+            if status['valid']:
+                console.print(f"  [green]✓[/green] All splits verified")
+                for split in status.get('splits', {}).keys():
+                    console.print(f"    [green]✓[/green] {split}")
+                verified.append(dataset)
+            else:
+                console.print(f"  [red]✗[/red] Verification failed")
+                for issue in status.get('issues', []):
+                    console.print(f"    [yellow]• {issue}[/yellow]")
+                failed.append(dataset)
+                all_valid = False
+        except Exception as e:
+            console.print(f"  [red]✗[/red] Error: {e}")
+            failed.append(dataset)
+            all_valid = False
+        
+        console.print()
+    
+    # Summary
+    if all_valid:
+        console.print(f"[green]✓ All embeddings verified ({len(verified)} configurations)[/green]")
+    else:
+        console.print(f"[red]✗ Verification failed[/red]")
+        console.print(f"  [green]Verified:[/green] {len(verified)}")
+        console.print(f"  [red]Failed:[/red] {len(failed)}")
+        console.print(f"\n[dim]Run 'python -m cli.inference generate-suite {suite_config_path}' to fix[/dim]")
+        raise typer.Exit(code=1)
+
+
 @app.command("generate-suite")
 def generate_suite(
     suite_config_path: str = typer.Argument(..., help="Path to experiment suite configuration file"),
@@ -469,74 +646,60 @@ def generate_suite(
     succeeded = []
     failed = []
     
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TimeRemainingColumn(),
-        console=console
-    ) as progress:
+    for config_key, (exp_name, final_config) in embedding_configs.items():
+        dataset, input_len, output_len, model_name = config_key
         
-        overall_task = progress.add_task(
-            "[cyan]Processing suite...",
-            total=len(embedding_configs) * len(splits)
+        console.print(f"[bold cyan]━━━ {dataset} (in={input_len}, out={output_len}) ━━━[/bold cyan]")
+        
+        # Create embedder from the merged config
+        llm_config = final_config.get('llm_embedding', {})
+        training = final_config.get('training', {})
+        
+        # Determine device
+        effective_device = device
+        if effective_device is None:
+            device_config = final_config.get('device', {})
+            gpu = device_config.get('gpu', 0)
+            use_gpu = device_config.get('use_gpu', True)
+            effective_device = f'cuda:{gpu}' if use_gpu else 'cpu'
+        
+        # Create embedder manually with merged config values
+        embedder = LLMEmbedder(
+            model_name=llm_config.get('model_name', 'gpt2'),
+            device=effective_device,
+            cache_dir=llm_config.get('cache_dir', './LLM_cache/'),
+            data_root=final_config.get('base_data_path', './data/'),
+            quantization=llm_config.get('quantization'),
+            extraction_mode=llm_config.get('extraction_mode', 'last_token'),
+            prompt_template=llm_config.get('prompt_template', 'timecma_v1'),
+            prompt_config=llm_config.get('prompt_config', {'value_format': 'integer', 'include_timestamps': True}),
+            max_length=llm_config.get('max_length', 512),
+            input_len=input_len,
+            output_len=output_len,
+            scale=training.get('scale', True),
+            data_config_path=final_config.get('data', {}).get('config_path'),
         )
+        embedder.default_batch_size = llm_config.get('batch_size', 64)
         
-        for config_key, (exp_name, final_config) in embedding_configs.items():
-            dataset, input_len, output_len, model_name = config_key
-            
-            # Create embedder from the merged config
-            llm_config = final_config.get('llm_embedding', {})
-            training = final_config.get('training', {})
-            
-            # Determine device
-            effective_device = device
-            if effective_device is None:
-                device_config = final_config.get('device', {})
-                gpu = device_config.get('gpu', 0)
-                use_gpu = device_config.get('use_gpu', True)
-                effective_device = f'cuda:{gpu}' if use_gpu else 'cpu'
-            
-            # Create embedder manually with merged config values
-            embedder = LLMEmbedder(
-                model_name=llm_config.get('model_name', 'gpt2'),
-                device=effective_device,
-                cache_dir=llm_config.get('cache_dir', './LLM_cache/'),
-                data_root=final_config.get('base_data_path', './data/'),
-                quantization=llm_config.get('quantization'),
-                extraction_mode=llm_config.get('extraction_mode', 'last_token'),
-                prompt_template=llm_config.get('prompt_template', 'timecma_v1'),
-                prompt_config=llm_config.get('prompt_config', {'value_format': 'integer', 'include_timestamps': True}),
-                max_length=llm_config.get('max_length', 512),
-                input_len=input_len,
-                output_len=output_len,
-                scale=training.get('scale', True),
-                data_config_path=final_config.get('data', {}).get('config_path'),
-            )
-            embedder.default_batch_size = llm_config.get('batch_size', 64)
-            
-            # Override batch size if provided via CLI
-            effective_batch_size = batch_size if batch_size is not None else embedder.default_batch_size
-            
-            for split in splits:
-                progress.update(overall_task, description=f"[cyan]{dataset}/{split} (from {exp_name})...")
-                
-                try:
-                    embedder.generate_ts_embeddings(
-                        dataset=dataset,
-                        split=split,
-                        batch_size=effective_batch_size,
-                        force=force,
-                    )
-                    console.print(f"  [green]✓[/green] {dataset}/{split}")
-                    succeeded.append(f"{dataset}/{split}")
-                except Exception as e:
-                    console.print(f"  [red]✗[/red] {dataset}/{split}: {str(e)}")
-                    console.print_exception(show_locals=False)
-                    failed.append(f"{dataset}/{split}")
-                
-                progress.advance(overall_task)
+        # Override batch size if provided via CLI
+        effective_batch_size = batch_size if batch_size is not None else embedder.default_batch_size
+        
+        for split in splits:
+            try:
+                embedder.generate_ts_embeddings(
+                    dataset=dataset,
+                    split=split,
+                    batch_size=effective_batch_size,
+                    force=force,
+                )
+                console.print(f"  [green]✓[/green] {split} complete")
+                succeeded.append(f"{dataset}/{split}")
+            except Exception as e:
+                console.print(f"  [red]✗[/red] {split}: {str(e)}")
+                console.print_exception(show_locals=False)
+                failed.append(f"{dataset}/{split}")
+        
+        console.print()  # Blank line between datasets
     
     # Print summary
     console.print()
@@ -616,41 +779,83 @@ def list_models():
 
 @app.command("list-cached")
 def list_cached(
-    dataset: str = typer.Argument(..., help="Dataset name"),
-    data_root: str = typer.Option(
-        "./data/",
-        "--data-root",
-        help="Root directory for datasets"
-    ),
+    experiment_config: str = typer.Argument(..., help="Experiment configuration file"),
 ):
     """
-    List cached embeddings for a dataset.
+    List cached embeddings for an experiment.
     
     Shows all cached embedding configurations with their
     models, templates, and creation times.
-    """
-    from embedder.llm_cache import LLMEmbeddingCache
     
-    cache = LLMEmbeddingCache(data_root, dataset)
+    Examples:
+        python -m cli.inference list-cached configs/experiments/timecma_test.yaml
+    """
+    import yaml
+    from embedder.llm_cache import LLMEmbeddingCache
+    from embedder.llm_embedder import LLMEmbedder
+    
+    # Experiment config is REQUIRED
+    config_path = Path(experiment_config)
+    if not config_path.exists():
+        console.print(f"[red]Error: Experiment config file not found: {config_path}[/red]")
+        raise typer.Exit(code=1)
+    
+    # Load experiment config
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Check for llm_embedding section
+    if 'llm_embedding' not in config:
+        console.print("[yellow]Note: Experiment config does not have 'llm_embedding' section[/yellow]")
+        console.print("[dim]This experiment does not use LLM embeddings.[/dim]")
+        raise typer.Exit(code=0)
+    
+    # Extract dataset name from config
+    dataset = config.get('data', {}).get('name')
+    if not dataset:
+        console.print("[red]Error: Experiment config missing data.name[/red]")
+        raise typer.Exit(code=1)
+    
+    # Create embedder to resolve path
+    embedder = LLMEmbedder()
+    
+    try:
+        data_dir = embedder._get_data_directory(dataset)
+    except (FileNotFoundError, ValueError) as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+    
+    cache = LLMEmbeddingCache(str(data_dir), dataset)
     configs = cache.list_cached_configs()
     
     if not configs:
         console.print(f"[yellow]No cached embeddings found for {dataset}[/yellow]")
-        console.print(f"[dim]Run 'python -m cli.inference generate {dataset}' to create[/dim]")
+        console.print(f"[dim]Run 'python -m cli.inference generate {experiment_config}' to create[/dim]")
         return
     
-    table = Table(title=f"Cached Embeddings: {dataset}")
+    console.print(f"\n[bold cyan]Cached Embeddings[/bold cyan]")
+    console.print(f"  Experiment: [green]{config_path.name}[/green]")
+    console.print(f"  Dataset: [green]{dataset}[/green]")
+    console.print(f"  Cache Dir: [dim]{data_dir}/llm_embeddings/[/dim]\n")
+    
+    table = Table()
     table.add_column("Hash", style="dim", no_wrap=True)
     table.add_column("Model", style="cyan")
     table.add_column("Template", style="green")
-    table.add_column("Created", style="yellow")
+    table.add_column("Input/Output", style="yellow")
+    table.add_column("Created", style="dim")
     
-    for config in configs:
+    for cached_config in configs:
+        # Try to get input/output len from metadata if available
+        input_len = cached_config.get('input_len', '?')
+        output_len = cached_config.get('output_len', '?')
+        
         table.add_row(
-            config['hash'][:8] + "...",
-            config['model_name'],
-            config['prompt_template'],
-            config['created_at'][:19],  # Trim to datetime
+            cached_config['hash'][:8] + "...",
+            cached_config['model_name'],
+            cached_config['prompt_template'],
+            f"{input_len}/{output_len}",
+            cached_config['created_at'][:19],  # Trim to datetime
         )
     
     console.print(table)
@@ -697,175 +902,6 @@ def gpu_info():
         )
     
     console.print(table)
-
-
-@app.command("list-datasets")
-def list_datasets():
-    """
-    List available datasets for LLM embedding generation.
-    
-    Shows all datasets that can be used with the 'generate' command,
-    organized by type (Time-MMD, TTC, Fidel-TS).
-    
-    Dataset naming conventions:
-        - Time-MMD: time_mmd_<domain>     (e.g., time_mmd_traffic)
-        - TTC:      ttc_<domain>          (e.g., ttc_climate)
-        - Fidel-TS: fidel_<dataset>       (e.g., fidel_ETT)
-        - Fidel-TS: fidel_<dataset>:<cfg> (e.g., fidel_ETT:fullETT_M)
-    
-    Examples:
-        python -m cli.inference list-datasets
-    """
-    from pathlib import Path
-    
-    console.print("\n[bold cyan]Available Datasets for LLM Embedding Generation[/bold cyan]\n")
-    
-    # ==========================================================================
-    # Time-MMD Datasets
-    # ==========================================================================
-    time_mmd_path = Path("data_configs/time_mmd")
-    
-    if time_mmd_path.exists():
-        console.print("[bold magenta]1. Time-MMD Datasets[/bold magenta]")
-        console.print("[dim]Usage: python -m cli.inference generate time_mmd_<domain> <config>[/dim]\n")
-        
-        table = Table()
-        table.add_column("Dataset Name", style="cyan")
-        table.add_column("Domain", style="green")
-        table.add_column("Config Path", style="dim")
-        
-        domains = sorted([d.name for d in time_mmd_path.iterdir() if d.is_dir() and not d.name.startswith('.')])
-        
-        for domain in domains:
-            config_file = time_mmd_path / domain / "config.yaml"
-            if config_file.exists():
-                dataset_name = f"time_mmd_{domain.lower()}"
-                table.add_row(
-                    dataset_name,
-                    domain,
-                    str(config_file),
-                )
-        
-        console.print(table)
-        console.print()
-    else:
-        console.print("[yellow]Time-MMD datasets not found at data_configs/time_mmd/[/yellow]\n")
-    
-    # ==========================================================================
-    # TTC Datasets
-    # ==========================================================================
-    ttc_path = Path("data_configs/ttc")
-    
-    if ttc_path.exists():
-        console.print("[bold magenta]2. TTC Datasets (Time-Text Corpus)[/bold magenta]")
-        console.print("[dim]Usage: python -m cli.inference generate ttc_<domain> <config>[/dim]\n")
-        
-        table = Table()
-        table.add_column("Dataset Name", style="cyan")
-        table.add_column("Domain", style="green")
-        table.add_column("Config Path", style="dim")
-        
-        domains = sorted([d.name for d in ttc_path.iterdir() if d.is_dir() and not d.name.startswith('.')])
-        
-        for domain in domains:
-            config_file = ttc_path / domain / "config.yaml"
-            if config_file.exists():
-                dataset_name = f"ttc_{domain.lower()}"
-                table.add_row(
-                    dataset_name,
-                    domain,
-                    str(config_file),
-                )
-        
-        console.print(table)
-        console.print()
-    else:
-        console.print("[yellow]TTC datasets not found at data_configs/ttc/[/yellow]\n")
-    
-    # ==========================================================================
-    # Fidel-TS Datasets
-    # ==========================================================================
-    console.print("[bold magenta]3. Fidel-TS Datasets[/bold magenta]")
-    console.print("[dim]Usage: python -m cli.inference generate fidel_<dataset> <config>[/dim]")
-    console.print("[dim]       python -m cli.inference generate fidel_<dataset>:<config_name> <config>[/dim]\n")
-    
-    # Default config mappings for Fidel-TS datasets
-    fidel_datasets = {
-        'Bear_room': ('fullBear', 'Bear room temperature & weather'),
-        'California_ISO': ('fullCAISO', 'California energy grid data'),
-        'Canada_photovoltaics_plants': ('fullCPP', 'Canadian solar power plants'),
-        'electricity': ('fullelectricity', 'Electricity consumption'),
-        'ETT': ('fullETT_H', 'Electricity Transformer Temperature'),
-        'Germany_Renewable_Power_Grid': ('fullGRPG', 'German renewable energy grid'),
-        'Jena_Atmospheric_Physics': ('fullJAP', 'Jena weather station data'),
-        'NYC_traffic_speed': ('fullNYCTS', 'NYC traffic speed data'),
-        'traffic': ('fulltraffic', 'Road traffic data'),
-        'weather': ('weather', 'Weather forecasting data'),
-    }
-    
-    table = Table()
-    table.add_column("Dataset Name", style="cyan")
-    table.add_column("Default Config", style="green")
-    table.add_column("Description", style="dim")
-    table.add_column("Other Configs", style="yellow")
-    
-    data_configs_path = Path("data_configs")
-    
-    for dataset_name, (default_config, description) in sorted(fidel_datasets.items()):
-        dataset_dir = data_configs_path / dataset_name
-        if dataset_dir.exists():
-            # Get all yaml configs in this directory
-            all_configs = sorted([f.stem for f in dataset_dir.glob('*.yaml')])
-            other_configs = [c for c in all_configs if c != default_config]
-            other_configs_str = ", ".join(other_configs[:3])  # Show first 3
-            if len(other_configs) > 3:
-                other_configs_str += f" (+{len(other_configs) - 3} more)"
-            
-            table.add_row(
-                f"fidel_{dataset_name}",
-                default_config,
-                description,
-                other_configs_str if other_configs else "-",
-            )
-    
-    console.print(table)
-    console.print()
-    
-    console.print("[dim]To use a non-default config: fidel_<dataset>:<config_name>[/dim]")
-    console.print("[dim]Example: fidel_ETT:fullETT_M uses fullETT_M.yaml instead of fullETT_H.yaml[/dim]\n")
-    
-    # ==========================================================================
-    # Example Commands (Experiment-Driven)
-    # ==========================================================================
-    console.print("[bold]Example Commands (Experiment-Driven)[/bold]\n")
-    
-    console.print("  [dim]# Generate embeddings for an experiment config[/dim]")
-    console.print("  python -m cli.inference generate configs/experiments/timecma_test.yaml\n")
-    
-    console.print("  [dim]# Generate embeddings for all experiments in a suite[/dim]")
-    console.print("  python -m cli.inference generate-suite configs/experiment_suites/timecma_test.yaml\n")
-    
-    console.print("  [dim]# Generate only for specific experiments in a suite[/dim]")
-    console.print("  python -m cli.inference generate-suite configs/experiment_suites/timecma_test.yaml --filter traffic\n")
-    
-    console.print("  [dim]# Force regenerate all splits[/dim]")
-    console.print("  python -m cli.inference generate configs/experiments/timecma_test.yaml --force\n")
-    
-    console.print("  [dim]# Verify embeddings exist for an experiment[/dim]")
-    console.print("  python -m cli.inference verify configs/experiments/timecma_test.yaml\n")
-    
-    # ==========================================================================
-    # LLM Embedding Configuration Note
-    # ==========================================================================
-    console.print("[bold]LLM Embedding Configuration[/bold]\n")
-    console.print("[dim]LLM embeddings are configured in your experiment config file.[/dim]")
-    console.print("[dim]Add an 'llm_embedding' section to your experiment config:[/dim]\n")
-    console.print("""[yellow]llm_embedding:
-  model_name: "gpt2"           # HuggingFace model name
-  batch_size: 64               # Batch size for LLM inference
-  cache_dir: "./LLM_cache/"    # Where to cache model weights
-  prompt_template: "timecma_v1" # Prompt format[/yellow]
-""")
 
 
 if __name__ == "__main__":

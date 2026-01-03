@@ -509,8 +509,11 @@ class LLMEmbedder:
                 "Either set prompt_template in __init__, or use embed_texts() for raw text."
             )
         
-        # Create cache manager
-        cache = LLMEmbeddingCache(self.data_root, dataset)
+        # Get actual data directory from config (e.g., './data/time_mmd/Climate' for 'time_mmd_climate')
+        data_dir = self._get_data_directory(dataset)
+        
+        # Create cache manager with actual data directory
+        cache = LLMEmbeddingCache(str(data_dir), dataset)
         
         # Build metadata for cache key
         metadata = self._build_metadata(dataset)
@@ -801,6 +804,44 @@ class LLMEmbedder:
             f"Use 'python -m cli.inference list-datasets' to see available datasets."
         )
     
+    def _get_data_directory(self, dataset: str) -> Path:
+        """
+        Get the actual data directory path for a dataset.
+        
+        This resolves the dataset name to its actual data directory by reading
+        the `root_path` from the dataset's config file. This is important for
+        storing LLM embeddings in the correct location alongside the data.
+        
+        Args:
+            dataset: Dataset identifier string (e.g., 'time_mmd_climate')
+        
+        Returns:
+            Path to the actual data directory (e.g., './data/time_mmd/Climate')
+        
+        Example:
+            >>> embedder._get_data_directory('time_mmd_climate')
+            Path('./data/time_mmd/Climate')
+        """
+        import yaml
+        
+        # Get the config file path
+        config_path = self._resolve_dataset_config(dataset)
+        
+        # Read the config to get root_path
+        with open(config_path, 'r') as f:
+            data_config = yaml.safe_load(f)
+        
+        # Get root_path from config (this is the actual data directory)
+        root_path = data_config.get('root_path')
+        
+        if not root_path:
+            raise ValueError(
+                f"Dataset config {config_path} is missing 'root_path'. "
+                f"Cannot determine data directory for LLM embedding cache."
+            )
+        
+        return Path(root_path)
+    
     def _load_dataset(
         self, 
         dataset: str, 
@@ -941,6 +982,9 @@ class LLMEmbedder:
         Returns:
             Verification status dictionary
         """
-        cache = LLMEmbeddingCache(self.data_root, dataset)
+        # Get actual data directory from config
+        data_dir = self._get_data_directory(dataset)
+        
+        cache = LLMEmbeddingCache(str(data_dir), dataset)
         metadata = self._build_metadata(dataset)
         return cache.verify_all_splits(metadata, splits)

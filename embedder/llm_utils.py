@@ -131,7 +131,7 @@ def load_model_for_embedding(
     # Build model kwargs
     model_kwargs = {
         'cache_dir': cache_dir,
-        'torch_dtype': torch.float16,
+        'dtype': torch.float16,
     }
     
     # Device mapping for quantization (required by bitsandbytes)

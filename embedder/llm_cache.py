@@ -230,7 +230,8 @@ class LLMEmbeddingCache:
     - metadata.json
     
     Example:
-        cache = LLMEmbeddingCache('./data/', 'ETTh1')
+        # Use the actual data directory (root_path from config)
+        cache = LLMEmbeddingCache('./data/time_mmd/Climate', 'time_mmd_climate')
         
         # Check if cache exists
         if cache.cache_exists(metadata, 'train'):
@@ -238,19 +239,23 @@ class LLMEmbeddingCache:
         else:
             # Generate and save
             cache.save_embeddings(embeddings, metadata, 'train')
+        
+        # Embeddings are stored in: ./data/time_mmd/Climate/llm_embeddings/llm_{hash}/
     """
     
-    def __init__(self, data_root: str, dataset_name: str):
+    def __init__(self, data_dir: str, dataset_name: str = None):
         """
         Initialize cache manager.
         
         Args:
-            data_root: Root data directory (e.g., './data/')
-            dataset_name: Dataset name (e.g., 'ETTh1')
+            data_dir: Path to the actual data directory (e.g., './data/time_mmd/Climate').
+                      This is typically the 'root_path' from the dataset config file.
+                      LLM embeddings will be stored in {data_dir}/llm_embeddings/
+            dataset_name: Dataset name (optional, used for logging/metadata only)
         """
-        self.data_root = Path(data_root)
-        self.dataset_name = dataset_name
-        self.cache_base = self.data_root / dataset_name / 'llm_embeddings'
+        self.data_dir = Path(data_dir)
+        self.dataset_name = dataset_name or self.data_dir.name
+        self.cache_base = self.data_dir / 'llm_embeddings'
     
     def get_cache_dir(self, metadata: LLMEmbeddingMetadata) -> Path:
         """
@@ -348,7 +353,7 @@ class LLMEmbeddingCache:
     def load_embeddings(
         self, 
         metadata: LLMEmbeddingMetadata, 
-        split: str
+        split: str,
     ) -> np.ndarray:
         """
         Load embeddings from cache.
