@@ -31,6 +31,7 @@ The current embedding process (time series):
 
 This CLI provides commands for:
 - generate: Generate LLM embeddings using experiment config
+- generate-suite: Generate LLM embeddings for all experiments in a suite
 - verify: Verify that embeddings exist and are valid for an experiment
 - estimate-memory: Estimate GPU memory requirements for a model
 - list-models: List supported LLM models with specifications
@@ -313,6 +314,239 @@ def verify(
         
         console.print(f"\n[dim]Run 'python -m cli.inference generate {experiment_config}' to fix[/dim]")
         raise typer.Exit(code=1)
+
+
+@app.command("generate-suite")
+def generate_suite(
+    suite_config_path: str = typer.Argument(..., help="Path to experiment suite configuration file"),
+    splits: List[str] = typer.Option(
+        ["train", "val", "test"],
+        "--splits", "-s",
+        help="Data splits to process"
+    ),
+    device: Optional[str] = typer.Option(
+        None,
+        "--device", "-d",
+        help="Override device from experiment config"
+    ),
+    batch_size: Optional[int] = typer.Option(
+        None,
+        "--batch-size", "-b",
+        help="Override batch size from config"
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force", "-f",
+        help="Force recompute existing embeddings"
+    ),
+    filter_experiments: Optional[str] = typer.Option(
+        None,
+        "--filter",
+        help="Filter experiments by name pattern (case-insensitive)"
+    ),
+):
+    """
+    Generate LLM embeddings for all experiments in a suite.
+    
+    Iterates over enabled experiments in the suite, finds those with
+    llm_embedding configurations, and generates embeddings for each
+    unique (dataset, input_len, output_len, model) combination.
+    
+    Duplicate embedding requests (same dataset/lengths/model) are
+    automatically deduplicated to avoid redundant computation.
+    
+    Examples:
+        # Generate embeddings for all experiments in a suite
+        python -m cli.inference generate-suite configs/experiment_suites/timecma_test.yaml
+        
+        # Generate only for specific experiments
+        python -m cli.inference generate-suite configs/experiment_suites/timecma_test.yaml --filter traffic
+        
+        # Force regenerate all
+        python -m cli.inference generate-suite configs/experiment_suites/timecma_test.yaml --force
+    """
+    from runs.suite_executor import load_suite_config, load_template
+    from utils.config_utils import merge_configs
+    from embedder.llm_embedder import LLMEmbedder
+    
+    # Suite config is REQUIRED
+    config_path = Path(suite_config_path)
+    if not config_path.exists():
+        console.print(f"[red]Error: Suite config file not found: {config_path}[/red]")
+        raise typer.Exit(code=1)
+    
+    # Load suite config
+    try:
+        suite_config = load_suite_config(str(suite_config_path))
+    except Exception as e:
+        console.print(f"[red]Error loading suite config: {e}[/red]")
+        raise typer.Exit(code=1)
+    
+    suite_info = suite_config.get('suite', {})
+    suite_name = suite_info.get('name', 'unknown')
+    
+    # Get enabled experiments
+    experiments = [
+        exp for exp in suite_info.get('experiments', [])
+        if exp.get('enabled', True)
+    ]
+    
+    # Filter experiments if requested
+    if filter_experiments:
+        experiments = [
+            exp for exp in experiments
+            if filter_experiments.lower() in exp.get('name', '').lower()
+        ]
+        if not experiments:
+            console.print(f"[yellow]No experiments match filter '{filter_experiments}'[/yellow]")
+            raise typer.Exit(code=0)
+    
+    console.print(f"\n[bold cyan]LLM Embedding Generation for Suite: {suite_name}[/bold cyan]")
+    console.print(f"  Experiments: [green]{len(experiments)}[/green]")
+    console.print()
+    
+    # Collect unique embedding configurations to avoid duplicates
+    # Key: (dataset, input_len, output_len, model_name)
+    # Value: (experiment_name, final_config)
+    embedding_configs = {}
+    skipped_experiments = []
+    
+    for exp in experiments:
+        exp_name = exp.get('name', 'unknown')
+        template_path = exp.get('template')
+        overrides = exp.get('overrides', {})
+        
+        if not template_path:
+            console.print(f"  [yellow]⚠[/yellow] {exp_name}: No template specified, skipping")
+            skipped_experiments.append(exp_name)
+            continue
+        
+        # Load template and merge with overrides
+        try:
+            template = load_template(template_path)
+            final_config = merge_configs(template, overrides)
+        except Exception as e:
+            console.print(f"  [yellow]⚠[/yellow] {exp_name}: Error loading config: {e}")
+            skipped_experiments.append(exp_name)
+            continue
+        
+        # Check for llm_embedding section
+        llm_embedding = final_config.get('llm_embedding')
+        if not llm_embedding:
+            console.print(f"  [dim]○[/dim] {exp_name}: No llm_embedding section, skipping")
+            skipped_experiments.append(exp_name)
+            continue
+        
+        # Extract key parameters
+        dataset = final_config.get('data', {}).get('name')
+        if not dataset:
+            console.print(f"  [yellow]⚠[/yellow] {exp_name}: No data.name, skipping")
+            skipped_experiments.append(exp_name)
+            continue
+        
+        training = final_config.get('training', {})
+        input_len = training.get('input_len', 96)
+        output_len = training.get('output_len', 96)
+        model_name = llm_embedding.get('model_name', 'gpt2')
+        
+        # Create deduplication key
+        config_key = (dataset, input_len, output_len, model_name)
+        
+        if config_key in embedding_configs:
+            # Already have this configuration
+            existing_exp = embedding_configs[config_key][0]
+            console.print(f"  [dim]○[/dim] {exp_name}: Same as {existing_exp}, will reuse")
+        else:
+            embedding_configs[config_key] = (exp_name, final_config)
+            console.print(f"  [green]●[/green] {exp_name}: {dataset} (in={input_len}, out={output_len}, model={model_name})")
+    
+    if not embedding_configs:
+        console.print(f"\n[yellow]No experiments require LLM embedding generation[/yellow]")
+        raise typer.Exit(code=0)
+    
+    console.print(f"\n[bold]Generating embeddings for {len(embedding_configs)} unique configurations...[/bold]\n")
+    
+    succeeded = []
+    failed = []
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        console=console
+    ) as progress:
+        
+        overall_task = progress.add_task(
+            "[cyan]Processing suite...",
+            total=len(embedding_configs) * len(splits)
+        )
+        
+        for config_key, (exp_name, final_config) in embedding_configs.items():
+            dataset, input_len, output_len, model_name = config_key
+            
+            # Create embedder from the merged config
+            llm_config = final_config.get('llm_embedding', {})
+            training = final_config.get('training', {})
+            
+            # Determine device
+            effective_device = device
+            if effective_device is None:
+                device_config = final_config.get('device', {})
+                gpu = device_config.get('gpu', 0)
+                use_gpu = device_config.get('use_gpu', True)
+                effective_device = f'cuda:{gpu}' if use_gpu else 'cpu'
+            
+            # Create embedder manually with merged config values
+            embedder = LLMEmbedder(
+                model_name=llm_config.get('model_name', 'gpt2'),
+                device=effective_device,
+                cache_dir=llm_config.get('cache_dir', './LLM_cache/'),
+                data_root=final_config.get('base_data_path', './data/'),
+                quantization=llm_config.get('quantization'),
+                extraction_mode=llm_config.get('extraction_mode', 'last_token'),
+                prompt_template=llm_config.get('prompt_template', 'timecma_v1'),
+                prompt_config=llm_config.get('prompt_config', {'value_format': 'integer', 'include_timestamps': True}),
+                max_length=llm_config.get('max_length', 512),
+                input_len=input_len,
+                output_len=output_len,
+                scale=training.get('scale', True),
+                data_config_path=final_config.get('data', {}).get('config_path'),
+            )
+            embedder.default_batch_size = llm_config.get('batch_size', 64)
+            
+            # Override batch size if provided via CLI
+            effective_batch_size = batch_size if batch_size is not None else embedder.default_batch_size
+            
+            for split in splits:
+                progress.update(overall_task, description=f"[cyan]{dataset}/{split} (from {exp_name})...")
+                
+                try:
+                    embedder.generate_ts_embeddings(
+                        dataset=dataset,
+                        split=split,
+                        batch_size=effective_batch_size,
+                        force=force,
+                    )
+                    console.print(f"  [green]✓[/green] {dataset}/{split}")
+                    succeeded.append(f"{dataset}/{split}")
+                except Exception as e:
+                    console.print(f"  [red]✗[/red] {dataset}/{split}: {str(e)}")
+                    console.print_exception(show_locals=False)
+                    failed.append(f"{dataset}/{split}")
+                
+                progress.advance(overall_task)
+    
+    # Print summary
+    console.print()
+    if failed and not succeeded:
+        console.print(f"[red]✗ All embedding generation failed[/red]")
+        raise typer.Exit(code=1)
+    elif failed:
+        console.print(f"[yellow]⚠ Partial success: {len(succeeded)} succeeded, {len(failed)} failed[/yellow]")
+    else:
+        console.print(f"[green]✓ All embeddings generated successfully ({len(succeeded)} total)[/green]")
 
 
 @app.command("estimate-memory")
@@ -608,8 +842,11 @@ def list_datasets():
     console.print("  [dim]# Generate embeddings for an experiment config[/dim]")
     console.print("  python -m cli.inference generate configs/experiments/timecma_test.yaml\n")
     
-    console.print("  [dim]# Generate only test split[/dim]")
-    console.print("  python -m cli.inference generate configs/experiments/timecma_test.yaml --splits test\n")
+    console.print("  [dim]# Generate embeddings for all experiments in a suite[/dim]")
+    console.print("  python -m cli.inference generate-suite configs/experiment_suites/timecma_test.yaml\n")
+    
+    console.print("  [dim]# Generate only for specific experiments in a suite[/dim]")
+    console.print("  python -m cli.inference generate-suite configs/experiment_suites/timecma_test.yaml --filter traffic\n")
     
     console.print("  [dim]# Force regenerate all splits[/dim]")
     console.print("  python -m cli.inference generate configs/experiments/timecma_test.yaml --force\n")
