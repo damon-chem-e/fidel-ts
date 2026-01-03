@@ -4,10 +4,15 @@ CLI module for LLM inference and embedding precomputation.
 Generates LLM embeddings for use with TimeCMA and similar models.
 All embeddings must be precomputed before training - no on-the-fly inference supported.
 
+EXPERIMENT-DRIVEN EMBEDDING GENERATION:
+    Embeddings are generated using the experiment configuration file, which ensures
+    consistency between training and embedding generation. The experiment config
+    specifies input_len, output_len, and the llm_embedding settings.
+    
 CURRENT SUPPORT:
     Time Series → Text → LLM Embeddings (via TSPromptBuilder)
     - Converts time series values to natural language prompts
-    - Uses templates like 'timecma_v1' from the config
+    - Uses templates like 'timecma_v1' from the llm_embedding config section
     - Extracts last-token hidden states from LLM
     
 FUTURE SUPPORT (not yet implemented):
@@ -17,15 +22,16 @@ FUTURE SUPPORT (not yet implemented):
     - Useful for multimodal forecasting with external text sources
     
 The current embedding process (time series):
-    1. Load time series data from dataset
-    2. Convert each (sample, channel) to a text prompt via TSPromptBuilder
-       (controlled by prompt_template in config, e.g., 'timecma_v1')
-    3. Run LLM to extract last-token hidden states
-    4. Cache embeddings for use during training
+    1. Load experiment config to get input_len, output_len, and llm_embedding settings
+    2. Load time series data from experiment's dataset
+    3. Convert each (sample, channel) to a text prompt via TSPromptBuilder
+       (controlled by prompt_template in llm_embedding section)
+    4. Run LLM to extract last-token hidden states
+    5. Cache embeddings for use during training
 
 This CLI provides commands for:
-- generate: Generate LLM embeddings for a dataset (time series → prompts → LLM → embeddings)
-- verify: Verify that embeddings exist and are valid
+- generate: Generate LLM embeddings using experiment config
+- verify: Verify that embeddings exist and are valid for an experiment
 - estimate-memory: Estimate GPU memory requirements for a model
 - list-models: List supported LLM models with specifications
 - list-cached: List cached embeddings for a dataset
@@ -36,14 +42,14 @@ Examples:
     # List available datasets
     python -m cli.inference list-datasets
     
-    # Generate embeddings with GPT-2 (fast, for testing)
-    python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/gpt2.yaml
-    
-    # Use Qwen 70B with 4-bit quantization
-    python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/qwen_72b.yaml
+    # Generate embeddings for an experiment
+    python -m cli.inference generate configs/experiments/timecma_test.yaml
     
     # Force regeneration of test split only
-    python -m cli.inference generate time_mmd_traffic config.yaml --splits test --force
+    python -m cli.inference generate configs/experiments/timecma_test.yaml --splits test --force
+    
+    # Verify embeddings exist for an experiment
+    python -m cli.inference verify configs/experiments/timecma_test.yaml
     
     # Check memory requirements
     python -m cli.inference estimate-memory Qwen/Qwen2.5-72B-Instruct --quantization 4bit
@@ -63,22 +69,16 @@ console = Console()
 
 @app.command()
 def generate(
-    dataset: str = typer.Argument(..., help="Dataset name (e.g., ETTh1, ETTm1)"),
-    config: str = typer.Argument(..., help="LLM embedding configuration file (required)"),
+    experiment_config: str = typer.Argument(..., help="Experiment configuration file (e.g., configs/experiments/timecma_test.yaml)"),
     splits: List[str] = typer.Option(
         ["train", "val", "test"],
         "--splits", "-s",
         help="Data splits to process"
     ),
-    model: Optional[str] = typer.Option(
+    device: Optional[str] = typer.Option(
         None,
-        "--model", "-m",
-        help="Override LLM model from config (e.g., 'gpt2', 'Qwen/Qwen2.5-72B-Instruct')"
-    ),
-    device: str = typer.Option(
-        "cuda:0",
         "--device", "-d",
-        help="Device for inference"
+        help="Override device from experiment config"
     ),
     batch_size: Optional[int] = typer.Option(
         None,
@@ -90,82 +90,90 @@ def generate(
         "--force", "-f",
         help="Force recompute existing embeddings"
     ),
-    quantization: Optional[str] = typer.Option(
-        None,
-        "--quantization", "-q",
-        help="Override quantization from config: '4bit', '8bit', or None for fp16"
-    ),
-    data_root: Optional[str] = typer.Option(
-        None,
-        "--data-root",
-        help="Override data_root from config"
-    ),
 ):
     """
-    Generate LLM embeddings for a dataset (time series → prompts → embeddings).
+    Generate LLM embeddings for an experiment (time series → prompts → embeddings).
     
-    CURRENTLY SUPPORTED: Time series → text prompts → LLM embeddings
-    This uses TSPromptBuilder to convert time series values into natural language
-    prompts (e.g., "From 01/01 to 01/04, the values were 1, 3, 5, ...").
+    Uses the experiment configuration file to ensure consistency between
+    training and embedding generation. The experiment config must have an
+    'llm_embedding' section that specifies the LLM model and settings.
     
-    FUTURE: Raw text → LLM embeddings (for news, reports, etc.) will be added
-    via a separate command or mode. See LLMEmbedder.embed_texts() for the
-    underlying capability.
+    The input_len and output_len from the experiment's training section are
+    used to generate embeddings with matching sequence lengths.
     
     This command generates embeddings by:
-    1. Loading time series data from the dataset
+    1. Loading time series data from the experiment's dataset
     2. Converting each (sample, channel) to a text prompt via TSPromptBuilder
-       (template controlled by prompt_template in config, e.g., 'timecma_v1')
+       (template controlled by prompt_template in llm_embedding section)
     3. Running the LLM to extract last-token embeddings
     4. Caching results for use during training
     
     Examples:
-        # Generate with GPT-2 (fast, for testing)
-        python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/gpt2.yaml
+        # Generate embeddings for a TimeCMA experiment
+        python -m cli.inference generate configs/experiments/timecma_test.yaml
         
-        # Use larger model config
-        python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/qwen_7b.yaml
+        # Generate only test split
+        python -m cli.inference generate configs/experiments/timecma_test.yaml --splits test
         
-        # Override model from config
-        python -m cli.inference generate time_mmd_traffic config.yaml --model gpt2
+        # Force regenerate all splits
+        python -m cli.inference generate configs/experiments/timecma_test.yaml --force
         
-        # Regenerate only test split
-        python -m cli.inference generate time_mmd_traffic config.yaml --splits test --force
+        # Use specific GPU
+        python -m cli.inference generate configs/experiments/timecma_test.yaml --device cuda:1
     """
+    import yaml
     from embedder.llm_embedder import LLMEmbedder
     
-    # Config is REQUIRED - no silent fallback to defaults
-    config_path = Path(config)
+    # Experiment config is REQUIRED
+    config_path = Path(experiment_config)
     if not config_path.exists():
-        console.print(f"[red]Error: Config file not found: {config_path}[/red]")
-        console.print("[dim]Config is required. Create one in model_configs/llm_embedding/[/dim]")
+        console.print(f"[red]Error: Experiment config file not found: {config_path}[/red]")
         raise typer.Exit(code=1)
     
-    # Load embedder from config
-    embedder = LLMEmbedder.from_config(
-        config_path=str(config_path),
-        model_override=model,
-        device=device,
-        quantization=quantization,
-    )
+    # Load experiment config to extract dataset name
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
     
-    # Override data_root if provided via CLI (CLI takes precedence over config)
-    if data_root is not None:
-        embedder.data_root = data_root
+    # Check for llm_embedding section
+    if 'llm_embedding' not in config:
+        console.print(f"[red]Error: Experiment config does not have 'llm_embedding' section[/red]")
+        console.print("[dim]Add llm_embedding configuration to generate LLM embeddings:[/dim]")
+        console.print("""
+[yellow]llm_embedding:
+  model_name: "gpt2"           # or "Qwen/Qwen2.5-7B-Instruct"
+  batch_size: 64
+  cache_dir: "./LLM_cache/"
+  prompt_template: "timecma_v1"[/yellow]
+""")
+        raise typer.Exit(code=1)
     
-    # Batch size priority: CLI > config > default (16)
-    if batch_size is not None:
-        effective_batch_size = batch_size
-    elif hasattr(embedder, 'default_batch_size'):
-        effective_batch_size = embedder.default_batch_size
-    else:
-        effective_batch_size = 16
+    # Extract dataset name from config
+    dataset = config.get('data', {}).get('name')
+    if not dataset:
+        console.print("[red]Error: Experiment config missing data.name[/red]")
+        raise typer.Exit(code=1)
     
-    console.print("\n[bold cyan]LLM Embedding Generation[/bold cyan]")
+    # Load embedder from experiment config
+    try:
+        embedder = LLMEmbedder.from_experiment_config(
+            experiment_config_path=str(config_path),
+            device=device,
+        )
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+    
+    # Batch size priority: CLI > config > default
+    effective_batch_size = batch_size if batch_size is not None else embedder.default_batch_size
+    
+    console.print("\n[bold cyan]LLM Embedding Generation (Experiment-Driven)[/bold cyan]")
+    console.print(f"  Experiment: [green]{config_path.name}[/green]")
     console.print(f"  Dataset: [green]{dataset}[/green]")
     console.print(f"  Model: [green]{embedder.model_name}[/green]")
     console.print(f"  Quantization: [green]{embedder.quantization or 'None (fp16)'}[/green]")
     console.print(f"  Device: [green]{embedder.device}[/green]")
+    console.print(f"  Input Length: [green]{embedder.input_len}[/green]")
+    console.print(f"  Output Length: [green]{embedder.output_len}[/green]")
     console.print(f"  Splits: [green]{', '.join(splits)}[/green]")
     console.print()
     
@@ -229,45 +237,68 @@ def generate(
 
 @app.command()
 def verify(
-    dataset: str = typer.Argument(..., help="Dataset name"),
-    config: str = typer.Argument(..., help="LLM embedding configuration file (required)"),
-    model: Optional[str] = typer.Option(
+    experiment_config: str = typer.Argument(..., help="Experiment configuration file"),
+    device: Optional[str] = typer.Option(
         None,
-        "--model", "-m",
-        help="Override model from config"
-    ),
-    data_root: Optional[str] = typer.Option(
-        None,
-        "--data-root",
-        help="Override data_root from config"
+        "--device", "-d",
+        help="Override device from experiment config"
     ),
 ):
     """
-    Verify that embeddings exist and are valid for a dataset.
+    Verify that embeddings exist and are valid for an experiment.
     
     Checks that:
     - Cache directory exists
     - Metadata file is valid
     - Embeddings exist for all splits
     - H5 files are readable
+    - Embeddings match experiment's input_len/output_len
+    
+    Examples:
+        python -m cli.inference verify configs/experiments/timecma_test.yaml
     """
+    import yaml
     from embedder.llm_embedder import LLMEmbedder
     
-    # Config is REQUIRED
-    config_path = Path(config)
+    # Experiment config is REQUIRED
+    config_path = Path(experiment_config)
     if not config_path.exists():
-        console.print(f"[red]Error: Config file not found: {config_path}[/red]")
+        console.print(f"[red]Error: Experiment config file not found: {config_path}[/red]")
         raise typer.Exit(code=1)
     
-    embedder = LLMEmbedder.from_config(str(config_path), model_override=model)
+    # Load experiment config to extract dataset name
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
     
-    if data_root is not None:
-        embedder.data_root = data_root
+    # Check for llm_embedding section
+    if 'llm_embedding' not in config:
+        console.print(f"[yellow]Note: Experiment config does not have 'llm_embedding' section[/yellow]")
+        console.print("[dim]This experiment does not use LLM embeddings.[/dim]")
+        raise typer.Exit(code=0)
+    
+    # Extract dataset name from config
+    dataset = config.get('data', {}).get('name')
+    if not dataset:
+        console.print("[red]Error: Experiment config missing data.name[/red]")
+        raise typer.Exit(code=1)
+    
+    try:
+        embedder = LLMEmbedder.from_experiment_config(
+            experiment_config_path=str(config_path),
+            device=device,
+        )
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
     
     status = embedder.verify_cache(dataset)
     
-    console.print(f"\n[bold cyan]Embedding Cache Verification: {dataset}[/bold cyan]")
+    console.print(f"\n[bold cyan]Embedding Cache Verification[/bold cyan]")
+    console.print(f"  Experiment: [green]{config_path.name}[/green]")
+    console.print(f"  Dataset: [green]{dataset}[/green]")
     console.print(f"  Model: [green]{embedder.model_name}[/green]")
+    console.print(f"  Input Length: [green]{embedder.input_len}[/green]")
+    console.print(f"  Output Length: [green]{embedder.output_len}[/green]")
     console.print(f"  Cache: [dim]{status.get('cache_dir', 'N/A')}[/dim]")
     console.print()
     
@@ -280,7 +311,7 @@ def verify(
         for issue in status.get('issues', []):
             console.print(f"  [yellow]• {issue}[/yellow]")
         
-        console.print(f"\n[dim]Run 'python -m cli.inference generate {dataset}' to fix[/dim]")
+        console.print(f"\n[dim]Run 'python -m cli.inference generate {experiment_config}' to fix[/dim]")
         raise typer.Exit(code=1)
 
 
@@ -570,52 +601,34 @@ def list_datasets():
     console.print("[dim]Example: fidel_ETT:fullETT_M uses fullETT_M.yaml instead of fullETT_H.yaml[/dim]\n")
     
     # ==========================================================================
-    # Example Commands
+    # Example Commands (Experiment-Driven)
     # ==========================================================================
-    console.print("[bold]Example Commands[/bold]\n")
+    console.print("[bold]Example Commands (Experiment-Driven)[/bold]\n")
     
-    console.print("  [dim]# Time-MMD dataset with GPT-2 (fast, for testing)[/dim]")
-    console.print("  python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/gpt2.yaml\n")
-    
-    console.print("  [dim]# TTC dataset[/dim]")
-    console.print("  python -m cli.inference generate ttc_climate model_configs/llm_embedding/gpt2.yaml\n")
-    
-    console.print("  [dim]# Fidel-TS dataset with default config[/dim]")
-    console.print("  python -m cli.inference generate fidel_ETT model_configs/llm_embedding/gpt2.yaml\n")
-    
-    console.print("  [dim]# Fidel-TS dataset with specific config[/dim]")
-    console.print("  python -m cli.inference generate fidel_ETT:fullETT_M model_configs/llm_embedding/qwen_7b.yaml\n")
+    console.print("  [dim]# Generate embeddings for an experiment config[/dim]")
+    console.print("  python -m cli.inference generate configs/experiments/timecma_test.yaml\n")
     
     console.print("  [dim]# Generate only test split[/dim]")
-    console.print("  python -m cli.inference generate time_mmd_traffic config.yaml --splits test\n")
+    console.print("  python -m cli.inference generate configs/experiments/timecma_test.yaml --splits test\n")
+    
+    console.print("  [dim]# Force regenerate all splits[/dim]")
+    console.print("  python -m cli.inference generate configs/experiments/timecma_test.yaml --force\n")
+    
+    console.print("  [dim]# Verify embeddings exist for an experiment[/dim]")
+    console.print("  python -m cli.inference verify configs/experiments/timecma_test.yaml\n")
     
     # ==========================================================================
-    # Available LLM Configs
+    # LLM Embedding Configuration Note
     # ==========================================================================
-    llm_config_path = Path("model_configs/llm_embedding")
-    
-    if llm_config_path.exists():
-        console.print("[bold]Available LLM Embedding Configs[/bold]\n")
-        
-        table = Table()
-        table.add_column("Config File", style="cyan")
-        table.add_column("Description", style="dim")
-        
-        configs = [
-            ("gpt2.yaml", "GPT-2 base (768d) - Fast, for development"),
-            ("qwen_7b.yaml", "Qwen 2.5 7B (3584d) - 24GB+ GPU"),
-            ("qwen_72b.yaml", "Qwen 2.5 72B 4-bit (8192d) - 48GB+ GPU"),
-            ("default.yaml", "Qwen 2.5 72B fp16 (8192d) - H200 (141GB)"),
-        ]
-        
-        for config_name, description in configs:
-            if (llm_config_path / config_name).exists():
-                table.add_row(
-                    f"model_configs/llm_embedding/{config_name}",
-                    description,
-                )
-        
-        console.print(table)
+    console.print("[bold]LLM Embedding Configuration[/bold]\n")
+    console.print("[dim]LLM embeddings are configured in your experiment config file.[/dim]")
+    console.print("[dim]Add an 'llm_embedding' section to your experiment config:[/dim]\n")
+    console.print("""[yellow]llm_embedding:
+  model_name: "gpt2"           # HuggingFace model name
+  batch_size: 64               # Batch size for LLM inference
+  cache_dir: "./LLM_cache/"    # Where to cache model weights
+  prompt_template: "timecma_v1" # Prompt format[/yellow]
+""")
 
 
 if __name__ == "__main__":

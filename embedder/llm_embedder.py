@@ -125,6 +125,11 @@ class LLMEmbedder:
         prompt_template: Optional[str] = 'timecma_v1',
         prompt_config: Optional[Dict[str, Any]] = None,
         max_length: int = 512,
+        # Experiment-driven parameters (from experiment config)
+        input_len: int = 96,
+        output_len: int = 96,
+        scale: bool = True,
+        data_config_path: Optional[str] = None,
     ):
         """
         Initialize LLM embedder.
@@ -144,6 +149,10 @@ class LLMEmbedder:
                 - None: No prompt builder (for raw text input only)
             prompt_config: Configuration dict for prompt template
             max_length: Maximum token length for inputs
+            input_len: Input sequence length (from experiment config)
+            output_len: Output/prediction sequence length (from experiment config)
+            scale: Whether to scale the data (from experiment config)
+            data_config_path: Path to data config YAML (from experiment config)
         
         Note:
             If prompt_template is None, the embedder can only be used for raw
@@ -159,6 +168,12 @@ class LLMEmbedder:
         self.prompt_config = prompt_config or {}
         self.max_length = max_length
         
+        # Experiment-driven parameters
+        self.input_len = input_len
+        self.output_len = output_len
+        self.scale = scale
+        self.data_config_path = data_config_path
+        
         # Initialize time series prompt builder (optional - only for TS input)
         # If prompt_template is None, this embedder is for raw text only
         if prompt_template is not None:
@@ -169,7 +184,7 @@ class LLMEmbedder:
         else:
             self.ts_prompt_builder = None
         
-        # Default batch size (can be overridden by from_config or at call time)
+        # Default batch size (can be overridden by from_experiment_config or at call time)
         self.default_batch_size = 16
         
         # Lazy load model and tokenizer
@@ -178,44 +193,86 @@ class LLMEmbedder:
         self._embed_dim = None
     
     @classmethod
-    def from_config(
+    def from_experiment_config(
         cls,
-        config_path: str,
-        model_override: Optional[str] = None,
+        experiment_config_path: str,
         device: Optional[str] = None,
-        quantization: Optional[str] = None,
     ) -> 'LLMEmbedder':
         """
-        Create embedder from YAML configuration file.
+        Create embedder from experiment configuration file.
+        
+        This is the preferred method for creating an LLMEmbedder. It extracts
+        all required parameters from the experiment config, ensuring consistency
+        between training and embedding generation.
         
         Args:
-            config_path: Path to configuration file
-            model_override: Override model name from config
-            device: Override device from config
-            quantization: Override quantization from config
+            experiment_config_path: Path to experiment YAML configuration file
+            device: Override device from config (defaults to cuda:0 or experiment's GPU)
         
         Returns:
             Configured LLMEmbedder instance
+        
+        Raises:
+            ValueError: If experiment config doesn't have llm_embedding section
+        
+        Example:
+            embedder = LLMEmbedder.from_experiment_config(
+                'configs/experiments/timecma_test.yaml'
+            )
+            embedder.generate_ts_embeddings('time_mmd_traffic', 'train')
         """
-        with open(config_path, 'r') as f:
+        with open(experiment_config_path, 'r') as f:
             config = yaml.safe_load(f)
         
-        llm_config = config.get('llm_embedding', config)
+        # Extract llm_embedding section (required)
+        llm_config = config.get('llm_embedding')
+        if llm_config is None:
+            raise ValueError(
+                f"Experiment config '{experiment_config_path}' does not have an 'llm_embedding' section. "
+                f"Add llm_embedding configuration to generate LLM embeddings."
+            )
+        
+        # Extract training parameters
+        training = config.get('training', {})
+        input_len = training.get('input_len', 96)
+        output_len = training.get('output_len', 96)
+        scale = training.get('scale', True)
+        
+        # Extract data config path
+        data = config.get('data', {})
+        data_config_path = data.get('config_path')
+        
+        # Extract data_root from base_data_path or default
+        base_data_path = config.get('base_data_path', './data/')
+        
+        # Determine device: CLI override > experiment config > default
+        if device is None:
+            device_config = config.get('device', {})
+            gpu = device_config.get('gpu', 0)
+            use_gpu = device_config.get('use_gpu', True)
+            device = f'cuda:{gpu}' if use_gpu else 'cpu'
         
         embedder = cls(
-            model_name=model_override or llm_config.get('model_name', 'gpt2'),
-            device=device or llm_config.get('device', 'cuda:0'),
+            model_name=llm_config.get('model_name', 'gpt2'),
+            device=device,
             cache_dir=llm_config.get('cache_dir', './LLM_cache/'),
-            data_root=llm_config.get('data_root', './data/'),
-            quantization=quantization or llm_config.get('quantization'),
+            data_root=base_data_path,
+            quantization=llm_config.get('quantization'),
             extraction_mode=llm_config.get('extraction_mode', 'last_token'),
             prompt_template=llm_config.get('prompt_template', 'timecma_v1'),
-            prompt_config=llm_config.get('prompt_config', {}),
+            prompt_config=llm_config.get('prompt_config', {'value_format': 'integer', 'include_timestamps': True}),
             max_length=llm_config.get('max_length', 512),
+            input_len=input_len,
+            output_len=output_len,
+            scale=scale,
+            data_config_path=data_config_path,
         )
         
         # Store batch_size from config for use by generate_ts_embeddings
-        embedder.default_batch_size = llm_config.get('batch_size', 16)
+        embedder.default_batch_size = llm_config.get('batch_size', 64)
+        
+        # Store experiment config path for reference
+        embedder.experiment_config_path = experiment_config_path
         
         return embedder
     
@@ -793,7 +850,11 @@ class LLMEmbedder:
         with open(config_path, 'r') as f:
             data_config = yaml.safe_load(f)
         
+        # Extract frequency from data config
+        freq = data_config.get('sampling_rate', 'h')
+        
         # Build minimal args structure for Data_Provider
+        # Uses instance attributes from experiment config for consistency
         # Note: dotdict returns None for missing keys (not AttributeError),
         # so we must explicitly set all required fields
         args = dotdict({
@@ -803,13 +864,13 @@ class LLMEmbedder:
                 'stride': 1,
                 'hetero_align_stride': False,
                 'custom_input': None,  # Use default task-based input (None, not False)
-                'freq': 'h',
+                'freq': freq,
             }),
             'model': 'TimeCMA',  # Required for model name checks in data loader
             'batch_size': 32,
-            'input_len': 96,
-            'output_len': 96,
-            'scale': True,
+            'input_len': self.input_len,    # From experiment config
+            'output_len': self.output_len,  # From experiment config
+            'scale': self.scale,            # From experiment config
             'noise': None,
             'num_workers': 0,
             'prefetch_factor': None,
@@ -858,8 +919,7 @@ class LLMEmbedder:
             values = np.stack(all_values, axis=0)  # [N, seq_len, channels]
             timestamps = np.stack(all_timestamps, axis=0) if all_timestamps else None
             
-            # Extract frequency from config
-            freq = data_config.get('sampling_rate', 'h')
+            # Build metadata (freq already extracted above)
             metadata = {'freq': freq, 'dataset': dataset, 'split': split}
             
             print(f"[ LLM Embedder ] Loaded {len(values)} samples, shape: {values.shape}")

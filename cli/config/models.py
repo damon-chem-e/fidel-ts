@@ -110,6 +110,35 @@ class WandBConfig(BaseModel):
     mode: str = Field(default="online", description="WandB mode: online, offline, or disabled")
 
 
+class LLMEmbeddingConfig(BaseModel):
+    """
+    LLM embedding configuration for experiments that use LLM-based embeddings.
+    
+    This configures how time series data is converted to text prompts and then
+    embedded using an LLM (e.g., GPT-2, Qwen) for models like TimeCMA.
+    
+    The embeddings are generated using the experiment's input_len/output_len
+    to ensure consistency between training and embedding generation.
+    """
+    model_config = ConfigDict(extra="forbid")
+    
+    # LLM Model Settings
+    model_name: str = Field(default="gpt2", description="HuggingFace model name (e.g., 'gpt2', 'Qwen/Qwen2.5-7B-Instruct')")
+    cache_dir: str = Field(default="./LLM_cache/", description="Directory for LLM model weights cache")
+    quantization: Optional[str] = Field(default=None, description="Quantization mode: '4bit', '8bit', or None for fp16")
+    
+    # Extraction Settings
+    extraction_mode: str = Field(default="last_token", description="Embedding extraction: 'last_token' or 'pooled'")
+    max_length: int = Field(default=512, ge=1, description="Maximum token length for LLM input")
+    
+    # Prompt Settings
+    prompt_template: str = Field(default="timecma_v1", description="Prompt template name: 'timecma_v1' or 'simple'")
+    prompt_config: Dict[str, Any] = Field(default_factory=lambda: {"value_format": "integer", "include_timestamps": True}, description="Prompt template configuration")
+    
+    # Batch Processing
+    batch_size: int = Field(default=64, ge=1, description="Batch size for LLM inference")
+
+
 class ExperimentConfig(BaseModel):
     """Complete experiment configuration."""
     model: ModelConfig = Field(..., description="Model configuration")
@@ -117,6 +146,7 @@ class ExperimentConfig(BaseModel):
     training: TrainingConfig = Field(default_factory=TrainingConfig, description="Training configuration")
     device: DeviceConfig = Field(default_factory=DeviceConfig, description="Device configuration")
     wandb: WandBConfig = Field(default_factory=WandBConfig, description="WandB configuration")
+    llm_embedding: Optional[LLMEmbeddingConfig] = Field(default=None, description="LLM embedding configuration (for TimeCMA-style models)")
     
     # Optional fields
     hf_mirror: bool = Field(default=False, description="Use HuggingFace mirror")

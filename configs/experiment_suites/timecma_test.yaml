@@ -3,15 +3,13 @@
 # Usage: python -m cli.suite run configs/experiment_suites/timecma_test.yaml
 #
 # IMPORTANT: This suite requires pre-computed LLM embeddings!
-# Generate embeddings before running this suite:
+# Each experiment in this suite has an llm_embedding section that specifies
+# the LLM model and settings for embedding generation.
 #
-#   # For GPT-2 (fast, for testing):
-#   python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/gpt2.yaml
-#   python -m cli.inference generate time_mmd_energy model_configs/llm_embedding/gpt2.yaml
+# To generate embeddings for a specific experiment:
+#   python -m cli.inference generate <experiment_config.yaml>
 #
-#   # For Qwen 72B (production quality, requires H200):
-#   python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/default.yaml
-#   python -m cli.inference generate time_mmd_energy model_configs/llm_embedding/default.yaml
+# The suite runner can also generate embeddings automatically if configured.
 #
 # Reference:
 #   TimeCMA: Towards LLM-Empowered Multivariate Time Series Forecasting
@@ -60,6 +58,12 @@ suite:
           devices: "0"
         wandb:
           enabled: false
+        # LLM embedding configuration for TimeCMA
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
         model_config_overrides:
           # Channel configuration (Time-MMD Traffic has 1 target variable)
           enc_in: 1
@@ -109,6 +113,11 @@ suite:
           devices: "0"
         wandb:
           enabled: false
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
         model_config_overrides:
           enc_in: 1
           channel: 32
@@ -154,6 +163,11 @@ suite:
           devices: "0"
         wandb:
           enabled: false
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
         model_config_overrides:
           enc_in: 1
           channel: 32
@@ -199,6 +213,11 @@ suite:
           devices: "0"
         wandb:
           enabled: false
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
         model_config_overrides:
           enc_in: 1
           # Larger model dimensions
@@ -245,6 +264,11 @@ suite:
           devices: "0"
         wandb:
           enabled: false
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
         model_config_overrides:
           enc_in: 1
           channel: 32
