@@ -453,7 +453,7 @@ def verify_suite(
             cache_dir=llm_config.get('cache_dir', './LLM_cache/'),
             data_root=final_config.get('base_data_path', './data/'),
             prompt_template=llm_config.get('prompt_template', 'timecma_v1'),
-            prompt_config=llm_config.get('prompt_config', {}),
+            prompt_config=llm_config.get('prompt_config', {'value_format': 'integer', 'include_timestamps': True}),
             input_len=input_len,
             output_len=output_len,
             scale=training.get('scale', True),
