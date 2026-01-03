@@ -379,6 +379,9 @@ class TSPromptBuilder:
         This is optimized for batched LLM inference where we want to
         process all (sample, channel) pairs in a single batch.
         
+        WARNING: For large datasets, this can cause memory explosion!
+        Use iter_batch_prompts() for memory-efficient processing.
+        
         Args:
             batch_values: [B, seq_len, channels]
             batch_timestamps: [B, seq_len, features] (optional)
@@ -398,6 +401,82 @@ class TSPromptBuilder:
                 all_prompts.append(prompt)
         
         return all_prompts
+    
+    def iter_batch_prompts(
+        self,
+        batch_values: np.ndarray,
+        batch_timestamps: Optional[np.ndarray] = None,
+        metadata: Optional[Dict] = None,
+        prompt_batch_size: int = 64,
+    ):
+        """
+        Lazily generate prompts in batches (memory-efficient).
+        
+        Instead of generating ALL N*C prompts at once (which can use 20+ GB
+        for large datasets), this generator yields prompts in small batches.
+        
+        This is the preferred method for large datasets like NYC traffic speed.
+        
+        Args:
+            batch_values: [B, seq_len, channels] - data values
+            batch_timestamps: [B, seq_len, features] (optional) - timestamps
+            metadata: Shared metadata for all samples
+            prompt_batch_size: Number of prompts to yield per batch
+        
+        Yields:
+            Tuple of (prompts, sample_indices, channel_indices):
+                - prompts: List[str] of length <= prompt_batch_size
+                - sample_indices: List[int] sample indices for each prompt
+                - channel_indices: List[int] channel indices for each prompt
+        
+        Example:
+            for prompts, sample_idxs, channel_idxs in builder.iter_batch_prompts(
+                values, timestamps, metadata, prompt_batch_size=64
+            ):
+                embeddings = llm.embed_texts(prompts)
+                # embeddings[i] corresponds to sample_idxs[i], channel_idxs[i]
+        """
+        B, L, C = batch_values.shape
+        
+        batch_prompts = []
+        batch_sample_indices = []
+        batch_channel_indices = []
+        
+        for b in range(B):
+            for c in range(C):
+                # Generate prompt for this (sample, channel) pair
+                ts = batch_timestamps[b] if batch_timestamps is not None else None
+                prompt = self.build_prompt(batch_values[b], ts, c, metadata)
+                
+                batch_prompts.append(prompt)
+                batch_sample_indices.append(b)
+                batch_channel_indices.append(c)
+                
+                # Yield when batch is full
+                if len(batch_prompts) >= prompt_batch_size:
+                    yield batch_prompts, batch_sample_indices, batch_channel_indices
+                    batch_prompts = []
+                    batch_sample_indices = []
+                    batch_channel_indices = []
+        
+        # Yield remaining prompts
+        if batch_prompts:
+            yield batch_prompts, batch_sample_indices, batch_channel_indices
+    
+    def count_prompts(self, batch_values: np.ndarray) -> int:
+        """
+        Count total prompts that would be generated for given data.
+        
+        Useful for progress bar initialization without generating prompts.
+        
+        Args:
+            batch_values: [B, seq_len, channels]
+        
+        Returns:
+            Total number of prompts (B * C)
+        """
+        B, L, C = batch_values.shape
+        return B * C
     
     def get_example_prompt(self,
                            values: np.ndarray,

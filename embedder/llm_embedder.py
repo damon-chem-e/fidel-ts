@@ -61,16 +61,17 @@ Example:
     embeddings = embedder.embed_texts(["Weather is sunny", "Storm approaching"])
 """
 
+import gc
 import time
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable, List, TYPE_CHECKING
+from typing import Dict, Any, Optional, Callable, List, Iterator, Tuple, TYPE_CHECKING
 
 import numpy as np
 import torch
 
 from .llm_registry import LLMRegistry
-from .llm_cache import LLMEmbeddingCache, LLMEmbeddingMetadata
+from .llm_cache import LLMEmbeddingCache, LLMEmbeddingMetadata, StreamingEmbeddingWriter
 from .prompt_builder import TSPromptBuilder
 
 if TYPE_CHECKING:
@@ -1132,6 +1133,441 @@ class LLMEmbedder:
         except Exception as e:
             import traceback
             raise RuntimeError(f"Failed to load dataset {dataset}/{split}: {e}") from e
+    
+    # =========================================================================
+    # MEMORY-EFFICIENT CHUNKED PROCESSING
+    # For large datasets that don't fit in memory
+    # =========================================================================
+    
+    def _count_dataset_samples(
+        self,
+        dataset: str,
+        split: str,
+    ) -> Tuple[int, int, int]:
+        """
+        Count dataset samples without loading data into memory.
+        
+        This method iterates through the dataset to count samples,
+        getting the shape information without storing all the data.
+        
+        Args:
+            dataset: Dataset name
+            split: Data split ('train', 'val', 'test')
+        
+        Returns:
+            Tuple of (num_samples, num_channels, seq_len)
+        """
+        from utils.tools import dotdict
+        from data_provider.data_factory import Data_Provider
+        
+        # Resolve dataset config
+        config_path = self._resolve_dataset_config(dataset)
+        with open(config_path, 'r') as f:
+            data_config = yaml.safe_load(f)
+        
+        freq = data_config.get('sampling_rate', 'h')
+        
+        # Build args for Data_Provider
+        args = dotdict({
+            'data_config': dotdict(data_config),
+            'model_config': dotdict({
+                'task': 'TimeCMA',
+                'stride': 1,
+                'hetero_align_stride': False,
+                'custom_input': None,
+                'freq': freq,
+            }),
+            'model': 'TimeCMA',
+            'batch_size': 32,
+            'input_len': self.input_len,
+            'output_len': self.output_len,
+            'scale': self.scale,
+            'noise': None,
+            'num_workers': 0,
+            'prefetch_factor': None,
+            'disable_buffer': True,
+            'preload_hetero': False,
+            'gpu': 0,
+            'use_gpu': False,
+        })
+        
+        # Create Data_Provider
+        data_provider = Data_Provider(args, buffer=False)
+        
+        # Get the appropriate split
+        if split == 'train':
+            datasets = data_provider.get_train(return_type='set')
+        elif split == 'val':
+            datasets = data_provider.get_val(return_type='set')
+        elif split == 'test':
+            datasets = data_provider.get_test(return_type='set')
+        else:
+            raise ValueError(f"Unknown split: {split}")
+        
+        # Count samples and get shape from first sample
+        total_samples = 0
+        num_channels = 0
+        seq_len = 0
+        
+        for entity_id, entity_dataset in datasets.items():
+            entity_len = len(entity_dataset)
+            total_samples += entity_len
+            
+            # Get shape from first sample (if not already known)
+            if num_channels == 0 and entity_len > 0:
+                first_sample = entity_dataset[0]
+                seq_x = first_sample[1]  # [seq_len, channels]
+                seq_len, num_channels = seq_x.shape
+        
+        return total_samples, num_channels, seq_len
+    
+    def _iter_dataset_chunks(
+        self,
+        dataset: str,
+        split: str,
+        chunk_size: int = 1000,
+    ) -> Iterator[Tuple[np.ndarray, np.ndarray, Dict[str, Any], int]]:
+        """
+        Iterate over dataset in memory-efficient chunks.
+        
+        Instead of loading all samples at once, this generator yields
+        chunks of samples, allowing processing of datasets that don't
+        fit in memory.
+        
+        Args:
+            dataset: Dataset name
+            split: Data split
+            chunk_size: Number of samples per chunk
+        
+        Yields:
+            Tuple of (values_chunk, timestamps_chunk, metadata, chunk_start_idx):
+                - values_chunk: [chunk_size, seq_len, channels]
+                - timestamps_chunk: [chunk_size, seq_len, features]
+                - metadata: Dict with 'freq', 'dataset', 'split'
+                - chunk_start_idx: Starting index of this chunk in the full dataset
+        """
+        from utils.tools import dotdict
+        from data_provider.data_factory import Data_Provider
+        
+        # Resolve dataset config
+        config_path = self._resolve_dataset_config(dataset)
+        with open(config_path, 'r') as f:
+            data_config = yaml.safe_load(f)
+        
+        freq = data_config.get('sampling_rate', 'h')
+        metadata = {'freq': freq, 'dataset': dataset, 'split': split}
+        
+        # Build args for Data_Provider
+        args = dotdict({
+            'data_config': dotdict(data_config),
+            'model_config': dotdict({
+                'task': 'TimeCMA',
+                'stride': 1,
+                'hetero_align_stride': False,
+                'custom_input': None,
+                'freq': freq,
+            }),
+            'model': 'TimeCMA',
+            'batch_size': 32,
+            'input_len': self.input_len,
+            'output_len': self.output_len,
+            'scale': self.scale,
+            'noise': None,
+            'num_workers': 0,
+            'prefetch_factor': None,
+            'disable_buffer': True,
+            'preload_hetero': False,
+            'gpu': 0,
+            'use_gpu': False,
+        })
+        
+        # Create Data_Provider
+        data_provider = Data_Provider(args, buffer=False)
+        
+        # Get the appropriate split
+        if split == 'train':
+            datasets = data_provider.get_train(return_type='set')
+        elif split == 'val':
+            datasets = data_provider.get_val(return_type='set')
+        elif split == 'test':
+            datasets = data_provider.get_test(return_type='set')
+        else:
+            raise ValueError(f"Unknown split: {split}")
+        
+        # Iterate through entities and accumulate chunks
+        chunk_values = []
+        chunk_timestamps = []
+        chunk_start_idx = 0
+        current_idx = 0
+        
+        for entity_id, entity_dataset in datasets.items():
+            for i in range(len(entity_dataset)):
+                sample = entity_dataset[i]
+                seq_x = sample[1]  # [seq_len, channels]
+                x_time = sample[3]  # [seq_len, time_features]
+                
+                chunk_values.append(seq_x)
+                chunk_timestamps.append(x_time)
+                current_idx += 1
+                
+                # Yield when chunk is full
+                if len(chunk_values) >= chunk_size:
+                    yield (
+                        np.stack(chunk_values, axis=0),
+                        np.stack(chunk_timestamps, axis=0),
+                        metadata,
+                        chunk_start_idx,
+                    )
+                    chunk_start_idx = current_idx
+                    chunk_values = []
+                    chunk_timestamps = []
+        
+        # Yield remaining samples
+        if chunk_values:
+            yield (
+                np.stack(chunk_values, axis=0),
+                np.stack(chunk_timestamps, axis=0),
+                metadata,
+                chunk_start_idx,
+            )
+    
+    def generate_ts_embeddings_chunked(
+        self,
+        dataset: str,
+        split: str,
+        batch_size: int = 32,
+        chunk_size: int = 1000,
+        force: bool = False,
+    ) -> np.ndarray:
+        """
+        Memory-efficient embedding generation using chunked processing.
+        
+        This method processes large datasets without loading everything into
+        memory at once. It:
+        1. Counts total samples (lightweight pass)
+        2. Creates a streaming HDF5 writer
+        3. Processes data in chunks, writing embeddings incrementally
+        4. Cleans up GPU memory between chunks
+        
+        Use this method for large datasets like fidel_NYC_traffic_speed.
+        
+        Args:
+            dataset: Dataset name
+            split: Data split ('train', 'val', 'test')
+            batch_size: Batch size for LLM inference
+            chunk_size: Number of samples to load at once (memory vs speed tradeoff)
+            force: Force regeneration even if cache exists
+        
+        Returns:
+            Embeddings array [N, embed_dim, C] loaded from disk
+        
+        Memory Usage:
+            - Data: ~chunk_size * seq_len * channels * 4 bytes
+            - Prompts: ~batch_size * ~500 bytes
+            - Embeddings: Written to disk incrementally
+        """
+        if self.ts_prompt_builder is None:
+            raise ValueError(
+                "Cannot generate time series embeddings without a TSPromptBuilder. "
+                "Either set prompt_template in __init__, or use embed_texts() for raw text."
+            )
+        
+        # Get data directory and create cache
+        data_dir = self._get_data_directory(dataset)
+        cache = LLMEmbeddingCache(str(data_dir), dataset)
+        metadata = self._build_metadata(dataset)
+        
+        # Check cache - return early if exists
+        if not force and cache.cache_exists(metadata, split):
+            if self.console is not None:
+                self.console.print(f"  [dim]Loading cached embeddings for {dataset}/{split}...[/dim]")
+            embeddings = cache.load_embeddings(metadata, split, quiet=True)
+            if self.console is not None:
+                self.console.print(f"  [dim]Loaded {embeddings.shape[0]} embeddings from cache[/dim]")
+            return embeddings
+        
+        # Count samples first (lightweight)
+        if self.console is not None:
+            from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+            
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                TimeElapsedColumn(),
+                console=self.console,
+                transient=True,
+            ) as progress:
+                task = progress.add_task(f"Counting samples in {dataset}/{split}...", total=None)
+                total_samples, num_channels, seq_len = self._count_dataset_samples(dataset, split)
+                progress.update(task, completed=True)
+            
+            self.console.print(f"  [dim]Found {total_samples} samples ({num_channels} channels)[/dim]")
+        else:
+            print(f"[ LLM Embedder ] Counting samples for {dataset}/{split}")
+            total_samples, num_channels, seq_len = self._count_dataset_samples(dataset, split)
+            print(f"[ LLM Embedder ] Found {total_samples} samples ({num_channels} channels)")
+        
+        if total_samples == 0:
+            raise ValueError(f"No samples found for {dataset}/{split}")
+        
+        # Ensure model loaded
+        self._ensure_model_loaded_with_progress()
+        
+        # Calculate total prompts for progress
+        total_prompts = total_samples * num_channels
+        num_prompt_batches = (total_prompts + batch_size - 1) // batch_size
+        
+        # Create cache directory
+        cache_dir = cache.get_cache_dir(metadata)
+        
+        # Start timing
+        start_time = time.time()
+        
+        # Create streaming writer
+        with StreamingEmbeddingWriter(
+            cache_dir=cache_dir,
+            split=split,
+            num_samples=total_samples,
+            embed_dim=self._embed_dim,
+            num_channels=num_channels,
+        ) as writer:
+            
+            # Process chunks with progress bar
+            if self.console is not None:
+                from rich.progress import (
+                    Progress, BarColumn, TextColumn, TimeElapsedColumn,
+                    TimeRemainingColumn, MofNCompleteColumn, SpinnerColumn
+                )
+                
+                progress_columns = (
+                    SpinnerColumn(),
+                    TextColumn("[bold blue]{task.description}"),
+                    BarColumn(bar_width=40),
+                    MofNCompleteColumn(),
+                    TextColumn("•"),
+                    TimeElapsedColumn(),
+                    TextColumn("•"),
+                    TimeRemainingColumn(),
+                )
+                
+                with Progress(*progress_columns, console=self.console, transient=False) as progress:
+                    task = progress.add_task(f"Embedding {split}", total=total_samples)
+                    
+                    for values_chunk, ts_chunk, data_meta, chunk_start in self._iter_dataset_chunks(
+                        dataset, split, chunk_size
+                    ):
+                        # Process this chunk
+                        chunk_embeddings = self._process_chunk_streaming(
+                            values_chunk, ts_chunk, data_meta, batch_size
+                        )
+                        
+                        # Write to disk
+                        writer.write_batch(chunk_embeddings)
+                        
+                        # Update progress
+                        progress.update(task, completed=writer.samples_written)
+                        
+                        # Cleanup
+                        del values_chunk, ts_chunk, chunk_embeddings
+                        gc.collect()
+                        torch.cuda.empty_cache()
+            else:
+                # Fallback without console
+                for values_chunk, ts_chunk, data_meta, chunk_start in self._iter_dataset_chunks(
+                    dataset, split, chunk_size
+                ):
+                    chunk_embeddings = self._process_chunk_streaming(
+                        values_chunk, ts_chunk, data_meta, batch_size
+                    )
+                    writer.write_batch(chunk_embeddings)
+                    del values_chunk, ts_chunk, chunk_embeddings
+                    gc.collect()
+                    torch.cuda.empty_cache()
+        
+        generation_time = time.time() - start_time
+        
+        # Print completion
+        if self.console is not None:
+            self.console.print(f"  [dim]Generated {total_samples} embeddings in {generation_time:.1f}s[/dim]")
+        
+        # Update and save metadata
+        metadata.generation_time_seconds = generation_time
+        metadata.num_samples = total_samples
+        metadata.num_channels = num_channels
+        metadata.seq_len = seq_len
+        metadata.device = self.device
+        metadata.split = split
+        metadata.save(cache_dir / "metadata.json")
+        
+        # Load and return from disk
+        return cache.load_embeddings(metadata, split, quiet=True)
+    
+    def _process_chunk_streaming(
+        self,
+        values: np.ndarray,
+        timestamps: np.ndarray,
+        metadata: Dict[str, Any],
+        batch_size: int,
+    ) -> np.ndarray:
+        """
+        Process a single chunk of data and return embeddings.
+        
+        Uses lazy prompt generation to minimize memory usage.
+        
+        Args:
+            values: [chunk_size, seq_len, channels]
+            timestamps: [chunk_size, seq_len, features]
+            metadata: Dataset metadata
+            batch_size: LLM batch size
+        
+        Returns:
+            embeddings: [chunk_size, embed_dim, channels]
+        """
+        chunk_size, seq_len, num_channels = values.shape
+        
+        # Pre-allocate output array for this chunk
+        chunk_embeddings = np.zeros(
+            (chunk_size, self._embed_dim, num_channels),
+            dtype=np.float32
+        )
+        
+        # Process using lazy prompt generation
+        for prompt_batch, sample_idxs, channel_idxs in self.ts_prompt_builder.iter_batch_prompts(
+            values, timestamps, metadata, batch_size
+        ):
+            # Tokenize batch
+            inputs = self._tokenizer(
+                prompt_batch,
+                return_tensors='pt',
+                padding=True,
+                truncation=True,
+                max_length=self.max_length
+            ).to(self.device)
+            
+            # Get embeddings
+            with torch.no_grad():
+                outputs = self._model(**inputs, output_hidden_states=True)
+                hidden_states = outputs.hidden_states[-1]
+                
+                if self.extraction_mode == 'last_token':
+                    seq_lengths = inputs.attention_mask.sum(dim=1) - 1
+                    batch_embeddings = hidden_states[
+                        torch.arange(hidden_states.size(0), device=self.device),
+                        seq_lengths
+                    ]
+                else:  # pooled
+                    mask = inputs.attention_mask.unsqueeze(-1).float()
+                    batch_embeddings = (hidden_states * mask).sum(dim=1) / mask.sum(dim=1)
+            
+            # Place embeddings in correct positions
+            batch_emb_np = batch_embeddings.cpu().numpy()
+            for i, (sample_idx, channel_idx) in enumerate(zip(sample_idxs, channel_idxs)):
+                chunk_embeddings[sample_idx, :, channel_idx] = batch_emb_np[i]
+            
+            # Cleanup GPU memory
+            del inputs, outputs, hidden_states, batch_embeddings, batch_emb_np
+        
+        return chunk_embeddings
     
     def verify_cache(self, dataset: str, splits: List[str] = None) -> Dict[str, Any]:
         """

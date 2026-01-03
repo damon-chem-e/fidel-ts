@@ -484,3 +484,175 @@ class LLMEmbeddingCache:
         
         return configs
 
+
+class StreamingEmbeddingWriter:
+    """
+    Write embeddings to HDF5 incrementally without holding all in memory.
+    
+    This class enables memory-efficient embedding generation for large datasets
+    by writing embeddings to disk as they are generated, rather than accumulating
+    them all in memory before writing.
+    
+    The HDF5 file is created with a pre-allocated dataset of known dimensions,
+    and embeddings are written in chunks as they are processed.
+    
+    Usage:
+        with StreamingEmbeddingWriter(cache_dir, split, N, E, C) as writer:
+            for batch_embeddings in generate_embeddings():
+                writer.write_batch(batch_embeddings)
+    
+    Args:
+        cache_dir: Directory to store the embeddings
+        split: Data split name ('train', 'val', 'test')
+        num_samples: Total number of samples (N)
+        embed_dim: Embedding dimension (E)
+        num_channels: Number of channels (C)
+        hdf5_chunk_size: Chunk size for HDF5 storage (for efficient I/O)
+    """
+    
+    def __init__(
+        self,
+        cache_dir: Path,
+        split: str,
+        num_samples: int,
+        embed_dim: int,
+        num_channels: int,
+        hdf5_chunk_size: int = 100,
+    ):
+        """
+        Initialize the streaming writer.
+        
+        Creates the HDF5 file with a pre-allocated dataset.
+        
+        Args:
+            cache_dir: Path to cache directory (e.g., llm_embeddings/llm_{hash}/)
+            split: Data split ('train', 'val', 'test')
+            num_samples: Total number of samples to write
+            embed_dim: LLM embedding dimension
+            num_channels: Number of data channels
+            hdf5_chunk_size: Chunk size for HDF5 compression/access
+        """
+        self.cache_dir = Path(cache_dir)
+        self.split = split
+        self.num_samples = num_samples
+        self.embed_dim = embed_dim
+        self.num_channels = num_channels
+        
+        # Create split directory
+        self.split_dir = self.cache_dir / split
+        self.split_dir.mkdir(parents=True, exist_ok=True)
+        
+        self.h5_path = self.split_dir / "embeddings.h5"
+        
+        # Calculate optimal chunk size (don't exceed num_samples)
+        effective_chunk_size = min(hdf5_chunk_size, num_samples)
+        
+        # Create HDF5 file with pre-allocated dataset
+        self.h5_file = h5py.File(self.h5_path, 'w')
+        self.dataset = self.h5_file.create_dataset(
+            'embeddings',
+            shape=(num_samples, embed_dim, num_channels),
+            dtype=np.float32,
+            chunks=(effective_chunk_size, embed_dim, num_channels),
+            compression='gzip',
+            compression_opts=4,
+        )
+        
+        # Track write position
+        self.write_idx = 0
+        self.is_closed = False
+    
+    def write_batch(self, embeddings: np.ndarray):
+        """
+        Write a batch of embeddings to disk.
+        
+        Args:
+            embeddings: Array of shape [batch_size, embed_dim, num_channels]
+        
+        Raises:
+            ValueError: If write would exceed allocated space
+            RuntimeError: If writer is already closed
+        """
+        if self.is_closed:
+            raise RuntimeError("Cannot write to closed StreamingEmbeddingWriter")
+        
+        batch_size = embeddings.shape[0]
+        
+        # Validate dimensions
+        if embeddings.shape[1] != self.embed_dim:
+            raise ValueError(
+                f"Embedding dimension mismatch: got {embeddings.shape[1]}, "
+                f"expected {self.embed_dim}"
+            )
+        if embeddings.shape[2] != self.num_channels:
+            raise ValueError(
+                f"Channel count mismatch: got {embeddings.shape[2]}, "
+                f"expected {self.num_channels}"
+            )
+        
+        # Check bounds
+        if self.write_idx + batch_size > self.num_samples:
+            raise ValueError(
+                f"Write would exceed allocated space: "
+                f"position {self.write_idx} + batch {batch_size} > total {self.num_samples}"
+            )
+        
+        # Write to HDF5
+        self.dataset[self.write_idx:self.write_idx + batch_size] = embeddings.astype(np.float32)
+        self.write_idx += batch_size
+    
+    def write_sample_embeddings(self, sample_idx: int, embeddings: np.ndarray):
+        """
+        Write embeddings for a specific sample index.
+        
+        Useful when processing samples out of order or in chunks.
+        
+        Args:
+            sample_idx: Index of the sample in the dataset
+            embeddings: Array of shape [embed_dim, num_channels]
+        """
+        if self.is_closed:
+            raise RuntimeError("Cannot write to closed StreamingEmbeddingWriter")
+        
+        if sample_idx >= self.num_samples:
+            raise ValueError(f"Sample index {sample_idx} >= num_samples {self.num_samples}")
+        
+        self.dataset[sample_idx] = embeddings.astype(np.float32)
+    
+    @property
+    def samples_written(self) -> int:
+        """Return the number of samples written so far."""
+        return self.write_idx
+    
+    @property
+    def progress(self) -> float:
+        """Return progress as a fraction (0.0 to 1.0)."""
+        return self.write_idx / self.num_samples if self.num_samples > 0 else 0.0
+    
+    def flush(self):
+        """Flush pending writes to disk."""
+        if not self.is_closed:
+            self.h5_file.flush()
+    
+    def close(self):
+        """Close the HDF5 file and finalize writes."""
+        if not self.is_closed:
+            self.h5_file.close()
+            self.is_closed = True
+    
+    def __enter__(self) -> 'StreamingEmbeddingWriter':
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - close the file."""
+        self.close()
+        return False  # Don't suppress exceptions
+    
+    def __repr__(self) -> str:
+        return (
+            f"StreamingEmbeddingWriter("
+            f"split='{self.split}', "
+            f"samples={self.write_idx}/{self.num_samples}, "
+            f"shape=[{self.num_samples}, {self.embed_dim}, {self.num_channels}])"
+        )

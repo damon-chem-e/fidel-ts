@@ -67,7 +67,7 @@ from pathlib import Path
 from typing import Optional, List
 from rich.console import Console
 from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
+# Rich imports are used within LLMEmbedder, not directly in CLI
 
 
 app = typer.Typer(help="LLM inference and embedding precomputation")
@@ -96,6 +96,16 @@ def generate(
         False,
         "--force", "-f",
         help="Force recompute existing embeddings"
+    ),
+    memory_efficient: bool = typer.Option(
+        False,
+        "--memory-efficient", "-m",
+        help="Use memory-efficient chunked processing (for large datasets)"
+    ),
+    chunk_size: int = typer.Option(
+        1000,
+        "--chunk-size",
+        help="Samples per chunk in memory-efficient mode"
     ),
 ):
     """
@@ -174,6 +184,18 @@ def generate(
     # Batch size priority: CLI > config > default
     effective_batch_size = batch_size if batch_size is not None else embedder.default_batch_size
     
+    # Determine memory-efficient mode: CLI flag > config > default (False)
+    llm_config = config.get('llm_embedding', {})
+    use_memory_efficient = memory_efficient  # CLI flag takes priority
+    if not memory_efficient:
+        # Check config if CLI flag not set
+        use_memory_efficient = llm_config.get('memory_efficient', False)
+    
+    # Determine chunk size: CLI (if not default) > config > default
+    effective_chunk_size = chunk_size
+    if chunk_size == 1000:  # Default value, check config
+        effective_chunk_size = llm_config.get('chunk_size', 1000)
+    
     console.print("\n[bold cyan]LLM Embedding Generation (Experiment-Driven)[/bold cyan]")
     console.print(f"  Experiment: [green]{config_path.name}[/green]")
     console.print(f"  Dataset: [green]{dataset}[/green]")
@@ -183,6 +205,8 @@ def generate(
     console.print(f"  Input Length: [green]{embedder.input_len}[/green]")
     console.print(f"  Output Length: [green]{embedder.output_len}[/green]")
     console.print(f"  Splits: [green]{', '.join(splits)}[/green]")
+    if use_memory_efficient:
+        console.print(f"  Mode: [yellow]Memory-Efficient (chunk_size={effective_chunk_size})[/yellow]")
     console.print()
     
     succeeded = []
@@ -192,12 +216,23 @@ def generate(
         console.print(f"[bold]━━━ {split} ━━━[/bold]")
         
         try:
-            embedder.generate_ts_embeddings(
-                dataset=dataset,
-                split=split,
-                batch_size=effective_batch_size,
-                force=force,
-            )
+            if use_memory_efficient:
+                # Use memory-efficient chunked processing
+                embedder.generate_ts_embeddings_chunked(
+                    dataset=dataset,
+                    split=split,
+                    batch_size=effective_batch_size,
+                    chunk_size=effective_chunk_size,
+                    force=force,
+                )
+            else:
+                # Use standard processing
+                embedder.generate_ts_embeddings(
+                    dataset=dataset,
+                    split=split,
+                    batch_size=effective_batch_size,
+                    force=force,
+                )
             
             console.print(f"  [green]✓[/green] {split} complete")
             succeeded.append(split)
@@ -502,6 +537,16 @@ def generate_suite(
         "--filter",
         help="Filter experiments by name pattern (case-insensitive)"
     ),
+    memory_efficient: bool = typer.Option(
+        False,
+        "--memory-efficient", "-m",
+        help="Use memory-efficient chunked processing (for large datasets)"
+    ),
+    chunk_size: int = typer.Option(
+        1000,
+        "--chunk-size",
+        help="Samples per chunk in memory-efficient mode"
+    ),
 ):
     """
     Generate LLM embeddings for all experiments in a suite.
@@ -561,6 +606,10 @@ def generate_suite(
     
     console.print(f"\n[bold cyan]LLM Embedding Generation for Suite: {suite_name}[/bold cyan]")
     console.print(f"  Experiments: [green]{len(experiments)}[/green]")
+    if memory_efficient:
+        console.print(f"  Mode: [yellow]Memory-Efficient forced via CLI (chunk_size={chunk_size})[/yellow]")
+    else:
+        console.print(f"  Mode: [dim]Per-experiment config (use --memory-efficient to override all)[/dim]")
     console.print()
     
     # Collect unique embedding configurations to avoid duplicates
@@ -666,15 +715,42 @@ def generate_suite(
         # Override batch size if provided via CLI
         effective_batch_size = batch_size if batch_size is not None else embedder.default_batch_size
         
+        # Determine memory-efficient mode for this experiment:
+        # CLI flag > experiment config > default (False)
+        use_memory_efficient = memory_efficient  # CLI flag takes priority
+        if not memory_efficient:
+            # Check experiment config
+            use_memory_efficient = llm_config.get('memory_efficient', False)
+        
+        # Determine chunk size: CLI (if not default) > experiment config > default
+        effective_chunk_size = chunk_size
+        if chunk_size == 1000:  # Default value, check config
+            effective_chunk_size = llm_config.get('chunk_size', 1000)
+        
+        # Show mode for this dataset if memory-efficient
+        if use_memory_efficient:
+            console.print(f"  [dim]Mode: Memory-Efficient (chunk_size={effective_chunk_size})[/dim]")
+        
         for split in splits:
             console.print(f"  [bold]{split}:[/bold]")
             try:
-                embedder.generate_ts_embeddings(
-                    dataset=dataset,
-                    split=split,
-                    batch_size=effective_batch_size,
-                    force=force,
-                )
+                if use_memory_efficient:
+                    # Use memory-efficient chunked processing
+                    embedder.generate_ts_embeddings_chunked(
+                        dataset=dataset,
+                        split=split,
+                        batch_size=effective_batch_size,
+                        chunk_size=effective_chunk_size,
+                        force=force,
+                    )
+                else:
+                    # Use standard processing
+                    embedder.generate_ts_embeddings(
+                        dataset=dataset,
+                        split=split,
+                        batch_size=effective_batch_size,
+                        force=force,
+                    )
                 console.print(f"    [green]✓[/green] {split} complete")
                 succeeded.append(f"{dataset}/{split}")
             except Exception as e:

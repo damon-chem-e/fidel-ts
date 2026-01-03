@@ -286,6 +286,7 @@ suite:
 
     # =========================================================================
     # TimeCMA on Fidel-TS NYC Traffic Speed Dataset (GPT-2 embeddings)
+    # This is a LARGE dataset - uses memory-efficient chunked processing
     # =========================================================================
     - name: "timecma_gpt2_fidel_nyc_traffic"
       description: "TimeCMA with GPT-2 embeddings on Fidel-TS NYC Traffic Speed (1 epoch test)"
@@ -319,6 +320,9 @@ suite:
           batch_size: 64
           cache_dir: "./LLM_cache/"
           prompt_template: "timecma_v1"
+          # Memory-efficient mode for large Fidel-TS dataset
+          memory_efficient: true
+          chunk_size: 500
         model_config_overrides:
           # NYC Traffic Speed has 1 target (SPEED)
           enc_in: 1
