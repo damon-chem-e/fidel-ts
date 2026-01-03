@@ -44,7 +44,7 @@ training:
   prefetch_factor: 2
   
   # Lightning settings
-  precision: 32                 # Training precision (32/16/bf16)
+  precision: "32"               # Training precision (32/16/bf16)
   gradient_clip_val: 1.0        # Gradient clipping
   test_after_epoch: false       # Run test after each epoch
   
