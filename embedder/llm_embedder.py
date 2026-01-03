@@ -611,8 +611,8 @@ class LLMEmbedder:
         and Fidel-TS datasets (complex nested directories).
         
         For Time-MMD datasets:
-            - Uses data_provider/data_factory for standard loading
-            - Simple root_path/data_path structure
+            - Uses Data_Provider with proper configuration
+            - Loads from data_configs/time_mmd/<Domain>/config.yaml
         
         For Fidel-TS datasets:
             - Has complex nested directory structures
@@ -620,8 +620,8 @@ class LLMEmbedder:
             - Each subdataset (Bear_room, California_ISO, etc.) has unique paths
         
         Args:
-            dataset: Dataset name
-            split: Data split
+            dataset: Dataset name (e.g., 'time_mmd_traffic', 'ETTh1')
+            split: Data split ('train', 'val', 'test')
         
         Returns:
             Tuple of (values, timestamps, metadata)
@@ -630,62 +630,99 @@ class LLMEmbedder:
             - metadata: Dict with 'freq' and other info
         
         Note:
-            This is a simplified implementation. Production use should
-            integrate more tightly with the fidel-ts data loading infrastructure
-            and handle Fidel-TS dataset structures properly.
+            This uses the fidel-ts Data_Provider infrastructure for proper
+            data loading with all preprocessing steps applied.
         """
-        # Import data loading utilities
-        from data_provider.data_factory import data_provider
+        import yaml
+        from pathlib import Path
+        from utils.tools import dotdict
+        from data_provider.data_factory import Data_Provider
         
-        # Build minimal config for data loading
-        class DataConfig:
-            def __init__(self, dataset_name, split, data_root):
-                self.data = dataset_name
-                self.root_path = f'{data_root}/{dataset_name}/'
-                self.data_path = f'{dataset_name}.csv'
-                self.features = 'M'
-                self.target = 'OT'
-                self.freq = 'h'
-                self.seq_len = 96
-                self.label_len = 48
-                self.pred_len = 96
-                self.scale = True
-                self.timeenc = 0
-                self.batch_size = 32
-                self.num_workers = 0
-                self.flag = split
+        print(f"[ LLM Embedder ] Loading data for {dataset}/{split}")
+        
+        # Determine dataset config path
+        # Format: time_mmd_<domain> -> data_configs/time_mmd/<Domain>/config.yaml
+        if dataset.startswith('time_mmd_'):
+            domain = dataset.replace('time_mmd_', '')
+            # Capitalize first letter to match directory structure
+            domain_capitalized = domain.capitalize()
+            config_path = Path(f'data_configs/time_mmd/{domain_capitalized}/config.yaml')
+        else:
+            # Try direct path for other datasets (ETTh1, etc.)
+            config_path = Path(f'data_configs/{dataset}/config.yaml')
+        
+        if not config_path.exists():
+            raise FileNotFoundError(
+                f"Dataset config not found: {config_path}\n"
+                f"Available Time-MMD datasets: time_mmd_traffic, time_mmd_energy, etc."
+            )
+        
+        # Load data config
+        with open(config_path, 'r') as f:
+            data_config = yaml.safe_load(f)
+        
+        # Build minimal args structure for Data_Provider
+        args = dotdict({
+            'data_config': dotdict(data_config),
+            'model_config': dotdict({
+                'task': 'TimeCMA',  # Use TimeCMA task for simple loading
+            }),
+            'batch_size': 32,
+            'input_len': 96,
+            'output_len': 96,
+            'scale': True,
+            'noise': None,
+            'num_workers': 0,
+            'prefetch_factor': None,
+            'disable_buffer': True,
+        })
         
         try:
-            config = DataConfig(dataset, split, self.data_root)
-            data_set, _ = data_provider(config, config.flag)
+            # Create Data_Provider
+            data_provider = Data_Provider(args, buffer=False)
             
-            # Extract all samples
+            # Get the appropriate split
+            if split == 'train':
+                datasets = data_provider.get_train(return_type='set')
+            elif split == 'val':
+                datasets = data_provider.get_val(return_type='set')
+            elif split == 'test':
+                datasets = data_provider.get_test(return_type='set')
+            else:
+                raise ValueError(f"Unknown split: {split}")
+            
+            # Collect all samples from all entities
             all_values = []
             all_timestamps = []
             
-            for i in range(len(data_set)):
-                seq_x, seq_y, seq_x_mark, seq_y_mark = data_set[i]
-                all_values.append(seq_x)
-                all_timestamps.append(seq_x_mark)
+            for entity_id, entity_dataset in datasets.items():
+                for i in range(len(entity_dataset)):
+                    sample = entity_dataset[i]
+                    # Sample format: (sample_id, seq_x, seq_y, x_time, y_time, 
+                    #                 x_hetero, y_hetero, hetero_x_time, hetero_y_time,
+                    #                 hetero_general, hetero_channel)
+                    seq_x = sample[1]  # [seq_len, channels]
+                    x_time = sample[3]  # [seq_len, time_features]
+                    
+                    all_values.append(seq_x)
+                    all_timestamps.append(x_time)
             
-            values = np.stack(all_values, axis=0)
-            timestamps = np.stack(all_timestamps, axis=0) if all_timestamps[0] is not None else None
+            if not all_values:
+                raise ValueError(f"No samples found for {dataset}/{split}")
             
-            metadata = {'freq': config.freq}
+            values = np.stack(all_values, axis=0)  # [N, seq_len, channels]
+            timestamps = np.stack(all_timestamps, axis=0) if all_timestamps else None
+            
+            # Extract frequency from config
+            freq = data_config.get('sampling_rate', 'h')
+            metadata = {'freq': freq, 'dataset': dataset, 'split': split}
+            
+            print(f"[ LLM Embedder ] Loaded {len(values)} samples, shape: {values.shape}")
             
             return values, timestamps, metadata
             
         except Exception as e:
-            print(f"[ warning ] Could not load dataset {dataset}: {e}")
-            print("[ warning ] Using dummy data for testing")
-            
-            # Return dummy data for testing
-            N, L, C = 100, 96, 7
-            values = np.random.randn(N, L, C).astype(np.float32)
-            timestamps = None
-            metadata = {'freq': 'h'}
-            
-            return values, timestamps, metadata
+            raise RuntimeError(f"Failed to load dataset {dataset}/{split}: {e}")
     
     def verify_cache(self, dataset: str, splits: List[str] = None) -> Dict[str, Any]:
         """

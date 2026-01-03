@@ -1,25 +1,49 @@
 """
 CLI module for LLM inference and embedding precomputation.
 
-Generates LLM embeddings from prompts for use with TimeCMA and similar models.
+Generates LLM embeddings for use with TimeCMA and similar models.
 All embeddings must be precomputed before training - no on-the-fly inference supported.
 
+CURRENT SUPPORT:
+    Time Series → Text → LLM Embeddings (via TSPromptBuilder)
+    - Converts time series values to natural language prompts
+    - Uses templates like 'timecma_v1' from the config
+    - Extracts last-token hidden states from LLM
+    
+FUTURE SUPPORT (not yet implemented):
+    Raw Text → LLM Embeddings
+    - Direct embedding of text data (news articles, reports, etc.)
+    - Will use LLMEmbedder.embed_texts() method
+    - Useful for multimodal forecasting with external text sources
+    
+The current embedding process (time series):
+    1. Load time series data from dataset
+    2. Convert each (sample, channel) to a text prompt via TSPromptBuilder
+       (controlled by prompt_template in config, e.g., 'timecma_v1')
+    3. Run LLM to extract last-token hidden states
+    4. Cache embeddings for use during training
+
 This CLI provides commands for:
-- generate: Generate LLM embeddings for a dataset
+- generate: Generate LLM embeddings for a dataset (time series → prompts → LLM → embeddings)
 - verify: Verify that embeddings exist and are valid
 - estimate-memory: Estimate GPU memory requirements for a model
 - list-models: List supported LLM models with specifications
 - list-cached: List cached embeddings for a dataset
+- list-datasets: List available datasets for embedding generation
+- gpu-info: Display current GPU memory information
 
 Examples:
-    # Generate embeddings with default config
-    python -m cli.inference generate ETTh1
+    # List available datasets
+    python -m cli.inference list-datasets
+    
+    # Generate embeddings with GPT-2 (fast, for testing)
+    python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/gpt2.yaml
     
     # Use Qwen 70B with 4-bit quantization
-    python -m cli.inference generate ETTh1 --model Qwen/Qwen2.5-72B-Instruct --quantization 4bit
+    python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/qwen_72b.yaml
     
     # Force regeneration of test split only
-    python -m cli.inference generate ETTh1 --splits test --force
+    python -m cli.inference generate time_mmd_traffic config.yaml --splits test --force
     
     # Check memory requirements
     python -m cli.inference estimate-memory Qwen/Qwen2.5-72B-Instruct --quantization 4bit
@@ -80,24 +104,33 @@ def generate(
     """
     Generate LLM embeddings for a dataset (time series → prompts → embeddings).
     
+    CURRENTLY SUPPORTED: Time series → text prompts → LLM embeddings
+    This uses TSPromptBuilder to convert time series values into natural language
+    prompts (e.g., "From 01/01 to 01/04, the values were 1, 3, 5, ...").
+    
+    FUTURE: Raw text → LLM embeddings (for news, reports, etc.) will be added
+    via a separate command or mode. See LLMEmbedder.embed_texts() for the
+    underlying capability.
+    
     This command generates embeddings by:
     1. Loading time series data from the dataset
-    2. Converting each sample to a text prompt via TSPromptBuilder
+    2. Converting each (sample, channel) to a text prompt via TSPromptBuilder
+       (template controlled by prompt_template in config, e.g., 'timecma_v1')
     3. Running the LLM to extract last-token embeddings
     4. Caching results for use during training
     
     Examples:
-        # Generate with default config (Qwen 72B on H200)
-        python -m cli.inference generate ETTh1 model_configs/llm_embedding/default.yaml
+        # Generate with GPT-2 (fast, for testing)
+        python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/gpt2.yaml
         
-        # Use smaller model config
-        python -m cli.inference generate ETTh1 model_configs/llm_embedding/qwen_7b.yaml
+        # Use larger model config
+        python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/qwen_7b.yaml
         
         # Override model from config
-        python -m cli.inference generate ETTh1 config.yaml --model gpt2
+        python -m cli.inference generate time_mmd_traffic config.yaml --model gpt2
         
         # Regenerate only test split
-        python -m cli.inference generate ETTh1 config.yaml --splits test --force
+        python -m cli.inference generate time_mmd_traffic config.yaml --splits test --force
     """
     from embedder.llm_embedder import LLMEmbedder
     
@@ -128,7 +161,7 @@ def generate(
     else:
         effective_batch_size = 16
     
-    console.print(f"\n[bold cyan]LLM Embedding Generation[/bold cyan]")
+    console.print("\n[bold cyan]LLM Embedding Generation[/bold cyan]")
     console.print(f"  Dataset: [green]{dataset}[/green]")
     console.print(f"  Model: [green]{embedder.model_name}[/green]")
     console.print(f"  Quantization: [green]{embedder.quantization or 'None (fp16)'}[/green]")
@@ -150,6 +183,9 @@ def generate(
             total=len(splits)
         )
         
+        succeeded = []
+        failed = []
+        
         for split in splits:
             progress.update(overall_task, description=f"[cyan]Processing {split} split...")
             
@@ -168,15 +204,26 @@ def generate(
                 )
                 
                 console.print(f"  [green]✓[/green] {split} complete")
+                succeeded.append(split)
                 
             except Exception as e:
                 console.print(f"  [red]✗[/red] {split} failed: {str(e)}")
                 if not force:
-                    console.print(f"    [dim]Use --force to regenerate[/dim]")
+                    console.print("    [dim]Use --force to regenerate[/dim]")
+                failed.append(split)
             
             progress.advance(overall_task)
     
-    console.print(f"\n[green]✓ Embeddings generated for {dataset}[/green]")
+    # Print appropriate summary based on results
+    if failed and not succeeded:
+        console.print(f"\n[red]✗ All splits failed for {dataset}[/red]")
+        raise typer.Exit(code=1)
+    elif failed:
+        console.print(f"\n[yellow]⚠ Partial success for {dataset}: {len(succeeded)}/{len(splits)} splits completed[/yellow]")
+        console.print(f"  [green]Succeeded:[/green] {', '.join(succeeded)}")
+        console.print(f"  [red]Failed:[/red] {', '.join(failed)}")
+    else:
+        console.print(f"\n[green]✓ Embeddings generated for {dataset} ({len(succeeded)} splits)[/green]")
 
 
 @app.command()
@@ -224,11 +271,11 @@ def verify(
     console.print()
     
     if status['valid']:
-        console.print(f"[green]✓ All embeddings verified[/green]")
+        console.print("[green]✓ All embeddings verified[/green]")
         for split, valid in status.get('splits', {}).items():
             console.print(f"  [green]✓[/green] {split}")
     else:
-        console.print(f"[red]✗ Verification failed[/red]")
+        console.print("[red]✗ Verification failed[/red]")
         for issue in status.get('issues', []):
             console.print(f"  [yellow]• {issue}[/yellow]")
         
@@ -360,7 +407,7 @@ def gpu_info():
     
     num_gpus = torch.cuda.device_count()
     
-    console.print(f"\n[bold cyan]GPU Memory Information[/bold cyan]")
+    console.print("\n[bold cyan]GPU Memory Information[/bold cyan]")
     console.print(f"  Available GPUs: [green]{num_gpus}[/green]\n")
     
     table = Table()
@@ -384,6 +431,95 @@ def gpu_info():
         )
     
     console.print(table)
+
+
+@app.command("list-datasets")
+def list_datasets():
+    """
+    List available datasets for LLM embedding generation.
+    
+    Shows all datasets that can be used with the 'generate' command,
+    organized by type (Time-MMD, Fidel-TS, etc.).
+    
+    Examples:
+        python -m cli.inference list-datasets
+    """
+    from pathlib import Path
+    
+    console.print("\n[bold cyan]Available Datasets for LLM Embedding Generation[/bold cyan]\n")
+    
+    # ==========================================================================
+    # Time-MMD Datasets
+    # ==========================================================================
+    time_mmd_path = Path("data_configs/time_mmd")
+    
+    if time_mmd_path.exists():
+        console.print("[bold]Time-MMD Datasets[/bold]")
+        console.print("[dim]Usage: python -m cli.inference generate time_mmd_<domain> <config>[/dim]\n")
+        
+        table = Table()
+        table.add_column("Dataset Name", style="cyan")
+        table.add_column("Domain", style="green")
+        table.add_column("Config Path", style="dim")
+        
+        domains = sorted([d.name for d in time_mmd_path.iterdir() if d.is_dir() and not d.name.startswith('.')])
+        
+        for domain in domains:
+            config_file = time_mmd_path / domain / "config.yaml"
+            if config_file.exists():
+                dataset_name = f"time_mmd_{domain.lower()}"
+                table.add_row(
+                    dataset_name,
+                    domain,
+                    str(config_file),
+                )
+        
+        console.print(table)
+        console.print()
+    else:
+        console.print("[yellow]Time-MMD datasets not found at data_configs/time_mmd/[/yellow]\n")
+    
+    # ==========================================================================
+    # Example Commands
+    # ==========================================================================
+    console.print("[bold]Example Commands[/bold]\n")
+    
+    console.print("  [dim]# Generate embeddings with GPT-2 (fast, for testing)[/dim]")
+    console.print("  python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/gpt2.yaml\n")
+    
+    console.print("  [dim]# Generate embeddings with Qwen 7B (better quality)[/dim]")
+    console.print("  python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/qwen_7b.yaml\n")
+    
+    console.print("  [dim]# Generate only test split[/dim]")
+    console.print("  python -m cli.inference generate time_mmd_traffic config.yaml --splits test\n")
+    
+    # ==========================================================================
+    # Available LLM Configs
+    # ==========================================================================
+    llm_config_path = Path("model_configs/llm_embedding")
+    
+    if llm_config_path.exists():
+        console.print("[bold]Available LLM Embedding Configs[/bold]\n")
+        
+        table = Table()
+        table.add_column("Config File", style="cyan")
+        table.add_column("Description", style="dim")
+        
+        configs = [
+            ("gpt2.yaml", "GPT-2 base (768d) - Fast, for development"),
+            ("qwen_7b.yaml", "Qwen 2.5 7B (3584d) - 24GB+ GPU"),
+            ("qwen_72b.yaml", "Qwen 2.5 72B 4-bit (8192d) - 48GB+ GPU"),
+            ("default.yaml", "Qwen 2.5 72B fp16 (8192d) - H200 (141GB)"),
+        ]
+        
+        for config_name, description in configs:
+            if (llm_config_path / config_name).exists():
+                table.add_row(
+                    f"model_configs/llm_embedding/{config_name}",
+                    description,
+                )
+        
+        console.print(table)
 
 
 if __name__ == "__main__":
