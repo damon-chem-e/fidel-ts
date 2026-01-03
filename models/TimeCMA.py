@@ -167,24 +167,32 @@ class Model(nn.Module):
         """Count number of trainable parameters."""
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
     
-    def forward(self, input_data, input_data_mark, embeddings, **kwargs):
+    def forward(self, x, channel_description, x_mark_enc=None, **kwargs):
         """
         Forward pass for TimeCMA.
         
-        Args:
-            input_data: Input time series [B, seq_len, num_nodes]
-            input_data_mark: Time features [B, seq_len, time_features]
-                (For compatibility; not used in core computation)
-            embeddings: Precomputed LLM embeddings
+        Adapted to fidel-ts framework interface. Maps framework parameters to
+        TimeCMA's expected inputs:
+            - x → input_data: Input time series [B, seq_len, num_nodes]
+            - x_mark_enc → input_data_mark: Time features (optional, not used)
+            - channel_description → embeddings: Precomputed LLM embeddings
                 Shape: [B, d_llm, num_nodes] or [B, d_llm, num_nodes, 1]
+        
+        Args:
+            x: Input time series [B, seq_len, num_nodes]
+            channel_description: Precomputed LLM embeddings from LLMEmbeddingProvider
+            x_mark_enc: Time features (optional, not used in TimeCMA)
             **kwargs: Additional arguments (ignored for compatibility)
         
         Returns:
             predictions: [B, pred_len, num_nodes]
         """
+        # Map framework interface to TimeCMA's internal names
+        input_data = x
+        embeddings = channel_description
+        
         # Ensure float tensors
         input_data = input_data.float()
-        input_data_mark = input_data_mark.float()
         embeddings = embeddings.float()
         
         # Handle embedding shape: squeeze trailing dimension if present
