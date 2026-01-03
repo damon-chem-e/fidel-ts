@@ -77,6 +77,11 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     args.test_after_epoch = config.training.test_after_epoch
     args.test = False  # Default, can be overridden
     
+    # Apply model-specific training configs (e.g., LeRet two-stage training)
+    # This abstracts away model-specific config handling
+    from cli.config.model_training import apply_model_configs_to_args
+    apply_model_configs_to_args(args, config.training, config.model.name)
+    
     # Environment variables
     args.hf_mirror = config.hf_mirror
     
@@ -90,6 +95,11 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
         model_config = merge_configs(model_config, config.model_config_overrides)
     
     args.model_config = dotdict(model_config)
+    
+    # Extract model architecture parameters from model config
+    # (These are used by model-specific trainers for loss computation)
+    args.patch_len = model_config.get('patch_len', 16)
+    args.stride = model_config.get('stride', 8)
     
     with open(args.data_config, 'r') as f:
         data_configs = yaml.safe_load(f)
@@ -185,7 +195,16 @@ def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: 
     
     # Run training with GPU monitoring context
     with gpu_monitoring_context(args, exp_manager, log_interval_s=30.0):
-        # Train model (pass exp_manager for tracking)
-        model = train_lightning_model(args, exp_manager=exp_manager)
+        # Check for model-specific training handler
+        from exp.model_specific import has_custom_trainer, get_model_trainer
+        
+        if has_custom_trainer(args.model, framework="lightning"):
+            # Use model-specific trainer (e.g., LeRet two-stage training)
+            trainer_fn = get_model_trainer(args.model, framework="lightning")
+            model = trainer_fn(args, exp_manager=exp_manager)
+        else:
+            # Standard Lightning training for other models
+            model = train_lightning_model(args, exp_manager=exp_manager)
+        
         print(f'>>>>>>>training completed : {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>>')
 

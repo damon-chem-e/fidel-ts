@@ -3,13 +3,22 @@ Pydantic models for configuration structure.
 
 This module defines the complete type-safe configuration structure using Pydantic,
 replacing the previous dotdict-based system.
+
+Model-specific training configs are in cli/config/model_training.py
 """
 
 from typing import Optional, Union, List, Dict, Any
 from pathlib import Path
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 import yaml
 
+# Import model-specific training configs from dedicated module
+from cli.config.model_training import LeRetTrainingConfig
+
+
+# =============================================================================
+# Base Configuration Models
+# =============================================================================
 
 class ModelConfig(BaseModel):
     """Model configuration section."""
@@ -74,6 +83,15 @@ class TrainingConfig(BaseModel):
     
     # Evaluation during training
     evaluate_test_during_training: bool = Field(default=False, description="Whether to evaluate on test set during training epochs (default: False to hold out test)")
+    
+    # LeRet-specific two-stage training configuration
+    leret: Optional[LeRetTrainingConfig] = Field(
+        default=None,
+        description=(
+            "LeRet-specific two-stage training configuration. "
+            "Only used when model is LeRet. Controls pretrain/finetune stages."
+        )
+    )
     
     model_config = ConfigDict(extra="allow")  # Allow extra fields for flexibility
     
