@@ -15,7 +15,7 @@ suite:
   # Execution settings
   execution:
     parallel: false
-    continue_on_error: true
+    continue_on_error: false
     log_dir: "./logs/suites/leret_test"
     
   # Experiments in this suite

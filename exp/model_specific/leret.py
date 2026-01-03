@@ -505,8 +505,9 @@ class LeRetPyTorchTrainer:
         self.stride = getattr(args, 'stride', 8)
         
         # Data provider
-        from data_provider.data_provider import DataProvider
-        self.data_provider = DataProvider(args.data_config, args)
+        from data_provider.data_factory import Data_Provider
+        console = exp_manager.get_console() if exp_manager else None
+        self.data_provider = Data_Provider(args, buffer=(not args.disable_buffer), console=console)
     
     def _get_device(self):
         """Get the training device."""
