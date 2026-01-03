@@ -1,5 +1,5 @@
 # Experiment Suite: TimeCMA Test Suite
-# Description: Test TimeCMA (Cross-Modality Alignment) on Time-MMD datasets
+# Description: Test TimeCMA (Cross-Modality Alignment) on Time-MMD, Fidel-TS, and TTC datasets
 # Usage: python -m cli.suite run configs/experiment_suites/timecma_test.yaml
 #
 # IMPORTANT: This suite requires pre-computed LLM embeddings!
@@ -17,8 +17,8 @@
 
 suite:
   name: "timecma_test"
-  description: "Test TimeCMA model on Time-MMD datasets (1 epoch each, requires pre-computed embeddings)"
-  tags: ["timecma", "multimodal", "cross-modal", "llm", "test", "aaai2025"]
+  description: "Test TimeCMA model on Time-MMD, Fidel-TS, and TTC datasets (1 epoch each, requires pre-computed embeddings)"
+  tags: ["timecma", "multimodal", "cross-modal", "llm", "test", "aaai2025", "fidel-ts", "ttc"]
   
   # Execution settings
   execution:
@@ -138,7 +138,7 @@ suite:
     # =========================================================================
     - name: "timecma_gpt2_time_mmd_traffic_pred96"
       description: "TimeCMA on Traffic with longer prediction horizon (pred_len=96)"
-      enabled: true
+      enabled: false  # Disabled: Traffic dataset too small for seq_len=96 + pred_len=96
       template: "configs/templates/pytorch_training.yaml"
       overrides:
         model:
@@ -284,4 +284,105 @@ suite:
           type: "pytorch"
           output_dir: "outputs/suites/timecma_test"
 
+    # =========================================================================
+    # TimeCMA on Fidel-TS NYC Traffic Speed Dataset (GPT-2 embeddings)
+    # =========================================================================
+    - name: "timecma_gpt2_fidel_nyc_traffic"
+      description: "TimeCMA with GPT-2 embeddings on Fidel-TS NYC Traffic Speed (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeCMA"
+          config_path: "model_configs/general/TimeCMA.yaml"
+        data:
+          name: "fidel_NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_H.yaml"
+        training:
+          input_len: 96
+          output_len: 24
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
+        model_config_overrides:
+          # NYC Traffic Speed has 1 target (SPEED)
+          enc_in: 1
+          channel: 32
+          d_ff: 32
+          e_layers: 1
+          d_layers: 1
+          n_heads: 8
+          dropout: 0.2
+          d_llm: 768
+          seq_len: 96
+          pred_len: 24
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timecma_test"
+
+    # =========================================================================
+    # TimeCMA on TTC Climate Dataset (GPT-2 embeddings)
+    # =========================================================================
+    - name: "timecma_gpt2_ttc_climate"
+      description: "TimeCMA with GPT-2 embeddings on TTC Climate (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeCMA"
+          config_path: "model_configs/general/TimeCMA.yaml"
+        data:
+          name: "ttc_climate"
+          config_path: "data_configs/ttc/climate/config.yaml"
+        training:
+          input_len: 96
+          output_len: 24
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
+        model_config_overrides:
+          # TTC Climate has 4 features (temp, precip, humidity, windspeed)
+          enc_in: 4
+          channel: 32
+          d_ff: 32
+          e_layers: 1
+          d_layers: 1
+          n_heads: 8
+          dropout: 0.2
+          d_llm: 768
+          seq_len: 96
+          pred_len: 24
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timecma_test"
 
