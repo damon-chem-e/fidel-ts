@@ -208,6 +208,7 @@ def generate(
                 
             except Exception as e:
                 console.print(f"  [red]✗[/red] {split} failed: {str(e)}")
+                console.print_exception(show_locals=False)
                 if not force:
                     console.print("    [dim]Use --force to regenerate[/dim]")
                 failed.append(split)

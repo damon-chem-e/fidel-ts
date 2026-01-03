@@ -802,7 +802,7 @@ class LLMEmbedder:
                 'task': 'TimeCMA',  # Use TimeCMA task for simple loading
                 'stride': 1,
                 'hetero_align_stride': False,
-                'custom_input': False,
+                'custom_input': None,  # Use default task-based input (None, not False)
                 'freq': 'h',
             }),
             'model': 'TimeCMA',  # Required for model name checks in data loader
@@ -864,7 +864,8 @@ class LLMEmbedder:
             return values, timestamps, metadata
             
         except Exception as e:
-            raise RuntimeError(f"Failed to load dataset {dataset}/{split}: {e}")
+            import traceback
+            raise RuntimeError(f"Failed to load dataset {dataset}/{split}: {e}") from e
     
     def verify_cache(self, dataset: str, splits: List[str] = None) -> Dict[str, Any]:
         """
