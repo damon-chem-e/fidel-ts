@@ -1,0 +1,394 @@
+# Experiment Suite: Time-LLM Test Suite
+# Description: Test Time-LLM (Reprogramming LLMs) on Time-MMD, Fidel-TS, and TTC datasets
+# Usage: python -m cli.suite run configs/experiment_suites/time_llm_test.yaml
+#
+# NOTE: Time-LLM loads the frozen LLM backbone ONLINE during training.
+# This is different from TimeCMA which uses pre-computed embeddings.
+# No embedding pre-generation is required!
+#
+# Reference:
+#   Jin et al., "Time-LLM: Time Series Forecasting by Reprogramming 
+#   Large Language Models" (ICLR 2024)
+
+suite:
+  name: "time_llm_test"
+  description: "Test Time-LLM model on Time-MMD, Fidel-TS, and TTC datasets (1 epoch each, frozen GPT-2 backbone)"
+  tags: ["time-llm", "reprogramming", "llm", "frozen-backbone", "test", "iclr2024", "fidel-ts", "ttc"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: false
+    log_dir: "./logs/suites/time_llm_test"
+    
+  # Experiments in this suite
+  experiments:
+    # =========================================================================
+    # Time-LLM on Time-MMD Traffic (GPT-2 backbone)
+    # =========================================================================
+    - name: "time_llm_gpt2_time_mmd_traffic"
+      description: "Time-LLM with frozen GPT-2 backbone on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          input_len: 96
+          output_len: 24
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+          # Time-LLM specific training config
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null  # No quantization for GPT-2 (small model)
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        model_config_overrides:
+          # Channel configuration (Time-MMD Traffic has 1 target variable)
+          enc_in: 1
+          # LLM backbone
+          llm_model: "gpt2"
+          # Patch configuration
+          patch_len: 16
+          stride: 8
+          # Time-LLM architecture parameters
+          d_model: 16       # Patch embedding dimension
+          d_ff: 32          # Feed-forward dimension
+          n_heads: 8        # Attention heads for reprogramming
+          dropout: 0.1
+          # Sequence configuration
+          seq_len: 96
+          pred_len: 24
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/time_llm_test"
+    
+    # =========================================================================
+    # Time-LLM on Time-MMD Energy (GPT-2 backbone)
+    # =========================================================================
+    - name: "time_llm_gpt2_time_mmd_energy"
+      description: "Time-LLM with frozen GPT-2 backbone on Time-MMD Energy (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "time_mmd_energy"
+          config_path: "data_configs/time_mmd/Energy/config.yaml"
+        training:
+          input_len: 96
+          output_len: 24
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        model_config_overrides:
+          enc_in: 1
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          seq_len: 96
+          pred_len: 24
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/time_llm_test"
+    
+    # =========================================================================
+    # Time-LLM with different prediction horizons
+    # =========================================================================
+    - name: "time_llm_gpt2_time_mmd_traffic_pred96"
+      description: "Time-LLM on Traffic with longer prediction horizon (pred_len=96)"
+      enabled: false  # Disabled: Traffic dataset too small for seq_len=96 + pred_len=96
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          input_len: 96
+          output_len: 96
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        model_config_overrides:
+          enc_in: 1
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          seq_len: 96
+          pred_len: 96
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/time_llm_test"
+    
+    # =========================================================================
+    # Time-LLM with larger model (closer to paper config)
+    # =========================================================================
+    - name: "time_llm_large_time_mmd_traffic"
+      description: "Time-LLM with larger model dimensions on Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          input_len: 96
+          output_len: 24
+          batch_size: 16  # Smaller batch for larger model
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: true
+            dataset_description: "Time-MMD Traffic dataset for traffic flow prediction"
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        model_config_overrides:
+          enc_in: 1
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          # Larger model dimensions
+          d_model: 32
+          d_ff: 128
+          n_heads: 8
+          dropout: 0.1
+          prompt_domain: true
+          dataset_description: "Time-MMD Traffic dataset for traffic flow prediction"
+          seq_len: 96
+          pred_len: 24
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/time_llm_test"
+    
+    # =========================================================================
+    # Time-LLM on Climate dataset
+    # =========================================================================
+    - name: "time_llm_gpt2_time_mmd_climate"
+      description: "Time-LLM with frozen GPT-2 backbone on Time-MMD Climate (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "time_mmd_climate"
+          config_path: "data_configs/time_mmd/Climate/config.yaml"
+        training:
+          input_len: 96
+          output_len: 24
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        model_config_overrides:
+          enc_in: 1
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          seq_len: 96
+          pred_len: 24
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/time_llm_test"
+
+    # =========================================================================
+    # Time-LLM on Fidel-TS NYC Traffic Speed Dataset (GPT-2 backbone)
+    # This is a LARGE dataset
+    # =========================================================================
+    - name: "time_llm_gpt2_fidel_nyc_traffic"
+      description: "Time-LLM with frozen GPT-2 backbone on Fidel-TS NYC Traffic Speed (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "fidel_NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_H.yaml"
+        training:
+          input_len: 96
+          output_len: 24
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: true
+            dataset_description: "NYC Traffic Speed dataset from Fidel-TS for urban traffic prediction"
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        model_config_overrides:
+          # NYC Traffic Speed has 1 target (SPEED)
+          enc_in: 1
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          prompt_domain: true
+          dataset_description: "NYC Traffic Speed dataset from Fidel-TS for urban traffic prediction"
+          seq_len: 96
+          pred_len: 24
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/time_llm_test"
+
+    # =========================================================================
+    # Time-LLM on TTC Climate Dataset (GPT-2 backbone)
+    # =========================================================================
+    - name: "time_llm_gpt2_ttc_climate"
+      description: "Time-LLM with frozen GPT-2 backbone on TTC Climate (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "ttc_climate"
+          config_path: "data_configs/ttc/climate/config.yaml"
+        training:
+          input_len: 96
+          output_len: 24
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: true
+            dataset_description: "TTC Climate dataset for temperature and precipitation forecasting"
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false
+        model_config_overrides:
+          # TTC Climate has 4 features (temp, precip, humidity, windspeed)
+          enc_in: 4
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          prompt_domain: true
+          dataset_description: "TTC Climate dataset for temperature and precipitation forecasting"
+          seq_len: 96
+          pred_len: 24
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/time_llm_test"
+
