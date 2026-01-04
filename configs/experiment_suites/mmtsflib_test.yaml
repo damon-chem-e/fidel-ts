@@ -209,7 +209,7 @@ suite:
     
     # ============================================================================
     # Time-MMD Dataset Experiments (faster testing with smaller dataset)
-    # Note: Time-MMD uses pre-computed BERT embeddings (768-dim) via timemmd_text_output
+    # All experiments use GPT-2 LLM embeddings with mmtsflib_v1 prompt template
     # ============================================================================
     
     # MMTSFlib with iTransformer encoder on Time-MMD Traffic dataset
@@ -229,15 +229,13 @@ suite:
           n_heads: 8
           e_layers: 2
           d_ff: 2048
-          input_text_dim: 768  # Time-MMD uses BERT embeddings (768-dim)
+          input_text_dim: 768  # GPT-2 base hidden dimension
           prompt_weight_mode: "fixed"
           prompt_weight: 0.01
           pool_type: "avg"
         data:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
-        data_config:
-          timemmd_text_output: embedding  # Use pre-computed BERT embeddings from Time-MMD
         training:
           input_len: 24
           output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
@@ -247,6 +245,13 @@ suite:
           epochs: 1
           track_per_sample: false
           evaluate_test_during_training: false
+        llm_embedding:
+          model_name: "gpt2"
+          cache_dir: "./LLM_cache/"
+          extraction_mode: "last_token"
+          max_length: 512
+          prompt_template: "mmtsflib_v1"
+          batch_size: 64
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/mmtsflib_test"
@@ -273,15 +278,13 @@ suite:
           patch_len: 16
           stride: 8
           revin: true
-          input_text_dim: 768  # Time-MMD uses BERT embeddings (768-dim)
+          input_text_dim: 768  # GPT-2 base hidden dimension
           prompt_weight_mode: "fixed"
           prompt_weight: 0.01
           pool_type: "avg"
         data:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
-        data_config:
-          timemmd_text_output: embedding  # Use pre-computed BERT embeddings from Time-MMD
         training:
           input_len: 24
           output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
@@ -291,6 +294,13 @@ suite:
           epochs: 1
           track_per_sample: false
           evaluate_test_during_training: false
+        llm_embedding:
+          model_name: "gpt2"
+          cache_dir: "./LLM_cache/"
+          extraction_mode: "last_token"
+          max_length: 512
+          prompt_template: "mmtsflib_v1"
+          batch_size: 64
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/mmtsflib_test"
@@ -311,15 +321,13 @@ suite:
           seq_len: 24
           pred_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
           individual: false
-          input_text_dim: 768  # Time-MMD uses BERT embeddings (768-dim)
+          input_text_dim: 768  # GPT-2 base hidden dimension
           prompt_weight_mode: "fixed"
           prompt_weight: 0.01
           pool_type: "avg"
         data:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
-        data_config:
-          timemmd_text_output: embedding  # Use pre-computed BERT embeddings from Time-MMD
         training:
           input_len: 24
           output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
@@ -329,6 +337,13 @@ suite:
           epochs: 1
           track_per_sample: false
           evaluate_test_during_training: false
+        llm_embedding:
+          model_name: "gpt2"
+          cache_dir: "./LLM_cache/"
+          extraction_mode: "last_token"
+          max_length: 512
+          prompt_template: "mmtsflib_v1"
+          batch_size: 64
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/mmtsflib_test"
@@ -356,15 +371,13 @@ suite:
           n_heads: 8
           e_layers: 2
           d_ff: 2048
-          input_text_dim: 768
+          input_text_dim: 768  # GPT-2 base hidden dimension
           prompt_weight_mode: "fixed"
           prompt_weight: 0.01
           pool_type: "max"  # Test max pooling
         data:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
-        data_config:
-          timemmd_text_output: embedding
         training:
           input_len: 24
           output_len: 6
@@ -374,6 +387,13 @@ suite:
           epochs: 1
           track_per_sample: false
           evaluate_test_during_training: false
+        llm_embedding:
+          model_name: "gpt2"
+          cache_dir: "./LLM_cache/"
+          extraction_mode: "last_token"
+          max_length: 512
+          prompt_template: "mmtsflib_v1"
+          batch_size: 64
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/mmtsflib_test"
@@ -397,15 +417,13 @@ suite:
           n_heads: 8
           e_layers: 2
           d_ff: 2048
-          input_text_dim: 768
+          input_text_dim: 768  # GPT-2 base hidden dimension
           prompt_weight_mode: "fixed"
           prompt_weight: 0.01
           pool_type: "attention"  # Test attention pooling
         data:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
-        data_config:
-          timemmd_text_output: embedding
         training:
           input_len: 24
           output_len: 6
@@ -415,6 +433,13 @@ suite:
           epochs: 1
           track_per_sample: false
           evaluate_test_during_training: false
+        llm_embedding:
+          model_name: "gpt2"
+          cache_dir: "./LLM_cache/"
+          extraction_mode: "last_token"
+          max_length: 512
+          prompt_template: "mmtsflib_v1"
+          batch_size: 64
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/mmtsflib_test"
