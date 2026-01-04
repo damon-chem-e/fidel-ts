@@ -372,21 +372,28 @@ class TimeLLM(nn.Module):
         x_enc_flat = x_enc.permute(0, 2, 1).contiguous().reshape(B * N, T, 1)
         
         # Step 3: Calculate dynamic prompt statistics
+        # Ensure computations are on the correct device
+        x_enc_flat = x_enc_flat.to(x_enc.device)
         lags = DynamicPromptBuilder.calculate_lags(x_enc_flat, self.top_k)
         prompts = DynamicPromptBuilder.build_prompts(
             x_enc_flat, self.description, self.pred_len, self.seq_len, lags
         )
         
         # Step 4: Tokenize prompts and get prompt embeddings
-        prompt_tokens = self.tokenizer(
-            prompts, 
-            return_tensors="pt", 
-            padding=True, 
-            truncation=True, 
-            max_length=2048
-        ).input_ids.to(x_enc.device)
+        # Tokenize on CPU (faster for tokenizer) then move to device
+        # Use reasonable max_length (prompts are typically ~100-150 tokens)
+        with torch.no_grad():  # Tokenization doesn't need gradients
+            prompt_tokens = self.tokenizer(
+                prompts, 
+                return_tensors="pt", 
+                padding=True, 
+                truncation=True, 
+                max_length=512  # Reduced from 2048 - prompts are much shorter
+            ).input_ids.to(x_enc.device)
         
         # Get prompt embeddings from LLM's embedding layer
+        # Note: Even though LLM is frozen, we need gradients for the reprogramming layer
+        # that attends to these embeddings, so we don't use no_grad here
         prompt_embeddings = self.llm_model.get_input_embeddings()(prompt_tokens)
         
         # Step 5: Map word embeddings to reduced vocabulary

@@ -323,7 +323,7 @@ suite:
           # Memory-efficient mode for large Fidel-TS dataset (~30M observations)
           # Use large chunk_size to maximize GPU utilization
           memory_efficient: true
-          chunk_size: 200000
+          chunk_size: 5000
         model_config_overrides:
           # NYC Traffic Speed has 1 target (SPEED)
           enc_in: 1
