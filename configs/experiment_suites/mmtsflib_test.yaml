@@ -1,0 +1,390 @@
+# Experiment Suite: MMTSFlib Model Test
+# Description: Test MMTSFlib (prediction-level late fusion) with supported unimodal encoders for 1 epoch each
+# Usage: python -m cli.suite run configs/experiment_suites/mmtsflib_test.yaml
+# Purpose: Verify that MMTSFlib works correctly with each unimodal encoder type and both prompt_weight modes
+
+suite:
+  name: "mmtsflib_test"
+  description: "Test MMTSFlib model with supported unimodal encoders (iTransformer, PatchTST, DLinear) and learned/fixed weight modes - 1 epoch each"
+  tags: ["mmtsflib", "multimodal", "pytorch", "test", "tgtsf", "late-fusion"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/mmtsflib_test"
+  
+  # Experiments in this suite
+  experiments:
+    # ============================================================================
+    # NYC Traffic Speed Experiments
+    # ============================================================================
+    
+    # MMTSFlib with iTransformer (default encoder) - Fixed prompt weight
+    - name: "mmtsflib_itransformer_fixed_nyc_traffic_speed"
+      description: "MMTSFlib with iTransformer encoder (fixed prompt_weight) on NYC Traffic Speed (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "MMTSFlib"
+          config_path: "model_configs/general/MMTSFlib.yaml"
+        model_config_overrides:
+          unimodal_model_type: "iTransformer"
+          seq_len: 96
+          pred_len: 96
+          d_model: 512
+          n_heads: 8
+          e_layers: 2
+          d_ff: 2048
+          input_text_dim: 768  # BERT embedding dimension
+          prompt_weight_mode: "fixed"
+          prompt_weight: 0.01
+          pool_type: "avg"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 96
+          output_len: 96
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/mmtsflib_test"
+        wandb:
+          enabled: false
+    
+    # MMTSFlib with iTransformer - Learned prompt weight
+    - name: "mmtsflib_itransformer_learned_nyc_traffic_speed"
+      description: "MMTSFlib with iTransformer encoder (learned prompt_weight) on NYC Traffic Speed (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "MMTSFlib"
+          config_path: "model_configs/general/MMTSFlib.yaml"
+        model_config_overrides:
+          unimodal_model_type: "iTransformer"
+          seq_len: 96
+          pred_len: 96
+          d_model: 512
+          n_heads: 8
+          e_layers: 2
+          d_ff: 2048
+          input_text_dim: 768  # BERT embedding dimension
+          prompt_weight_mode: "learned"
+          prompt_weight_initial: 0.01
+          pool_type: "avg"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 96
+          output_len: 96
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/mmtsflib_test"
+        wandb:
+          enabled: false
+    
+    # MMTSFlib with PatchTST encoder
+    - name: "mmtsflib_patchtst_nyc_traffic_speed"
+      description: "MMTSFlib with PatchTST encoder on NYC Traffic Speed (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "MMTSFlib"
+          config_path: "model_configs/general/MMTSFlib.yaml"
+        model_config_overrides:
+          unimodal_model_type: "PatchTST"
+          seq_len: 96
+          pred_len: 96
+          d_model: 512
+          n_heads: 4
+          e_layers: 3
+          d_ff: 128
+          patch_len: 16
+          stride: 8
+          revin: true
+          input_text_dim: 768  # BERT embedding dimension
+          prompt_weight_mode: "fixed"
+          prompt_weight: 0.01
+          pool_type: "avg"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 96
+          output_len: 96
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/mmtsflib_test"
+        wandb:
+          enabled: false
+    
+    # MMTSFlib with DLinear encoder
+    - name: "mmtsflib_dlinear_nyc_traffic_speed"
+      description: "MMTSFlib with DLinear encoder on NYC Traffic Speed (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "MMTSFlib"
+          config_path: "model_configs/general/MMTSFlib.yaml"
+        model_config_overrides:
+          unimodal_model_type: "DLinear"
+          seq_len: 96
+          pred_len: 96
+          individual: false
+          input_text_dim: 768  # BERT embedding dimension
+          prompt_weight_mode: "fixed"
+          prompt_weight: 0.01
+          pool_type: "avg"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 96
+          output_len: 96
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/mmtsflib_test"
+        wandb:
+          enabled: false
+    
+    # ============================================================================
+    # Time-MMD Dataset Experiments (faster testing with smaller dataset)
+    # ============================================================================
+    
+    # MMTSFlib with iTransformer encoder on Time-MMD Traffic dataset
+    - name: "mmtsflib_itransformer_time_mmd"
+      description: "MMTSFlib with iTransformer encoder on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "MMTSFlib"
+          config_path: "model_configs/general/MMTSFlib.yaml"
+        model_config_overrides:
+          unimodal_model_type: "iTransformer"
+          seq_len: 24
+          pred_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
+          d_model: 512
+          n_heads: 8
+          e_layers: 2
+          d_ff: 2048
+          input_text_dim: 768  # BERT embedding dimension
+          prompt_weight_mode: "fixed"
+          prompt_weight: 0.01
+          pool_type: "avg"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding  # Use embeddings for MMTSFlib model
+        training:
+          input_len: 24
+          output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/mmtsflib_test"
+        wandb:
+          enabled: false
+    
+    # MMTSFlib with PatchTST encoder on Time-MMD Traffic dataset
+    - name: "mmtsflib_patchtst_time_mmd"
+      description: "MMTSFlib with PatchTST encoder on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "MMTSFlib"
+          config_path: "model_configs/general/MMTSFlib.yaml"
+        model_config_overrides:
+          unimodal_model_type: "PatchTST"
+          seq_len: 24
+          pred_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
+          d_model: 512
+          n_heads: 4
+          e_layers: 3
+          d_ff: 128
+          patch_len: 16
+          stride: 8
+          revin: true
+          input_text_dim: 768  # BERT embedding dimension
+          prompt_weight_mode: "fixed"
+          prompt_weight: 0.01
+          pool_type: "avg"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding  # Use embeddings for MMTSFlib model
+        training:
+          input_len: 24
+          output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/mmtsflib_test"
+        wandb:
+          enabled: false
+    
+    # MMTSFlib with DLinear encoder on Time-MMD Traffic dataset
+    - name: "mmtsflib_dlinear_time_mmd"
+      description: "MMTSFlib with DLinear encoder on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "MMTSFlib"
+          config_path: "model_configs/general/MMTSFlib.yaml"
+        model_config_overrides:
+          unimodal_model_type: "DLinear"
+          seq_len: 24
+          pred_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
+          individual: false
+          input_text_dim: 768  # BERT embedding dimension
+          prompt_weight_mode: "fixed"
+          prompt_weight: 0.01
+          pool_type: "avg"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding  # Use embeddings for MMTSFlib model
+        training:
+          input_len: 24
+          output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/mmtsflib_test"
+        wandb:
+          enabled: false
+    
+    # ============================================================================
+    # Pooling Strategy Tests (using Time-MMD for faster testing)
+    # ============================================================================
+    
+    # MMTSFlib with max pooling
+    - name: "mmtsflib_itransformer_maxpool_time_mmd"
+      description: "MMTSFlib with iTransformer + max pooling on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "MMTSFlib"
+          config_path: "model_configs/general/MMTSFlib.yaml"
+        model_config_overrides:
+          unimodal_model_type: "iTransformer"
+          seq_len: 24
+          pred_len: 6
+          d_model: 512
+          n_heads: 8
+          e_layers: 2
+          d_ff: 2048
+          input_text_dim: 768
+          prompt_weight_mode: "fixed"
+          prompt_weight: 0.01
+          pool_type: "max"  # Test max pooling
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/mmtsflib_test"
+        wandb:
+          enabled: false
+    
+    # MMTSFlib with attention pooling
+    - name: "mmtsflib_itransformer_attnpool_time_mmd"
+      description: "MMTSFlib with iTransformer + attention pooling on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "MMTSFlib"
+          config_path: "model_configs/general/MMTSFlib.yaml"
+        model_config_overrides:
+          unimodal_model_type: "iTransformer"
+          seq_len: 24
+          pred_len: 6
+          d_model: 512
+          n_heads: 8
+          e_layers: 2
+          d_ff: 2048
+          input_text_dim: 768
+          prompt_weight_mode: "fixed"
+          prompt_weight: 0.01
+          pool_type: "attention"  # Test attention pooling
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/mmtsflib_test"
+        wandb:
+          enabled: false

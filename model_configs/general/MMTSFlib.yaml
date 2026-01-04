@@ -1,0 +1,125 @@
+# MM-TSFlib Model Configuration
+# Prediction-level late fusion based on MM-TSFlib / Time-MMD
+#
+# Architecture:
+#   1. Any unimodal TS model produces predictions
+#   2. Text embeddings projected via MLP to prediction dim
+#   3. Pooled and normalized
+#   4. Ensemble: (1-w)*ts_pred + w*(text_pred + prior)
+#
+# Reference:
+#   MM-TSFlib: https://github.com/AdityaLab/MM-TSFlib
+#   Time-MMD: https://github.com/AdityaLab/Time-MMD
+
+model: MMTSFlib
+
+# =============================================================================
+# Unimodal Time Series Model Configuration
+# =============================================================================
+
+# Which unimodal model to wrap as the TS backbone
+# Options: PatchTST, DLinear, iTransformer, FEDformer, Informer, FITS, Autoformer
+unimodal_model_type: "iTransformer"
+
+# Base time series parameters (passed to unimodal model)
+seq_len: 96
+pred_len: 24
+enc_in: 1
+
+# =============================================================================
+# iTransformer Parameters (default backbone)
+# =============================================================================
+d_model: 512
+n_heads: 8
+e_layers: 2
+d_ff: 2048
+dropout: 0.1
+activation: gelu
+use_norm: True
+
+# =============================================================================
+# PatchTST Parameters (if using unimodal_model_type: PatchTST)
+# =============================================================================
+# Uncomment and adjust if using PatchTST as backbone:
+# d_model: 512
+# n_heads: 4
+# e_layers: 3
+# d_ff: 128
+# patch_len: 16
+# stride: 8
+# revin: True
+# affine: False
+# subtract_last: False
+# decomposition: False
+# kernel_size: 25
+
+# =============================================================================
+# DLinear Parameters (if using unimodal_model_type: DLinear)
+# =============================================================================
+# Uncomment if using DLinear as backbone:
+individual: False
+
+# =============================================================================
+# Text Processing Configuration
+# =============================================================================
+
+# Dimension of input text embeddings from LLMEmbeddingProvider
+# Common values:
+#   - 768: BERT-base, GPT-2
+#   - 1024: GPT-2 Medium
+#   - 4096: LLaMA
+input_text_dim: 768
+
+# MLP projection parameters
+# Hidden dimension = input_text_dim / text_mlp_reduction
+# Original MM-TSFlib uses reduction=8 (e.g., 768 -> 96 -> pred_len)
+text_mlp_reduction: 8
+text_mlp_dropout: 0.3
+
+# Pooling strategy for aggregating token embeddings
+# Options:
+#   - avg: Global average pooling (most stable, recommended)
+#   - max: Global max pooling
+#   - min: Global min pooling
+#   - attention: Attention-weighted pooling using TS predictions
+pool_type: "avg"
+
+# =============================================================================
+# Fusion Configuration
+# =============================================================================
+
+# Prompt weight mode: 'fixed' (hyperparameter) or 'learned' (trainable)
+# Use 'learned' to let the model find optimal mixing weight during training
+prompt_weight_mode: "fixed"
+
+# Mixing weight w in ensemble formula: (1-w)*ts_pred + w*text_pred
+# MM-TSFlib default is 0.01, meaning 99% TS and 1% text
+# This can be tuned per dataset - higher values give more weight to text
+# Recommended range: 0.001 to 0.2
+# Used when prompt_weight_mode: "fixed"
+prompt_weight: 0.01
+
+# Initial value for learned prompt weight
+# Only used when prompt_weight_mode: "learned"
+# The learned weight will start near this value (via inverse sigmoid initialization)
+prompt_weight_initial: 0.01
+
+# Whether to add historical prior to text predictions
+# Original MM-TSFlib uses prior_history_avg from the Time-MMD dataset
+# Set to True if your dataset provides prior_y values
+use_prior: False
+
+# =============================================================================
+# Task Configuration
+# =============================================================================
+
+task: TGTSF  # Text-guided time series forecasting
+
+# =============================================================================
+# Training Parameters (used by trainer)
+# =============================================================================
+
+learning_rate: 0.0001
+batch_size: 32
+train_epochs: 50
+patience: 10

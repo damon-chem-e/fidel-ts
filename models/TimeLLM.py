@@ -442,15 +442,15 @@ class TimeLLM(nn.Module):
         # END DEBUG
         
         # Get prompt embeddings from LLM's embedding layer
-        # Note: Even though LLM is frozen, we need gradients for the reprogramming layer
-        # that attends to these embeddings, so we don't use no_grad here
+        # This is just a lookup table operation, no gradients needed
         
         # BEGIN DEBUG
         print(f"[DEBUG] Step 4c: Getting prompt embeddings from LLM...", flush=True)
         embed_start = time.time()
         # END DEBUG
         
-        prompt_embeddings = self.llm_model.get_input_embeddings()(prompt_tokens)
+        with torch.no_grad():  # Embedding lookup doesn't need gradients
+            prompt_embeddings = self.llm_model.get_input_embeddings()(prompt_tokens)
         
         # BEGIN DEBUG
         embed_time = time.time() - embed_start
@@ -528,12 +528,19 @@ class TimeLLM(nn.Module):
         
         # Step 9: Pass through frozen LLM
         # Get last hidden state from LLM
+        # NOTE: We CANNOT use no_grad() here because gradients need to flow through
+        # the LLM to reach the reprogramming layer (even though LLM params are frozen).
+        # The slowness is likely due to:
+        # 1. Large effective batch size (B*N sequences)
+        # 2. Long sequence length (prompt_len + num_patches)
+        # 3. Computation graph building overhead for frozen model
         
         # BEGIN DEBUG
-        print(f"[DEBUG] Step 9: Starting LLM forward pass (THIS MAY BE SLOW)...", flush=True)
+        print(f"[DEBUG] Step 9: Starting LLM forward pass (B*N={llm_input.shape[0]}, seq_len={llm_input.shape[1]})...", flush=True)
         llm_start = time.time()
         # END DEBUG
         
+        # Don't use no_grad() - gradients needed for reprogramming layer training
         dec_out = self.llm_model(inputs_embeds=llm_input).last_hidden_state
         
         # BEGIN DEBUG
