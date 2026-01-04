@@ -72,19 +72,8 @@ class DynamicPromptBuilder:
             ... )
             >>> len(prompts)  # 14 prompts
         """
-        # BEGIN DEBUG
-        import time
-        prompt_start = time.time()
-        print(f"[DEBUG] build_prompts START - input shape: {x_enc.shape}, num prompts to build: {x_enc.shape[0]}", flush=True)
-        # END DEBUG
-        
         # Compute statistics along time dimension (dim=1)
         # Each statistic has shape [B*N, 1]
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] build_prompts: Computing statistics...", flush=True)
-        # END DEBUG
-        
         min_values = torch.min(x_enc, dim=1)[0]
         max_values = torch.max(x_enc, dim=1)[0]
         medians = torch.median(x_enc, dim=1).values
@@ -92,10 +81,6 @@ class DynamicPromptBuilder:
         # Compute trend as sum of differences (positive = upward)
         # diff: [B*N, T-1, 1], sum: [B*N, 1]
         trends = x_enc.diff(dim=1).sum(dim=1)
-
-        # BEGIN DEBUG
-        print(f"[DEBUG] build_prompts: Building prompt strings (loop over {x_enc.shape[0]} samples)...", flush=True)
-        # END DEBUG
 
         prompts = []
         for b in range(x_enc.shape[0]):
@@ -118,16 +103,6 @@ class DynamicPromptBuilder:
                 f"top 5 lags are: {lag_values}<|end_prompt|>"
             )
             prompts.append(prompt)
-            
-            # BEGIN DEBUG
-            if (b + 1) % 10 == 0:
-                print(f"[DEBUG] build_prompts: Built {b + 1}/{x_enc.shape[0]} prompts...", flush=True)
-            # END DEBUG
-        
-        # BEGIN DEBUG
-        prompt_time = time.time() - prompt_start
-        print(f"[DEBUG] build_prompts COMPLETE in {prompt_time:.2f}s - built {len(prompts)} prompts", flush=True)
-        # END DEBUG
         
         return prompts
     
@@ -154,41 +129,19 @@ class DynamicPromptBuilder:
             >>> lags = DynamicPromptBuilder.calculate_lags(x, top_k=5)
             >>> lags.shape  # [14, 5]
         """
-        # BEGIN DEBUG
-        import time
-        lag_start = time.time()
-        print(f"[DEBUG] calculate_lags START - input shape: {x_enc.shape}, top_k: {top_k}", flush=True)
-        # END DEBUG
-        
         # Transpose for FFT: [B*N, T, 1] -> [B*N, 1, T]
         x = x_enc.permute(0, 2, 1)
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] calculate_lags: Computing FFT...", flush=True)
-        # END DEBUG
         
         # Compute FFT
         q_fft = torch.fft.rfft(x, dim=-1)
         k_fft = torch.fft.rfft(x, dim=-1)
         
-        # BEGIN DEBUG
-        print(f"[DEBUG] calculate_lags: Computing power spectrum...", flush=True)
-        # END DEBUG
-        
         # Power spectrum (autocorrelation in frequency domain)
         # This is equivalent to correlation theorem: F(corr) = F(x) * conj(F(x))
         res = q_fft * torch.conj(k_fft)
         
-        # BEGIN DEBUG
-        print(f"[DEBUG] calculate_lags: Computing inverse FFT...", flush=True)
-        # END DEBUG
-        
         # Inverse FFT to get autocorrelation in time domain
         corr = torch.fft.irfft(res, dim=-1)
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] calculate_lags: Finding top-k lags...", flush=True)
-        # END DEBUG
         
         # Average over channel dimension (if multi-channel)
         # [B*N, 1, T] -> [B*N, T]
@@ -200,10 +153,5 @@ class DynamicPromptBuilder:
         
         # Adjust indices since we excluded lag 0 (add 1 to get original indices)
         result = lags + 1
-        
-        # BEGIN DEBUG
-        lag_time = time.time() - lag_start
-        print(f"[DEBUG] calculate_lags COMPLETE in {lag_time:.2f}s - output shape: {result.shape}", flush=True)
-        # END DEBUG
         
         return result
