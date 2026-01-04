@@ -113,31 +113,33 @@ class TimeLLM(nn.Module):
     - Dynamic prompts with per-batch statistics
     
     Args:
-        llm_model: HuggingFace model name or Time-LLM alias ('LLAMA', 'GPT2', 'QWEN')
-        llm_layers: Number of LLM layers to use (not currently used, full model loaded)
-        seq_len: Input sequence length
-        pred_len: Prediction sequence length
-        patch_len: Length of each time series patch
-        stride: Stride between patches
-        d_model: Patch embedding dimension
-        d_ff: Feed-forward dimension (also used for output projection)
-        n_heads: Number of attention heads for reprogramming
-        enc_in: Number of input channels/variables
-        dropout: Dropout rate
-        prompt_domain: If True, use provided dataset_description
-        dataset_description: Domain-specific dataset description
-        cache_dir: Directory for LLM model weights cache
-        device: Target device
-        quantization: Quantization mode ('4bit', '8bit', or None)
+        configs: Configuration object with the following attributes:
+            - llm_model: HuggingFace model name or alias ('LLAMA', 'GPT2', 'QWEN')
+            - llm_layers: Number of LLM layers (not currently used)
+            - seq_len: Input sequence length
+            - pred_len: Prediction sequence length
+            - patch_len: Length of each time series patch
+            - stride: Stride between patches
+            - d_model: Patch embedding dimension
+            - d_ff: Feed-forward dimension
+            - n_heads: Number of attention heads for reprogramming
+            - enc_in: Number of input channels/variables
+            - dropout: Dropout rate
+            - prompt_domain: If True, use dataset_description in prompts
+            - dataset_description: Domain-specific dataset description
+            - cache_dir: Directory for LLM model weights cache
+            - device: Target device
+            - quantization: Quantization mode ('4bit', '8bit', or None)
     
     Example:
-        >>> model = TimeLLM(
-        ...     llm_model='gpt2',
-        ...     seq_len=96,
-        ...     pred_len=96,
-        ...     enc_in=7,
-        ...     device='cuda:0'
-        ... )
+        >>> from utils.tools import dotdict
+        >>> configs = dotdict({
+        ...     'llm_model': 'gpt2',
+        ...     'seq_len': 96,
+        ...     'pred_len': 96,
+        ...     'enc_in': 7,
+        ... })
+        >>> model = TimeLLM(configs)
         >>> x = torch.randn(2, 96, 7).to('cuda:0')
         >>> out = model(x)
         >>> out.shape  # [2, 96, 7]
@@ -159,27 +161,48 @@ class TimeLLM(nn.Module):
         'QWEN-72B': 'Qwen/Qwen2.5-72B-Instruct',
     }
     
-    def __init__(
-        self,
-        llm_model: str = 'gpt2',
-        llm_layers: int = 6,
-        seq_len: int = 96,
-        pred_len: int = 96,
-        patch_len: int = 16,
-        stride: int = 8,
-        d_model: int = 16,
-        d_ff: int = 32,
-        n_heads: int = 8,
-        enc_in: int = 7,
-        dropout: float = 0.1,
-        prompt_domain: bool = False,
-        dataset_description: str = "",
-        cache_dir: str = './LLM_cache/',
-        device: str = 'cuda:0',
-        quantization: Optional[str] = None,
-    ):
-        """Initialize Time-LLM model."""
+    def __init__(self, configs):
+        """
+        Initialize Time-LLM model.
+        
+        Args:
+            configs: Configuration object (dotdict) with model parameters
+        """
         super().__init__()
+        
+        # =====================================================================
+        # Extract configuration with defaults
+        # =====================================================================
+        
+        # Required parameters (set by model_init from training config)
+        seq_len = configs.seq_len
+        pred_len = configs.pred_len
+        enc_in = configs.enc_in
+        
+        # LLM backbone configuration with defaults
+        llm_model = getattr(configs, 'llm_model', 'gpt2')
+        llm_layers = getattr(configs, 'llm_layers', 6)
+        cache_dir = getattr(configs, 'cache_dir', './LLM_cache/')
+        quantization = getattr(configs, 'quantization', None)
+        
+        # Patch configuration with defaults
+        patch_len = getattr(configs, 'patch_len', 16)
+        stride = getattr(configs, 'stride', 8)
+        
+        # Architecture configuration with defaults
+        d_model = getattr(configs, 'd_model', 16)
+        d_ff = getattr(configs, 'd_ff', 32)
+        n_heads = getattr(configs, 'n_heads', 8)
+        dropout = getattr(configs, 'dropout', 0.1)
+        
+        # Prompt configuration with defaults
+        prompt_domain = getattr(configs, 'prompt_domain', False)
+        dataset_description = getattr(configs, 'dataset_description', '')
+        
+        # Device configuration
+        device = getattr(configs, 'device', 'cuda:0')
+        if getattr(configs, 'gpu', None) is not None:
+            device = f'cuda:{configs.gpu}'
         
         # Store configuration
         self.seq_len = seq_len

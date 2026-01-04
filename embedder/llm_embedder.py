@@ -1338,6 +1338,7 @@ class LLMEmbedder:
         batch_size: int = 32,
         chunk_size: int = 1000,
         force: bool = False,
+        enable_gpu_monitor: bool = True,
     ) -> np.ndarray:
         """
         Memory-efficient embedding generation using chunked processing.
@@ -1348,6 +1349,7 @@ class LLMEmbedder:
         2. Creates a streaming HDF5 writer
         3. Processes data in chunks, writing embeddings incrementally
         4. Cleans up GPU memory between chunks
+        5. Monitors GPU utilization in background (optional)
         
         Use this method for large datasets like fidel_NYC_traffic_speed.
         
@@ -1357,6 +1359,7 @@ class LLMEmbedder:
             batch_size: Batch size for LLM inference
             chunk_size: Number of samples to load at once (memory vs speed tradeoff)
             force: Force regeneration even if cache exists
+            enable_gpu_monitor: Enable GPU utilization monitoring (default: True)
         
         Returns:
             Embeddings array [N, embed_dim, C] loaded from disk
