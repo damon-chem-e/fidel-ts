@@ -64,11 +64,40 @@ individual: False
 # =============================================================================
 
 # Dimension of input text embeddings from LLMEmbeddingProvider
-# Common values:
-#   - 768: BERT-base, GPT-2
-#   - 1024: GPT-2 Medium
-#   - 4096: LLaMA
+# MUST match the LLM model's hidden dimension:
+#   - 768: GPT-2 base, BERT-base
+#   - 1024: GPT-2 medium
+#   - 1280: GPT-2 large
+#   - 1600: GPT-2 xl
+#   - 3584: Qwen2.5-7B
+#   - 4096: LLaMA, Mistral
+#   - 8192: Qwen2.5-72B
 input_text_dim: 768
+
+# =============================================================================
+# LLM Embedding Precomputation (Required)
+# =============================================================================
+#
+# MMTSFlib requires precomputed LLM embeddings. Generate them using:
+#
+#   python -m cli.inference generate <experiment_config.yaml>
+#
+# Your experiment config must include an llm_embedding section:
+#
+#   llm_embedding:
+#     model_name: "gpt2"                    # HuggingFace model name
+#     cache_dir: "./LLM_cache/"             # Model weights cache
+#     extraction_mode: "last_token"         # "last_token" or "pooled"
+#     max_length: 512                       # Max token length
+#     prompt_template: "mmtsflib_v1"        # MM-TSFlib prompt template
+#     batch_size: 64                        # LLM inference batch size
+#
+# MM-TSFlib Prompt Format:
+#   "<|start_prompt|>Make predictions about the future based on the
+#    following information: {time_series_description}<|end_prompt|>"
+#
+# The embeddings are cached and loaded via hetero_general/dataset_description.
+# See docs/embedder.md for full documentation.
 
 # MLP projection parameters
 # Hidden dimension = input_text_dim / text_mlp_reduction

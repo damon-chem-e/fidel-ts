@@ -270,6 +270,165 @@ class SimpleTemplate(PromptTemplate):
         return f"Time series values: {values_str}"
 
 
+class MMTSFlibTemplate(PromptTemplate):
+    """
+    MM-TSFlib prompt template for time series → text conversion.
+    
+    Format: "<|start_prompt|Make predictions about the future based on the 
+             following information: {values_description}<|<end_prompt>|>"
+    
+    This is the prompt format used in the original MM-TSFlib paper (Time-MMD).
+    The template wraps formatted time series data with special tokens that
+    help the LLM understand the prediction task context.
+    
+    Reference:
+        MM-TSFlib: https://github.com/AdityaLab/MM-TSFlib
+        Time-MMD: https://github.com/AdityaLab/Time-MMD
+    """
+    
+    # Frequency label mapping (same as TimeCMA for consistency)
+    FREQUENCY_MAP = {
+        'h': 'hour',
+        't': '15 minutes',
+        'd': 'day',
+        'w': 'week',
+        'm': 'month',
+        'b': 'business day',
+        's': 'second',
+        '10min': '10 minutes',
+        '15min': '15 minutes',
+        '30min': '30 minutes',
+    }
+    
+    def format(self,
+               values: np.ndarray,
+               timestamps: Optional[np.ndarray] = None,
+               channel_idx: int = 0,
+               metadata: Optional[Dict] = None) -> str:
+        """
+        Format time series data into MM-TSFlib-style prompt.
+        
+        Args:
+            values: Time series values [seq_len] or [seq_len, channels]
+            timestamps: Optional timestamp features [seq_len, features]
+            channel_idx: Channel index for multi-channel data
+            metadata: Optional metadata with 'freq', 'dataset_name' keys
+        
+        Returns:
+            Formatted prompt string with MM-TSFlib special tokens
+        """
+        # Extract values for this channel
+        if values.ndim == 2:
+            channel_values = values[:, channel_idx]
+        else:
+            channel_values = values
+        
+        # Format values based on config
+        value_format = self.config.get('value_format', 'float2')
+        if value_format == 'integer':
+            values_str = ", ".join([str(int(v)) for v in channel_values])
+        elif value_format == 'float2':
+            values_str = ", ".join([f"{v:.2f}" for v in channel_values])
+        else:
+            values_str = ", ".join([f"{v:.4f}" for v in channel_values])
+        
+        # Get frequency label
+        freq = metadata.get('freq', 'h') if metadata else 'h'
+        freq_label = self.FREQUENCY_MAP.get(freq, freq)
+        
+        # Get dataset context if available
+        dataset_name = metadata.get('dataset_name', '') if metadata else ''
+        
+        # Build the text info description
+        if timestamps is not None and self.config.get('include_timestamps', True):
+            start_ts = timestamps[0]
+            end_ts = timestamps[-1]
+            start_date = self._format_timestamp(start_ts, metadata)
+            end_date = self._format_timestamp(end_ts, metadata)
+            
+            if dataset_name:
+                text_info = (
+                    f"Dataset: {dataset_name}. "
+                    f"From {start_date} to {end_date}, "
+                    f"the observed values were [{values_str}] recorded every {freq_label}."
+                )
+            else:
+                text_info = (
+                    f"From {start_date} to {end_date}, "
+                    f"the observed values were [{values_str}] recorded every {freq_label}."
+                )
+        else:
+            if dataset_name:
+                text_info = (
+                    f"Dataset: {dataset_name}. "
+                    f"The observed values were [{values_str}] recorded every {freq_label}."
+                )
+            else:
+                text_info = (
+                    f"The observed values were [{values_str}] recorded every {freq_label}."
+                )
+        
+        # Wrap with MM-TSFlib special tokens
+        prompt = (
+            f"<|start_prompt|>Make predictions about the future based on "
+            f"the following information: {text_info}<|end_prompt|>"
+        )
+        
+        return prompt
+    
+    def _format_timestamp(self, ts_input, metadata: Optional[Dict]) -> str:
+        """
+        Format timestamp into readable date string.
+        
+        Handles timestamps from all dataset types (Time-MMD, fidel-ts, TTC):
+        - All datasets use int64 timestamps in YYYYMMDDHHMMSS format
+        - When accessing timestamps[0] from a 1D array, we get a scalar numpy.int64
+        
+        Also supports (legacy/optional) timestamp feature arrays for compatibility.
+        
+        Args:
+            ts_input: Either scalar int64 timestamp (numpy.int64) or array of timestamp features
+            metadata: Optional metadata dict
+        """
+        # Convert to numpy array to check dimensions
+        ts_array = np.asarray(ts_input)
+        
+        # Handle scalar or 0-d array (numpy.int64 from timestamps[0])
+        if ts_array.ndim == 0:
+            ts_int = int(ts_array.item())  # Extract Python int from numpy scalar
+            # Parse YYYYMMDDHHMMSS format
+            ts_str = str(ts_int).zfill(14)  # Ensure 14 digits
+            if len(ts_str) >= 12:
+                month = int(ts_str[4:6])
+                day = int(ts_str[6:8])
+                hour = int(ts_str[8:10]) if len(ts_str) >= 10 else 0
+                minute = int(ts_str[10:12]) if len(ts_str) >= 12 else 0
+                
+                # Clamp values
+                month = max(1, min(12, month))
+                day = max(1, min(31, day))
+                hour = max(0, min(23, hour))
+                minute = max(0, min(59, minute))
+                
+                return f"{day:02d}/{month:02d} {hour:02d}:{minute:02d}"
+            return "[unknown]"
+        
+        # Handle array of timestamp features (legacy/optional format)
+        if ts_array.ndim > 0 and len(ts_array) >= 4:
+            # Assuming: [month, day, weekday, hour, ...]
+            month = int(ts_array[0] * 12) if ts_array[0] <= 1 else int(ts_array[0])
+            day = int(ts_array[1] * 31) if ts_array[1] <= 1 else int(ts_array[1])
+            hour = int(ts_array[3] * 24) if len(ts_array) > 3 and ts_array[3] <= 1 else int(ts_array[3]) if len(ts_array) > 3 else 0
+            
+            # Clamp values
+            month = max(1, min(12, month))
+            day = max(1, min(31, day))
+            hour = max(0, min(23, hour))
+            
+            return f"{day:02d}/{month:02d} {hour:02d}:00"
+        return "[unknown]"
+
+
 class TSPromptBuilder:
     """
     Time Series Prompt Builder - converts time series data to text prompts.
@@ -293,6 +452,7 @@ class TSPromptBuilder:
     TEMPLATES = {
         'timecma_v1': TimeCMATemplate,
         'simple': SimpleTemplate,
+        'mmtsflib_v1': MMTSFlibTemplate,
     }
     
     def __init__(self, 

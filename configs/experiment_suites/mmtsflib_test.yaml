@@ -2,6 +2,9 @@
 # Description: Test MMTSFlib (prediction-level late fusion) with supported unimodal encoders for 1 epoch each
 # Usage: python -m cli.suite run configs/experiment_suites/mmtsflib_test.yaml
 # Purpose: Verify that MMTSFlib works correctly with each unimodal encoder type and both prompt_weight modes
+#
+# IMPORTANT: Before running this suite, generate LLM embeddings:
+#   python -m cli.inference generate-suite configs/experiment_suites/mmtsflib_test.yaml
 
 suite:
   name: "mmtsflib_test"
@@ -37,7 +40,7 @@ suite:
           n_heads: 8
           e_layers: 2
           d_ff: 2048
-          input_text_dim: 768  # BERT embedding dimension
+          input_text_dim: 768  # GPT-2 base hidden dimension
           prompt_weight_mode: "fixed"
           prompt_weight: 0.01
           pool_type: "avg"
@@ -53,6 +56,13 @@ suite:
           epochs: 1
           track_per_sample: false
           evaluate_test_during_training: false
+        llm_embedding:
+          model_name: "gpt2"
+          cache_dir: "./LLM_cache/"
+          extraction_mode: "last_token"
+          max_length: 512
+          prompt_template: "mmtsflib_v1"
+          batch_size: 64
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/mmtsflib_test"
@@ -76,7 +86,7 @@ suite:
           n_heads: 8
           e_layers: 2
           d_ff: 2048
-          input_text_dim: 768  # BERT embedding dimension
+          input_text_dim: 768  # GPT-2 base hidden dimension
           prompt_weight_mode: "learned"
           prompt_weight_initial: 0.01
           pool_type: "avg"
@@ -92,6 +102,13 @@ suite:
           epochs: 1
           track_per_sample: false
           evaluate_test_during_training: false
+        llm_embedding:
+          model_name: "gpt2"
+          cache_dir: "./LLM_cache/"
+          extraction_mode: "last_token"
+          max_length: 512
+          prompt_template: "mmtsflib_v1"
+          batch_size: 64
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/mmtsflib_test"
@@ -118,7 +135,7 @@ suite:
           patch_len: 16
           stride: 8
           revin: true
-          input_text_dim: 768  # BERT embedding dimension
+          input_text_dim: 768  # GPT-2 base hidden dimension
           prompt_weight_mode: "fixed"
           prompt_weight: 0.01
           pool_type: "avg"
@@ -134,6 +151,13 @@ suite:
           epochs: 1
           track_per_sample: false
           evaluate_test_during_training: false
+        llm_embedding:
+          model_name: "gpt2"
+          cache_dir: "./LLM_cache/"
+          extraction_mode: "last_token"
+          max_length: 512
+          prompt_template: "mmtsflib_v1"
+          batch_size: 64
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/mmtsflib_test"
@@ -154,7 +178,7 @@ suite:
           seq_len: 96
           pred_len: 96
           individual: false
-          input_text_dim: 768  # BERT embedding dimension
+          input_text_dim: 768  # GPT-2 base hidden dimension
           prompt_weight_mode: "fixed"
           prompt_weight: 0.01
           pool_type: "avg"
@@ -170,6 +194,13 @@ suite:
           epochs: 1
           track_per_sample: false
           evaluate_test_during_training: false
+        llm_embedding:
+          model_name: "gpt2"
+          cache_dir: "./LLM_cache/"
+          extraction_mode: "last_token"
+          max_length: 512
+          prompt_template: "mmtsflib_v1"
+          batch_size: 64
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/mmtsflib_test"
@@ -178,6 +209,7 @@ suite:
     
     # ============================================================================
     # Time-MMD Dataset Experiments (faster testing with smaller dataset)
+    # Note: Time-MMD uses pre-computed BERT embeddings (768-dim) via timemmd_text_output
     # ============================================================================
     
     # MMTSFlib with iTransformer encoder on Time-MMD Traffic dataset
@@ -197,7 +229,7 @@ suite:
           n_heads: 8
           e_layers: 2
           d_ff: 2048
-          input_text_dim: 768  # BERT embedding dimension
+          input_text_dim: 768  # Time-MMD uses BERT embeddings (768-dim)
           prompt_weight_mode: "fixed"
           prompt_weight: 0.01
           pool_type: "avg"
@@ -205,7 +237,7 @@ suite:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
         data_config:
-          timemmd_text_output: embedding  # Use embeddings for MMTSFlib model
+          timemmd_text_output: embedding  # Use pre-computed BERT embeddings from Time-MMD
         training:
           input_len: 24
           output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
@@ -241,7 +273,7 @@ suite:
           patch_len: 16
           stride: 8
           revin: true
-          input_text_dim: 768  # BERT embedding dimension
+          input_text_dim: 768  # Time-MMD uses BERT embeddings (768-dim)
           prompt_weight_mode: "fixed"
           prompt_weight: 0.01
           pool_type: "avg"
@@ -249,7 +281,7 @@ suite:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
         data_config:
-          timemmd_text_output: embedding  # Use embeddings for MMTSFlib model
+          timemmd_text_output: embedding  # Use pre-computed BERT embeddings from Time-MMD
         training:
           input_len: 24
           output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
@@ -279,7 +311,7 @@ suite:
           seq_len: 24
           pred_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
           individual: false
-          input_text_dim: 768  # BERT embedding dimension
+          input_text_dim: 768  # Time-MMD uses BERT embeddings (768-dim)
           prompt_weight_mode: "fixed"
           prompt_weight: 0.01
           pool_type: "avg"
@@ -287,7 +319,7 @@ suite:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
         data_config:
-          timemmd_text_output: embedding  # Use embeddings for MMTSFlib model
+          timemmd_text_output: embedding  # Use pre-computed BERT embeddings from Time-MMD
         training:
           input_len: 24
           output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
