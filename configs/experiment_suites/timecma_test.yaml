@@ -317,13 +317,16 @@ suite:
           enabled: false
         llm_embedding:
           model_name: "gpt2"
-          batch_size: 64
           cache_dir: "./LLM_cache/"
           prompt_template: "timecma_v1"
           # Memory-efficient mode for large Fidel-TS dataset (~30M observations)
-          # Use large chunk_size to maximize GPU utilization
+          # Optimized for H200 (80GB VRAM) + 128GB CPU RAM:
+          #   - batch_size=2048: ~40GB VRAM (hidden states + attention for GPT-2)
+          #   - chunk_size=500000: ~60GB CPU RAM for data + prompts
+          # This reduces LLM forward passes by 32x vs batch_size=64
           memory_efficient: true
-          chunk_size: 5000
+          batch_size: 2048
+          chunk_size: 500000
         model_config_overrides:
           # NYC Traffic Speed has 1 target (SPEED)
           enc_in: 1
