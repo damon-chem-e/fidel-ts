@@ -393,16 +393,17 @@ class TimeLLM(nn.Module):
         # word_embeddings: [vocab_size, d_llm]
         # mapping_layer: [vocab_size, num_tokens]
         # source_embeddings: [num_tokens, d_llm]
+        # Note: Convert word_embeddings to float32 for mapping_layer (trainable)
         source_embeddings = self.mapping_layer(
-            self.word_embeddings.permute(1, 0)
+            self.word_embeddings.permute(1, 0).float()
         ).permute(1, 0)
         
         # Step 6: Patch embedding
         # x_enc: [B, T, N] -> [B, N, T] for patching
         x_enc_perm = x_enc.permute(0, 2, 1).contiguous()
         
-        # Convert to bfloat16 for compatibility with some LLMs
-        enc_out, n_vars = self.patch_embedding(x_enc_perm.to(torch.bfloat16))
+        # Patch embedding (in float32 for trainable layers)
+        enc_out, n_vars = self.patch_embedding(x_enc_perm.float())
         
         # Step 7: Reprogramming - map TS patches to LLM space
         # enc_out: [B*N, num_patches, d_model] -> [B*N, num_patches, d_llm]
@@ -412,15 +413,17 @@ class TimeLLM(nn.Module):
         # prompt_embeddings: [B*N, prompt_len, d_llm]
         # enc_out: [B*N, num_patches, d_llm]
         # llm_input: [B*N, prompt_len + num_patches, d_llm]
-        llm_input = torch.cat([prompt_embeddings, enc_out], dim=1)
+        # Convert enc_out to match LLM dtype (prompt_embeddings dtype)
+        llm_dtype = prompt_embeddings.dtype
+        llm_input = torch.cat([prompt_embeddings, enc_out.to(llm_dtype)], dim=1)
         
         # Step 9: Pass through frozen LLM
         # Get last hidden state from LLM
         dec_out = self.llm_model(inputs_embeds=llm_input).last_hidden_state
         
         # Step 10: Extract relevant dimensions for output projection
-        # Only keep first d_ff dimensions
-        dec_out = dec_out[:, :, :self.d_ff]
+        # Only keep first d_ff dimensions, convert back to float32 for output projection
+        dec_out = dec_out[:, :, :self.d_ff].float()
         
         # Step 11: Reshape for output projection
         # [B*N, seq_len+patches, d_ff] -> [B, N, d_ff, patches]
