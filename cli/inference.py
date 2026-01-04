@@ -107,6 +107,11 @@ def generate(
         "--chunk-size",
         help="Samples per chunk in memory-efficient mode"
     ),
+    gpu_monitor: bool = typer.Option(
+        True,
+        "--gpu-monitor/--no-gpu-monitor",
+        help="Enable GPU utilization monitoring in memory-efficient mode"
+    ),
 ):
     """
     Generate LLM embeddings for an experiment (time series → prompts → embeddings).
@@ -224,6 +229,7 @@ def generate(
                     batch_size=effective_batch_size,
                     chunk_size=effective_chunk_size,
                     force=force,
+                    enable_gpu_monitor=gpu_monitor,
                 )
             else:
                 # Use standard processing
@@ -547,6 +553,11 @@ def generate_suite(
         "--chunk-size",
         help="Samples per chunk in memory-efficient mode"
     ),
+    gpu_monitor: bool = typer.Option(
+        True,
+        "--gpu-monitor/--no-gpu-monitor",
+        help="Enable GPU utilization monitoring in memory-efficient mode"
+    ),
 ):
     """
     Generate LLM embeddings for all experiments in a suite.
@@ -742,6 +753,7 @@ def generate_suite(
                         batch_size=effective_batch_size,
                         chunk_size=effective_chunk_size,
                         force=force,
+                        enable_gpu_monitor=gpu_monitor,
                     )
                 else:
                     # Use standard processing

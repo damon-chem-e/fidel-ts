@@ -31,6 +31,13 @@ llm_model: gpt2
 # Number of LLM layers to use (currently loads full model)
 llm_layers: 6
 
+# Cache directory for LLM model weights
+cache_dir: "./LLM_cache/"
+
+# Quantization mode for frozen LLM backbone (null, "4bit", or "8bit")
+# Use quantization for large models like LLaMA to reduce memory
+quantization: null
+
 # =============================================================================
 # Patch Embedding Configuration
 # =============================================================================

@@ -1419,73 +1419,126 @@ class LLMEmbedder:
         # Calculate total prompts for progress
         total_prompts = total_samples * num_channels
         num_prompt_batches = (total_prompts + batch_size - 1) // batch_size
+        num_chunks = (total_samples + chunk_size - 1) // chunk_size
         
         # Create cache directory
         cache_dir = cache.get_cache_dir(metadata)
         
+        # Initialize GPU monitor if requested and GPU is available
+        gpu_monitor = None
+        if enable_gpu_monitor and 'cuda' in self.device and torch.cuda.is_available():
+            try:
+                from utils.gpu_monitor import GpuMonitor
+                
+                # Extract GPU index from device string (e.g., 'cuda:0' -> 0)
+                gpu_idx = int(self.device.split(':')[1]) if ':' in self.device else 0
+                
+                # Create monitor (don't write CSV, just for live metrics)
+                gpu_csv_path = str(cache_dir / f"gpu_telemetry_{split}.csv")
+                gpu_monitor = GpuMonitor(device_index=gpu_idx, out_csv=gpu_csv_path, interval_s=1.0)
+                gpu_monitor.start()
+                
+                if self.console is not None:
+                    self.console.print(f"  [dim]GPU monitoring enabled (device: cuda:{gpu_idx})[/dim]")
+            except Exception as e:
+                if self.console is not None:
+                    self.console.print(f"  [dim yellow]GPU monitoring unavailable: {e}[/dim yellow]")
+                gpu_monitor = None
+        
         # Start timing
         start_time = time.time()
+        last_gpu_log_time = start_time
+        gpu_log_interval = 10.0  # Log GPU stats every 10 seconds
         
-        # Create streaming writer
-        with StreamingEmbeddingWriter(
-            cache_dir=cache_dir,
-            split=split,
-            num_samples=total_samples,
-            embed_dim=self._embed_dim,
-            num_channels=num_channels,
-        ) as writer:
-            
-            # Process chunks with progress bar
-            if self.console is not None:
-                from rich.progress import (
-                    Progress, BarColumn, TextColumn, TimeElapsedColumn,
-                    TimeRemainingColumn, MofNCompleteColumn, SpinnerColumn
-                )
+        try:
+            # Create streaming writer
+            with StreamingEmbeddingWriter(
+                cache_dir=cache_dir,
+                split=split,
+                num_samples=total_samples,
+                embed_dim=self._embed_dim,
+                num_channels=num_channels,
+            ) as writer:
                 
-                progress_columns = (
-                    SpinnerColumn(),
-                    TextColumn("[bold blue]{task.description}"),
-                    BarColumn(bar_width=40),
-                    MofNCompleteColumn(),
-                    TextColumn("•"),
-                    TimeElapsedColumn(),
-                    TextColumn("•"),
-                    TimeRemainingColumn(),
-                )
-                
-                with Progress(*progress_columns, console=self.console, transient=False) as progress:
-                    task = progress.add_task(f"Embedding {split}", total=total_samples)
+                # Process chunks with progress bar
+                if self.console is not None:
+                    from rich.progress import (
+                        Progress, BarColumn, TextColumn, TimeElapsedColumn,
+                        TimeRemainingColumn, MofNCompleteColumn, SpinnerColumn
+                    )
                     
+                    progress_columns = (
+                        SpinnerColumn(),
+                        TextColumn("[bold blue]{task.description}"),
+                        BarColumn(bar_width=40),
+                        MofNCompleteColumn(),
+                        TextColumn("•"),
+                        TimeElapsedColumn(),
+                        TextColumn("•"),
+                        TimeRemainingColumn(),
+                    )
+                    
+                    with Progress(*progress_columns, console=self.console, transient=False) as progress:
+                        task = progress.add_task(f"Embedding {split}", total=total_samples)
+                        
+                        for values_chunk, ts_chunk, data_meta, chunk_start in self._iter_dataset_chunks(
+                            dataset, split, chunk_size
+                        ):
+                            # Process this chunk
+                            chunk_embeddings = self._process_chunk_streaming(
+                                values_chunk, ts_chunk, data_meta, batch_size
+                            )
+                            
+                            # Write to disk
+                            writer.write_batch(chunk_embeddings)
+                            
+                            # Update progress
+                            progress.update(task, completed=writer.samples_written)
+                            
+                            # Log GPU metrics periodically
+                            current_time = time.time()
+                            if gpu_monitor and (current_time - last_gpu_log_time) >= gpu_log_interval:
+                                gpu_metrics = gpu_monitor.get_latest_metrics()
+                                if gpu_metrics:
+                                    util = gpu_metrics.get('util_gpu_pct', 0)
+                                    mem_used = gpu_metrics.get('mem_used_mib', 0)
+                                    mem_total = gpu_metrics.get('mem_total_mib', 1)
+                                    mem_pct = (mem_used / mem_total * 100) if mem_total else 0
+                                    self.console.print(
+                                        f"  [dim cyan]GPU: {util}% util | "
+                                        f"{mem_used:,} MiB / {mem_total:,} MiB ({mem_pct:.1f}%)[/dim cyan]"
+                                    )
+                                last_gpu_log_time = current_time
+                            
+                            # Cleanup
+                            del values_chunk, ts_chunk, chunk_embeddings
+                            gc.collect()
+                            torch.cuda.empty_cache()
+                else:
+                    # Fallback without console
                     for values_chunk, ts_chunk, data_meta, chunk_start in self._iter_dataset_chunks(
                         dataset, split, chunk_size
                     ):
-                        # Process this chunk
                         chunk_embeddings = self._process_chunk_streaming(
                             values_chunk, ts_chunk, data_meta, batch_size
                         )
-                        
-                        # Write to disk
                         writer.write_batch(chunk_embeddings)
-                        
-                        # Update progress
-                        progress.update(task, completed=writer.samples_written)
-                        
-                        # Cleanup
                         del values_chunk, ts_chunk, chunk_embeddings
                         gc.collect()
                         torch.cuda.empty_cache()
-            else:
-                # Fallback without console
-                for values_chunk, ts_chunk, data_meta, chunk_start in self._iter_dataset_chunks(
-                    dataset, split, chunk_size
-                ):
-                    chunk_embeddings = self._process_chunk_streaming(
-                        values_chunk, ts_chunk, data_meta, batch_size
+        
+        finally:
+            # Stop GPU monitor and get summary
+            if gpu_monitor:
+                gpu_monitor.stop()
+                summary = gpu_monitor.summary()
+                if summary and self.console is not None:
+                    avg_util = summary.get('avg_util_gpu_pct', 0)
+                    max_mem = summary.get('max_mem_used_mib', 0)
+                    self.console.print(
+                        f"  [dim]GPU Summary: avg {avg_util:.1f}% util | "
+                        f"peak mem {max_mem:,} MiB[/dim]"
                     )
-                    writer.write_batch(chunk_embeddings)
-                    del values_chunk, ts_chunk, chunk_embeddings
-                    gc.collect()
-                    torch.cuda.empty_cache()
         
         generation_time = time.time() - start_time
         
