@@ -327,23 +327,11 @@ class TimeLLM(nn.Module):
         Returns:
             Predictions [B, pred_len, C]
         """
-        # BEGIN DEBUG
-        print(f"[DEBUG] TimeLLM.forward called - x_enc: {x_enc is not None}, x: {x is not None}", flush=True)
-        # END DEBUG
-        
         # Support both x_enc and x as input names
         if x_enc is None and x is not None:
             x_enc = x
         
-        # BEGIN DEBUG
-        print(f"[DEBUG] TimeLLM.forward: Calling forecast method...", flush=True)
-        # END DEBUG
-        
         dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] TimeLLM.forward: Forecast complete, slicing output...", flush=True)
-        # END DEBUG
         
         return dec_out[:, -self.pred_len:, :]
 
@@ -375,18 +363,8 @@ class TimeLLM(nn.Module):
         Returns:
             Forecasted values [B, pred_len, C]
         """
-        # BEGIN DEBUG
-        import time
-        debug_start = time.time()
-        print(f"[DEBUG] TimeLLM.forecast START - input shape: {x_enc.shape}, device: {x_enc.device}", flush=True)
-        # END DEBUG
-        
         # Step 1: Normalize input using RevIN
         x_enc = self.normalize_layers(x_enc, 'norm')
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 1 complete: Normalization done", flush=True)
-        # END DEBUG
         
         B, T, N = x_enc.size()
         
@@ -394,39 +372,18 @@ class TimeLLM(nn.Module):
         # [B, T, N] -> [B*N, T, 1]
         x_enc_flat = x_enc.permute(0, 2, 1).contiguous().reshape(B * N, T, 1)
         
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 2 complete: Reshape done - x_enc_flat shape: {x_enc_flat.shape}", flush=True)
-        # END DEBUG
-        
         # Step 3: Calculate dynamic prompt statistics
         # Ensure computations are on the correct device
         x_enc_flat = x_enc_flat.to(x_enc.device)
         
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 3a: Starting lag calculation...", flush=True)
-        # END DEBUG
         lags = DynamicPromptBuilder.calculate_lags(x_enc_flat, self.top_k)
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 3b: Lags calculated, shape: {lags.shape}. Starting prompt building...", flush=True)
-        # END DEBUG
         prompts = DynamicPromptBuilder.build_prompts(
             x_enc_flat, self.description, self.pred_len, self.seq_len, lags
         )
         
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 3c: Prompts built, count: {len(prompts)}, first prompt length: {len(prompts[0]) if prompts else 0} chars", flush=True)
-        # END DEBUG
-        
         # Step 4: Tokenize prompts and get prompt embeddings
         # Tokenize on CPU (faster for tokenizer) then move to device
         # Use reasonable max_length (prompts are typically ~100-150 tokens)
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 4a: Starting tokenization of {len(prompts)} prompts...", flush=True)
-        tokenize_start = time.time()
-        # END DEBUG
-        
         with torch.no_grad():  # Tokenization doesn't need gradients
             prompt_tokens = self.tokenizer(
                 prompts, 
@@ -436,78 +393,30 @@ class TimeLLM(nn.Module):
                 max_length=512  # Reduced from 2048 - prompts are much shorter
             ).input_ids.to(x_enc.device)
         
-        # BEGIN DEBUG
-        tokenize_time = time.time() - tokenize_start
-        print(f"[DEBUG] Step 4b: Tokenization complete in {tokenize_time:.2f}s, prompt_tokens shape: {prompt_tokens.shape}", flush=True)
-        # END DEBUG
-        
         # Get prompt embeddings from LLM's embedding layer
         # This is just a lookup table operation, no gradients needed
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 4c: Getting prompt embeddings from LLM...", flush=True)
-        embed_start = time.time()
-        # END DEBUG
-        
         with torch.no_grad():  # Embedding lookup doesn't need gradients
             prompt_embeddings = self.llm_model.get_input_embeddings()(prompt_tokens)
-        
-        # BEGIN DEBUG
-        embed_time = time.time() - embed_start
-        print(f"[DEBUG] Step 4d: Prompt embeddings done in {embed_time:.2f}s, shape: {prompt_embeddings.shape}", flush=True)
-        # END DEBUG
         
         # Step 5: Map word embeddings to reduced vocabulary
         # word_embeddings: [vocab_size, d_llm]
         # mapping_layer: [vocab_size, num_tokens]
         # source_embeddings: [num_tokens, d_llm]
         # Note: Convert word_embeddings to float32 for mapping_layer (trainable)
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 5: Starting mapping layer (word embeddings -> source embeddings)...", flush=True)
-        mapping_start = time.time()
-        # END DEBUG
-        
         source_embeddings = self.mapping_layer(
             self.word_embeddings.permute(1, 0).float()
         ).permute(1, 0)
-        
-        # BEGIN DEBUG
-        mapping_time = time.time() - mapping_start
-        print(f"[DEBUG] Step 5 complete: Mapping layer done in {mapping_time:.2f}s, source_embeddings shape: {source_embeddings.shape}", flush=True)
-        # END DEBUG
         
         # Step 6: Patch embedding
         # x_enc: [B, T, N] -> [B, N, T] for patching
         x_enc_perm = x_enc.permute(0, 2, 1).contiguous()
         
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 6a: Starting patch embedding...", flush=True)
-        patch_start = time.time()
-        # END DEBUG
-        
         # Patch embedding (in float32 for trainable layers)
         enc_out, n_vars = self.patch_embedding(x_enc_perm.float())
         
-        # BEGIN DEBUG
-        patch_time = time.time() - patch_start
-        print(f"[DEBUG] Step 6b: Patch embedding done in {patch_time:.2f}s, enc_out shape: {enc_out.shape}, n_vars: {n_vars}", flush=True)
-        # END DEBUG
-        
         # Step 7: Reprogramming - map TS patches to LLM space
         # enc_out: [B*N, num_patches, d_model] -> [B*N, num_patches, d_llm]
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 7: Starting reprogramming layer...", flush=True)
-        reprogram_start = time.time()
-        # END DEBUG
-        
         enc_out = self.reprogramming_layer(enc_out, source_embeddings, source_embeddings)
-        
-        # BEGIN DEBUG
-        reprogram_time = time.time() - reprogram_start
-        print(f"[DEBUG] Step 7 complete: Reprogramming done in {reprogram_time:.2f}s, enc_out shape: {enc_out.shape}", flush=True)
-        # END DEBUG
         
         # Step 8: Concatenate prompt embeddings with reprogrammed patches
         # prompt_embeddings: [B*N, prompt_len, d_llm]
@@ -515,16 +424,7 @@ class TimeLLM(nn.Module):
         # llm_input: [B*N, prompt_len + num_patches, d_llm]
         # Convert enc_out to match LLM dtype (prompt_embeddings dtype)
         llm_dtype = prompt_embeddings.dtype
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 8: Concatenating prompt embeddings and patches, llm_dtype: {llm_dtype}...", flush=True)
-        # END DEBUG
-        
         llm_input = torch.cat([prompt_embeddings, enc_out.to(llm_dtype)], dim=1)
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 8 complete: Concatenation done, llm_input shape: {llm_input.shape}", flush=True)
-        # END DEBUG
         
         # Step 9: Pass through frozen LLM
         # Get last hidden state from LLM
@@ -535,69 +435,24 @@ class TimeLLM(nn.Module):
         # 2. Long sequence length (prompt_len + num_patches)
         # 3. Computation graph building overhead for frozen model
         
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 9: Starting LLM forward pass (B*N={llm_input.shape[0]}, seq_len={llm_input.shape[1]})...", flush=True)
-        llm_start = time.time()
-        # END DEBUG
-        
         # Don't use no_grad() - gradients needed for reprogramming layer training
         dec_out = self.llm_model(inputs_embeds=llm_input).last_hidden_state
-        
-        # BEGIN DEBUG
-        llm_time = time.time() - llm_start
-        print(f"[DEBUG] Step 9 complete: LLM forward pass done in {llm_time:.2f}s, dec_out shape: {dec_out.shape}", flush=True)
-        # END DEBUG
         
         # Step 10: Extract relevant dimensions for output projection
         # Only keep first d_ff dimensions, convert back to float32 for output projection
         dec_out = dec_out[:, :, :self.d_ff].float()
         
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 10 complete: Dimension extraction done", flush=True)
-        # END DEBUG
-        
         # Step 11: Reshape for output projection
         # [B*N, seq_len+patches, d_ff] -> [B, N, d_ff, patches]
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 11: Reshaping for output projection...", flush=True)
-        # END DEBUG
-        
         dec_out = dec_out.reshape(-1, n_vars, dec_out.shape[-2], dec_out.shape[-1])
         dec_out = dec_out.permute(0, 1, 3, 2).contiguous()
         
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 11 complete: Reshape done, shape: {dec_out.shape}", flush=True)
-        # END DEBUG
-        
         # Step 12: Output projection - get predictions
         # Only use the last patch_nums positions (from reprogrammed patches, not prompts)
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 12: Starting output projection (patch_nums: {self.patch_nums})...", flush=True)
-        output_start = time.time()
-        # END DEBUG
-        
         dec_out = self.output_projection(dec_out[:, :, :, -self.patch_nums:])
         
-        # BEGIN DEBUG
-        output_time = time.time() - output_start
-        print(f"[DEBUG] Step 12 complete: Output projection done in {output_time:.2f}s, shape: {dec_out.shape}", flush=True)
-        # END DEBUG
-        
         # Step 13: Denormalize output back to original scale
-        
-        # BEGIN DEBUG
-        print(f"[DEBUG] Step 13: Denormalizing output...", flush=True)
-        # END DEBUG
-        
         dec_out = self.normalize_layers(dec_out, 'denorm')
-        
-        # BEGIN DEBUG
-        total_time = time.time() - debug_start
-        print(f"[DEBUG] Step 13 complete: Denormalization done", flush=True)
-        print(f"[DEBUG] TimeLLM.forecast COMPLETE - Total time: {total_time:.2f}s, output shape: {dec_out.shape}", flush=True)
-        # END DEBUG
         
         return dec_out
     

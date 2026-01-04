@@ -352,9 +352,12 @@ class Model(nn.Module):
         
         text_emb = kwargs['historical_events']
         
-        # Convert numpy array to tensor
+        # Convert numpy array to tensor if needed
         if isinstance(text_emb, np.ndarray):
             text_emb = torch.from_numpy(text_emb).float()
+        elif isinstance(text_emb, torch.Tensor):
+            # Ensure float32 (may be float16 from LLM provider)
+            text_emb = text_emb.float()
         
         # Move to correct device
         device = next(self.parameters()).device
