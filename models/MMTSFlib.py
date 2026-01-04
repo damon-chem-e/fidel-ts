@@ -370,9 +370,12 @@ class Model(nn.Module):
             # [B, seq_len, num_items, text_dim] -> aggregate to [B, text_dim]
             text_emb = text_emb.mean(dim=(1, 2))
         elif text_emb.dim() == 3:
-            # [B, L, text_dim] - keep for token-level processing
-            # OR [B, 1, text_dim] - could squeeze but keep for consistency
-            pass
+            # Could be [B, L, text_dim] or [B, text_dim, L] (transposed)
+            # Check if last dim matches expected text_dim; if not, transpose
+            if text_emb.shape[-1] != self.text_dim and text_emb.shape[1] == self.text_dim:
+                # Input is [B, text_dim, L] - transpose to [B, L, text_dim]
+                text_emb = text_emb.transpose(1, 2)
+            # Now it's [B, L, text_dim] - keep for token-level processing
         elif text_emb.dim() == 2:
             # [B, text_dim] - already aggregated, fine as-is
             pass

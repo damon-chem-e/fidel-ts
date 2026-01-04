@@ -40,18 +40,19 @@ use_norm: True
 # =============================================================================
 # PatchTST Parameters (if using unimodal_model_type: PatchTST)
 # =============================================================================
-# Uncomment and adjust if using PatchTST as backbone:
-# d_model: 512
-# n_heads: 4
-# e_layers: 3
-# d_ff: 128
-# patch_len: 16
-# stride: 8
-# revin: True
-# affine: False
-# subtract_last: False
-# decomposition: False
-# kernel_size: 25
+# These defaults are used when PatchTST is selected as the backbone.
+# Override in experiment config as needed.
+patch_len: 16
+stride: 8
+padding_patch: end
+revin: True
+affine: False
+subtract_last: False
+decomposition: False
+kernel_size: 25
+notrans: False
+fc_dropout: 0.3
+head_dropout: 0
 
 # =============================================================================
 # DLinear Parameters (if using unimodal_model_type: DLinear)
