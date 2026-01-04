@@ -117,7 +117,7 @@ def load_model_for_embedding(
             quantization="4bit",
         )
     """
-    from transformers import AutoModelForCausalLM, AutoConfig
+    from transformers import AutoModel, AutoConfig
     
     os.makedirs(cache_dir, exist_ok=True)
     
@@ -131,7 +131,7 @@ def load_model_for_embedding(
     # Build model kwargs
     model_kwargs = {
         'cache_dir': cache_dir,
-        'dtype': torch.float16,
+        'torch_dtype': torch.float16,
     }
     
     # Device mapping for quantization (required by bitsandbytes)
@@ -139,9 +139,11 @@ def load_model_for_embedding(
         model_kwargs['device_map'] = device
         model_kwargs['quantization_config'] = quant_config
     
-    # Load model (uses PyTorch's default attention implementation)
+    # Load base model WITHOUT lm_head (we only need hidden states, not logits)
+    # This saves significant GPU memory: [batch, seq, vocab_size] logits are never computed
+    # For GPT-2: saves ~103 MB per batch sample (vocab_size=50257)
     print(f"[ LLM ] Loading {model_name} (quantization={quantization})")
-    model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+    model = AutoModel.from_pretrained(model_name, **model_kwargs)
     
     # Move to device if not using quantization (quantization handles device_map)
     if not quantization:

@@ -63,6 +63,7 @@ Examples:
 """
 
 import typer
+import torch
 from pathlib import Path
 from typing import Optional, List
 from rich.console import Console
@@ -249,6 +250,13 @@ def generate(
             if not force:
                 console.print("    [dim]Use --force to regenerate[/dim]")
             failed.append(split)
+        
+        finally:
+            # Explicit memory cleanup between splits to prevent accumulation
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
         
         console.print()  # Blank line between splits
     
@@ -769,6 +777,12 @@ def generate_suite(
                 console.print(f"    [red]✗[/red] {split}: {str(e)}")
                 console.print_exception(show_locals=False)
                 failed.append(f"{dataset}/{split}")
+            finally:
+                # Explicit memory cleanup between splits to prevent accumulation
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
         
         console.print()  # Blank line between datasets
     

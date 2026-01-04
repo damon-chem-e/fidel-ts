@@ -90,7 +90,7 @@ import hashlib
 import h5py
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass, asdict, field
 
 import numpy as np
@@ -348,6 +348,32 @@ class LLMEmbeddingCache:
             )
         
         print(f"[ LLM Cache ] Saved {embeddings.shape[0]} embeddings to {split_dir}")
+    
+    def get_cache_info(
+        self,
+        metadata: LLMEmbeddingMetadata,
+        split: str,
+    ) -> Optional[Tuple[int, int, int]]:
+        """
+        Get cache info without loading full embeddings into memory.
+        
+        Args:
+            metadata: LLMEmbeddingMetadata object
+            split: Data split ('train', 'val', 'test')
+        
+        Returns:
+            Tuple of (num_samples, embed_dim, num_channels) or None if not cached
+        """
+        cache_dir = self.get_cache_dir(metadata)
+        embeddings_path = cache_dir / split / "embeddings.h5"
+        
+        if not embeddings_path.exists():
+            return None
+        
+        with h5py.File(embeddings_path, 'r') as hf:
+            shape = hf['embeddings'].shape  # Just reads shape, doesn't load data!
+        
+        return shape  # (num_samples, embed_dim, num_channels)
     
     def load_embeddings(
         self, 

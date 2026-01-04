@@ -528,14 +528,15 @@ class LLMEmbedder:
         # Build metadata for cache key
         metadata = self._build_metadata(dataset)
         
-        # Check cache - return early if cache exists (with progress display if console available)
+        # Check cache - return early if cache exists (WITHOUT loading full array into memory!)
         if not force and cache.cache_exists(metadata, split):
-            if self.console is not None:
-                self.console.print(f"  [dim]Loading cached embeddings for {dataset}/{split}...[/dim]")
-            embeddings = cache.load_embeddings(metadata, split, quiet=True)
-            if self.console is not None:
-                self.console.print(f"  [dim]Loaded {embeddings.shape[0]} embeddings from cache[/dim]")
-            return embeddings
+            cache_info = cache.get_cache_info(metadata, split)
+            if cache_info is not None:
+                num_samples, embed_dim, num_channels = cache_info
+                if self.console is not None:
+                    self.console.print(f"  [dim]Cache exists for {dataset}/{split}: {num_samples} embeddings[/dim]")
+                # Return None - embeddings will be loaded by LLMEmbeddingProvider during training
+                return None
         
         # Load data with progress display
         values, timestamps, data_metadata = self._load_dataset_with_progress(dataset, split)
@@ -1380,14 +1381,16 @@ class LLMEmbedder:
         cache = LLMEmbeddingCache(str(data_dir), dataset)
         metadata = self._build_metadata(dataset)
         
-        # Check cache - return early if exists
+        # Check cache - return early if exists (WITHOUT loading full array into memory!)
         if not force and cache.cache_exists(metadata, split):
-            if self.console is not None:
-                self.console.print(f"  [dim]Loading cached embeddings for {dataset}/{split}...[/dim]")
-            embeddings = cache.load_embeddings(metadata, split, quiet=True)
-            if self.console is not None:
-                self.console.print(f"  [dim]Loaded {embeddings.shape[0]} embeddings from cache[/dim]")
-            return embeddings
+            cache_info = cache.get_cache_info(metadata, split)
+            if cache_info is not None:
+                num_samples, embed_dim, num_channels = cache_info
+                if self.console is not None:
+                    self.console.print(f"  [dim]Cache exists for {dataset}/{split}: {num_samples} embeddings[/dim]")
+                # Return None to indicate "already cached" - caller shouldn't need the data
+                # The actual embeddings will be loaded by LLMEmbeddingProvider during training
+                return None
         
         # Count samples first (lightweight)
         if self.console is not None:
