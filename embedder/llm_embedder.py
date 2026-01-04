@@ -62,16 +62,24 @@ Example:
 """
 
 import gc
+import signal
 import time
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable, List, Iterator, Tuple, TYPE_CHECKING
+from contextlib import contextmanager
 
 import numpy as np
 import torch
 
 from .llm_registry import LLMRegistry
-from .llm_cache import LLMEmbeddingCache, LLMEmbeddingMetadata, StreamingEmbeddingWriter
+from .llm_cache import (
+    LLMEmbeddingCache, 
+    LLMEmbeddingMetadata, 
+    StreamingEmbeddingWriter,
+    EmbeddingProgress,
+    ProgressState,
+)
 from .prompt_builder import TSPromptBuilder
 
 if TYPE_CHECKING:
@@ -1140,6 +1148,63 @@ class LLMEmbedder:
     # For large datasets that don't fit in memory
     # =========================================================================
     
+    @contextmanager
+    def _graceful_interrupt_handler(self, writer: Optional['StreamingEmbeddingWriter'] = None):
+        """
+        Context manager for graceful signal handling during embedding generation.
+        
+        Catches SIGTERM and SIGINT, flushes current progress, and re-raises.
+        This ensures embeddings generated so far are not lost on interruption.
+        
+        Args:
+            writer: StreamingEmbeddingWriter to flush on interrupt
+        
+        Usage:
+            with self._graceful_interrupt_handler(writer):
+                # Long-running embedding generation
+                ...
+        """
+        interrupted = False
+        original_sigterm = signal.getsignal(signal.SIGTERM)
+        original_sigint = signal.getsignal(signal.SIGINT)
+        
+        def handler(signum, frame):
+            nonlocal interrupted
+            if not interrupted:
+                interrupted = True
+                sig_name = 'SIGTERM' if signum == signal.SIGTERM else 'SIGINT'
+                if self.console is not None:
+                    self.console.print(
+                        f"\n  [bold yellow]⚠ {sig_name} received - "
+                        f"flushing progress before exit...[/bold yellow]"
+                    )
+                else:
+                    print(f"\n[ LLM Embedder ] {sig_name} received - flushing...")
+                
+                # Flush current progress
+                if writer is not None:
+                    try:
+                        writer.force_flush_progress()
+                        if self.console is not None:
+                            self.console.print(
+                                f"  [green]✓ Progress saved: "
+                                f"{writer.samples_written}/{writer.num_samples} samples[/green]"
+                            )
+                    except Exception as e:
+                        if self.console is not None:
+                            self.console.print(f"  [red]✗ Flush failed: {e}[/red]")
+                
+                # Re-raise to trigger proper cleanup
+                raise KeyboardInterrupt(f"Graceful shutdown via {sig_name}")
+        
+        try:
+            signal.signal(signal.SIGTERM, handler)
+            signal.signal(signal.SIGINT, handler)
+            yield
+        finally:
+            signal.signal(signal.SIGTERM, original_sigterm)
+            signal.signal(signal.SIGINT, original_sigint)
+    
     def _count_dataset_samples(
         self,
         dataset: str,
@@ -1340,30 +1405,41 @@ class LLMEmbedder:
         chunk_size: int = 1000,
         force: bool = False,
         enable_gpu_monitor: bool = True,
+        flush_every: int = 10000,
     ) -> np.ndarray:
         """
-        Memory-efficient embedding generation using chunked processing.
+        Memory-efficient embedding generation using chunked processing with resume.
         
         This method processes large datasets without loading everything into
         memory at once. It:
-        1. Counts total samples (lightweight pass)
-        2. Creates a streaming HDF5 writer
-        3. Processes data in chunks, writing embeddings incrementally
-        4. Cleans up GPU memory between chunks
-        5. Monitors GPU utilization in background (optional)
+        1. Checks for resumable partial progress (from previous interrupted run)
+        2. Counts total samples (lightweight pass)
+        3. Creates a streaming HDF5 writer with periodic flushing
+        4. Processes data in chunks, writing embeddings incrementally
+        5. Saves progress atomically after each flush (for resume)
+        6. Cleans up GPU memory between chunks
+        7. Monitors GPU utilization in background (optional)
+        8. Handles SIGTERM/SIGINT gracefully (flush before exit)
         
         Use this method for large datasets like fidel_NYC_traffic_speed.
+        
+        RESUME CAPABILITY:
+        - If interrupted (timeout, OOM, SIGTERM), progress is saved to progress.json
+        - On restart, automatically detects partial completion and resumes
+        - No duplicate work - skips already-processed chunks
         
         Args:
             dataset: Dataset name
             split: Data split ('train', 'val', 'test')
             batch_size: Batch size for LLM inference
             chunk_size: Number of samples to load at once (memory vs speed tradeoff)
-            force: Force regeneration even if cache exists
+            force: Force regeneration even if cache exists (ignores partial progress)
             enable_gpu_monitor: Enable GPU utilization monitoring (default: True)
+            flush_every: Flush to disk every N samples (default: 10000)
         
         Returns:
-            Embeddings array [N, embed_dim, C] loaded from disk
+            Embeddings array [N, embed_dim, C] loaded from disk, or None if
+            embeddings were already cached
         
         Memory Usage:
             - Data: ~chunk_size * seq_len * channels * 4 bytes
@@ -1380,19 +1456,52 @@ class LLMEmbedder:
         data_dir = self._get_data_directory(dataset)
         cache = LLMEmbeddingCache(str(data_dir), dataset)
         metadata = self._build_metadata(dataset)
+        cache_dir = cache.get_cache_dir(metadata)
         
-        # Check cache - return early if exists (WITHOUT loading full array into memory!)
+        # =====================================================================
+        # STEP 1: Check for existing cache or resumable progress
+        # =====================================================================
+        
+        # Check if fully complete (skip if force=True)
         if not force and cache.cache_exists(metadata, split):
-            cache_info = cache.get_cache_info(metadata, split)
-            if cache_info is not None:
-                num_samples, embed_dim, num_channels = cache_info
+            # Verify integrity before trusting cache
+            integrity = cache.verify_integrity(metadata, split)
+            if integrity['valid']:
+                cache_info = cache.get_cache_info(metadata, split)
+                if cache_info is not None:
+                    num_samples, embed_dim, num_channels = cache_info
+                    if self.console is not None:
+                        self.console.print(
+                            f"  [dim]✓ Cache valid for {dataset}/{split}: "
+                            f"{num_samples} embeddings[/dim]"
+                        )
+                    return None
+            elif integrity['can_resume'] and not force:
                 if self.console is not None:
-                    self.console.print(f"  [dim]Cache exists for {dataset}/{split}: {num_samples} embeddings[/dim]")
-                # Return None to indicate "already cached" - caller shouldn't need the data
-                # The actual embeddings will be loaded by LLMEmbeddingProvider during training
-                return None
+                    self.console.print(
+                        f"  [yellow]⚡ Resumable cache found for {dataset}/{split}: "
+                        f"{integrity['samples_complete']} samples complete[/yellow]"
+                    )
         
-        # Count samples first (lightweight)
+        # Check for resumable progress (even if cache.cache_exists returned False)
+        resume_from = 0
+        resume_chunk_idx = 0
+        if not force:
+            resume_info = cache.get_resume_info(metadata, split)
+            if resume_info is not None:
+                resume_from, resume_chunk_idx, expected_total = resume_info
+                if self.console is not None:
+                    self.console.print(
+                        f"  [yellow]⚡ Resuming {dataset}/{split} from sample "
+                        f"{resume_from:,} (chunk {resume_chunk_idx})[/yellow]"
+                    )
+                else:
+                    print(f"[ LLM Embedder ] Resuming from sample {resume_from}")
+        
+        # =====================================================================
+        # STEP 2: Count samples (lightweight pass)
+        # =====================================================================
+        
         if self.console is not None:
             from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
             
@@ -1407,7 +1516,7 @@ class LLMEmbedder:
                 total_samples, num_channels, seq_len = self._count_dataset_samples(dataset, split)
                 progress.update(task, completed=True)
             
-            self.console.print(f"  [dim]Found {total_samples} samples ({num_channels} channels)[/dim]")
+            self.console.print(f"  [dim]Found {total_samples:,} samples ({num_channels} channels)[/dim]")
         else:
             print(f"[ LLM Embedder ] Counting samples for {dataset}/{split}")
             total_samples, num_channels, seq_len = self._count_dataset_samples(dataset, split)
@@ -1416,16 +1525,24 @@ class LLMEmbedder:
         if total_samples == 0:
             raise ValueError(f"No samples found for {dataset}/{split}")
         
+        # Validate resume_from doesn't exceed total
+        if resume_from >= total_samples:
+            if self.console is not None:
+                self.console.print(
+                    f"  [green]✓ {dataset}/{split} already complete "
+                    f"({resume_from}/{total_samples})[/green]"
+                )
+            return None
+        
         # Ensure model loaded
         self._ensure_model_loaded_with_progress()
         
-        # Calculate total prompts for progress
-        total_prompts = total_samples * num_channels
-        num_prompt_batches = (total_prompts + batch_size - 1) // batch_size
+        # Calculate progress tracking
+        samples_remaining = total_samples - resume_from
         num_chunks = (total_samples + chunk_size - 1) // chunk_size
         
-        # Create cache directory
-        cache_dir = cache.get_cache_dir(metadata)
+        # Ensure cache directory exists
+        cache_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize GPU monitor if requested and GPU is available
         gpu_monitor = None
@@ -1448,21 +1565,46 @@ class LLMEmbedder:
                     self.console.print(f"  [dim yellow]GPU monitoring unavailable: {e}[/dim yellow]")
                 gpu_monitor = None
         
+        # =====================================================================
+        # STEP 3: Initialize progress tracking
+        # =====================================================================
+        
+        # Load or create progress tracker
+        embedding_progress = EmbeddingProgress.load_or_create(cache_dir)
+        
+        # Mark split as in_progress (or update if resuming)
+        if resume_from == 0:
+            embedding_progress.start_split(split, total_samples)
+        # If resuming, the split is already in_progress
+        
+        # Save initial progress
+        embedding_progress.save(cache_dir)
+        
         # Start timing
         start_time = time.time()
         last_gpu_log_time = start_time
         gpu_log_interval = 10.0  # Log GPU stats every 10 seconds
         
+        # =====================================================================
+        # STEP 4: Create streaming writer and process chunks
+        # =====================================================================
+        
+        writer = None
         try:
-            # Create streaming writer
-            with StreamingEmbeddingWriter(
+            # Create streaming writer with progress tracking
+            writer = StreamingEmbeddingWriter(
                 cache_dir=cache_dir,
                 split=split,
                 num_samples=total_samples,
                 embed_dim=self._embed_dim,
                 num_channels=num_channels,
-            ) as writer:
-                
+                progress=embedding_progress,
+                flush_every=flush_every,
+                resume_from=resume_from,
+            )
+            
+            # Use graceful interrupt handler for clean shutdown
+            with self._graceful_interrupt_handler(writer):
                 # Process chunks with progress bar
                 if self.console is not None:
                     from rich.progress import (
@@ -1482,20 +1624,39 @@ class LLMEmbedder:
                     )
                     
                     with Progress(*progress_columns, console=self.console, transient=False) as progress:
-                        task = progress.add_task(f"Embedding {split}", total=total_samples)
+                        # Start progress bar from resume point
+                        task = progress.add_task(
+                            f"Embedding {split}",
+                            total=total_samples,
+                            completed=resume_from,
+                        )
                         
+                        chunk_idx = 0
                         for values_chunk, ts_chunk, data_meta, chunk_start in self._iter_dataset_chunks(
                             dataset, split, chunk_size
                         ):
+                            # Skip already-processed chunks
+                            chunk_end = chunk_start + len(values_chunk)
+                            if chunk_end <= resume_from:
+                                chunk_idx += 1
+                                continue
+                            
+                            # Handle partial chunk (chunk overlaps resume point)
+                            if chunk_start < resume_from < chunk_end:
+                                # Trim already-processed samples
+                                offset = resume_from - chunk_start
+                                values_chunk = values_chunk[offset:]
+                                ts_chunk = ts_chunk[offset:]
+                            
                             # Process this chunk
                             chunk_embeddings = self._process_chunk_streaming(
                                 values_chunk, ts_chunk, data_meta, batch_size
                             )
                             
-                            # Write to disk
-                            writer.write_batch(chunk_embeddings)
+                            # Write to disk with chunk index for progress
+                            writer.write_batch(chunk_embeddings, chunk_idx=chunk_idx)
                             
-                            # Update progress
+                            # Update progress bar
                             progress.update(task, completed=writer.samples_written)
                             
                             # Log GPU metrics periodically
@@ -1513,24 +1674,71 @@ class LLMEmbedder:
                                     )
                                 last_gpu_log_time = current_time
                             
-                            # Cleanup
+                            # Cleanup GPU memory
                             del values_chunk, ts_chunk, chunk_embeddings
                             gc.collect()
                             torch.cuda.empty_cache()
+                            
+                            chunk_idx += 1
                 else:
                     # Fallback without console
+                    chunk_idx = 0
                     for values_chunk, ts_chunk, data_meta, chunk_start in self._iter_dataset_chunks(
                         dataset, split, chunk_size
                     ):
+                        # Skip already-processed chunks
+                        chunk_end = chunk_start + len(values_chunk)
+                        if chunk_end <= resume_from:
+                            chunk_idx += 1
+                            continue
+                        
+                        # Handle partial chunk
+                        if chunk_start < resume_from < chunk_end:
+                            offset = resume_from - chunk_start
+                            values_chunk = values_chunk[offset:]
+                            ts_chunk = ts_chunk[offset:]
+                        
                         chunk_embeddings = self._process_chunk_streaming(
                             values_chunk, ts_chunk, data_meta, batch_size
                         )
-                        writer.write_batch(chunk_embeddings)
+                        writer.write_batch(chunk_embeddings, chunk_idx=chunk_idx)
                         del values_chunk, ts_chunk, chunk_embeddings
                         gc.collect()
                         torch.cuda.empty_cache()
+                        chunk_idx += 1
+            
+            # Mark split as completed after successful processing
+            embedding_progress.complete_split(split)
+            embedding_progress.save(cache_dir)
+            
+            # Close writer
+            writer.close()
+        
+        except KeyboardInterrupt:
+            # Graceful shutdown - progress already saved by signal handler
+            if self.console is not None:
+                self.console.print(
+                    f"\n  [yellow]Interrupted. Progress saved at "
+                    f"{writer.samples_written if writer else 0}/{total_samples} samples.[/yellow]"
+                )
+                self.console.print(
+                    f"  [dim]Resume with same command to continue.[/dim]"
+                )
+            raise
+        
+        except Exception as e:
+            # Mark as failed and save progress
+            if writer is not None:
+                writer.force_flush_progress()
+            embedding_progress.fail_split(split, str(e))
+            embedding_progress.save(cache_dir)
+            raise
         
         finally:
+            # Ensure writer is closed
+            if writer is not None and not writer.is_closed:
+                writer.close()
+            
             # Stop GPU monitor and get summary
             if gpu_monitor:
                 gpu_monitor.stop()
@@ -1547,7 +1755,9 @@ class LLMEmbedder:
         
         # Print completion
         if self.console is not None:
-            self.console.print(f"  [dim]Generated {total_samples} embeddings in {generation_time:.1f}s[/dim]")
+            self.console.print(
+                f"  [dim]Generated {total_samples:,} embeddings in {generation_time:.1f}s[/dim]"
+            )
         
         # Update and save metadata
         metadata.generation_time_seconds = generation_time
@@ -1558,8 +1768,9 @@ class LLMEmbedder:
         metadata.split = split
         metadata.save(cache_dir / "metadata.json")
         
-        # Load and return from disk
-        return cache.load_embeddings(metadata, split, quiet=True)
+        # Return None to indicate success - embeddings on disk
+        # The actual embeddings will be loaded by LLMEmbeddingProvider during training
+        return None
     
     def _process_chunk_streaming(
         self,

@@ -340,15 +340,27 @@ def verify(
     console.print()
     
     if status['valid']:
-        console.print("[green]✓ All embeddings verified[/green]")
+        console.print("[green]✓ All embeddings verified and complete[/green]")
         for split, valid in status.get('splits', {}).items():
-            console.print(f"  [green]✓[/green] {split}")
+            console.print(f"  [green]✓[/green] {split}: complete")
     else:
-        console.print("[red]✗ Verification failed[/red]")
-        for issue in status.get('issues', []):
-            console.print(f"  [yellow]• {issue}[/yellow]")
+        # Check if any splits are resumable
+        resumable = status.get('resumable', {})
+        if resumable:
+            console.print("[yellow]⚡ Partial embeddings found (resumable)[/yellow]")
+            for split, samples in resumable.items():
+                console.print(f"  [yellow]⚡[/yellow] {split}: {samples:,} samples (can resume)")
+            for split, valid in status.get('splits', {}).items():
+                if valid:
+                    console.print(f"  [green]✓[/green] {split}: complete")
+                elif split not in resumable:
+                    console.print(f"  [red]✗[/red] {split}: missing")
+        else:
+            console.print("[red]✗ Verification failed[/red]")
+            for issue in status.get('issues', []):
+                console.print(f"  [yellow]• {issue}[/yellow]")
         
-        console.print(f"\n[dim]Run 'python -m cli.inference generate {experiment_config}' to fix[/dim]")
+        console.print(f"\n[dim]Run 'python -m cli.inference generate {experiment_config}' to fix/resume[/dim]")
         raise typer.Exit(code=1)
 
 
@@ -495,14 +507,24 @@ def verify_suite(
             status = embedder.verify_cache(dataset)
             
             if status['valid']:
-                console.print(f"  [green]✓[/green] All splits verified")
+                console.print(f"  [green]✓[/green] All splits verified and complete")
                 for split in status.get('splits', {}).keys():
                     console.print(f"    [green]✓[/green] {split}")
                 verified.append(dataset)
             else:
-                console.print(f"  [red]✗[/red] Verification failed")
-                for issue in status.get('issues', []):
-                    console.print(f"    [yellow]• {issue}[/yellow]")
+                # Check for resumable splits
+                resumable = status.get('resumable', {})
+                if resumable:
+                    console.print(f"  [yellow]⚡[/yellow] Partial (resumable)")
+                    for split, samples in resumable.items():
+                        console.print(f"    [yellow]⚡[/yellow] {split}: {samples:,} samples")
+                    for split, valid in status.get('splits', {}).items():
+                        if valid:
+                            console.print(f"    [green]✓[/green] {split}: complete")
+                else:
+                    console.print(f"  [red]✗[/red] Verification failed")
+                    for issue in status.get('issues', []):
+                        console.print(f"    [yellow]• {issue}[/yellow]")
                 failed.append(dataset)
                 all_valid = False
         except Exception as e:

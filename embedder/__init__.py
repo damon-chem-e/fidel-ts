@@ -34,7 +34,14 @@ from .fidel_ts_embedder import FidelTSEmbeddingLoader
 
 # LLM Embedding components
 from .llm_registry import LLMRegistry
-from .llm_cache import LLMEmbeddingCache, LLMEmbeddingMetadata
+from .llm_cache import (
+    LLMEmbeddingCache, 
+    LLMEmbeddingMetadata,
+    StreamingEmbeddingWriter,
+    EmbeddingProgress,
+    SplitProgress,
+    ProgressState,
+)
 from .prompt_builder import TSPromptBuilder, PromptTemplate, TimeCMATemplate, MMTSFlibTemplate
 from .llm_embedder import LLMEmbedder
 from .llm_utils import (
@@ -63,6 +70,10 @@ __all__ = [
     'LLMRegistry',
     'LLMEmbeddingCache',
     'LLMEmbeddingMetadata',
+    'StreamingEmbeddingWriter',
+    'EmbeddingProgress',
+    'SplitProgress',
+    'ProgressState',
     'TSPromptBuilder',
     'PromptTemplate',
     'TimeCMATemplate',
