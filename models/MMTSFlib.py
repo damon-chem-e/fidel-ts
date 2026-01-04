@@ -239,6 +239,9 @@ class Model(nn.Module):
         if text_emb.dim() == 2:
             text_emb = text_emb.unsqueeze(1)  # [B, 1, text_dim]
         
+        # DEBUG: Print shape before projection
+        print(f"[DEBUG] Before text_projection: shape={text_emb.shape}")
+        
         # Project text to prediction dimension via MLP
         text_proj = self.text_projection(text_emb)  # [B, L, pred_len]
         
@@ -366,24 +369,33 @@ class Model(nn.Module):
         text_emb = text_emb.to(device)
         
         # Handle various input shapes
+        # DEBUG: Print initial shape
+        print(f"[DEBUG] _get_text_embeddings: initial shape={text_emb.shape}, self.text_dim={self.text_dim}")
+        
         if text_emb.dim() == 4:
             # [B, seq_len, num_items, text_dim] -> aggregate to [B, text_dim]
             text_emb = text_emb.mean(dim=(1, 2))
+            print(f"[DEBUG] After 4D mean: shape={text_emb.shape}")
         elif text_emb.dim() == 3:
             # Could be [B, L, text_dim] or [B, text_dim, L] (transposed)
             # Check if last dim matches expected text_dim; if not, transpose
+            print(f"[DEBUG] 3D input: shape[-1]={text_emb.shape[-1]}, shape[1]={text_emb.shape[1]}")
             if text_emb.shape[-1] != self.text_dim and text_emb.shape[1] == self.text_dim:
                 # Input is [B, text_dim, L] - transpose to [B, L, text_dim]
                 text_emb = text_emb.transpose(1, 2)
+                print(f"[DEBUG] After transpose: shape={text_emb.shape}")
             # Now it's [B, L, text_dim] - keep for token-level processing
         elif text_emb.dim() == 2:
             # [B, text_dim] - already aggregated, fine as-is
+            print(f"[DEBUG] 2D input, no change: shape={text_emb.shape}")
             pass
         else:
             raise ValueError(
                 f"Unexpected text embedding shape: {text_emb.shape}. "
                 f"Expected [B, text_dim], [B, L, text_dim], or [B, seq, items, text_dim]"
             )
+        
+        print(f"[DEBUG] _get_text_embeddings: final shape={text_emb.shape}")
         
         return text_emb
     
