@@ -1,0 +1,43 @@
+# Experiment Suite: lynx_film_raw on NYC_traffic_speed
+# Description: Train lynx_film_raw model on NYC_traffic_speed dataset
+# Usage: python -m cli.suite run configs/experiment_suites/lynx_film_raw/nyc_traffic_speed.yaml
+# Note: NYC_traffic_speed uses hourly sampling (downsampled to -h)
+#       Input: 360 samples = 15 days (half month), Output: 168 samples = 1 week (second smallest)
+#       Split points: {Jan. 1, 2021, Jan. 1, 2022}
+
+suite:
+  name: "lynx_film_raw_nyc_traffic_speed"
+  description: "Train lynx_film_raw model on NYC_traffic_speed dataset with 15-day context, 1-week prediction"
+  tags: ["lynx_film_raw", "multimodal", "pytorch", "fidel-ts", "nyc_traffic_speed", "film"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/lynx_film_raw/nyc_traffic_speed"
+    
+  # Experiments in this suite
+  experiments:
+    - name: "lynx_film_raw_nyc_traffic_speed"
+      description: "lynx_film_raw on NYC_traffic_speed with 15-day context, 1-week prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 360      # 15 days at hourly intervals (half month)
+          output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720})
+          batch_size: 768
+          learning_rate: 8.66e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw/nyc_traffic_speed"
