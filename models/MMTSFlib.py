@@ -215,7 +215,7 @@ class Model(nn.Module):
         Args:
             x: Time series input [B, seq_len, enc_in]
             **kwargs: Must include text embeddings via:
-                - 'dataset_description' or 'hetero_general': [B, L, text_dim]
+                - 'historical_events': [B, L, text_dim] or [B, text_dim] - LLM embeddings (per-sample, from LLMEmbeddingProvider)
                 - 'prior_y' (optional): [B, pred_len, 1] historical prior
                 - 'x_mark_enc', 'x_mark_dec' (optional): for encoder-decoder models
         
@@ -238,9 +238,6 @@ class Model(nn.Module):
         # Ensure 3D for token-level processing
         if text_emb.dim() == 2:
             text_emb = text_emb.unsqueeze(1)  # [B, 1, text_dim]
-        
-        # DEBUG: Print shape before projection
-        print(f"[DEBUG] Before text_projection: shape={text_emb.shape}")
         
         # Project text to prediction dimension via MLP
         text_proj = self.text_projection(text_emb)  # [B, L, pred_len]
@@ -336,9 +333,8 @@ class Model(nn.Module):
         """
         Extract pre-computed text embeddings from kwargs.
         
-        Follows same pattern as ZhangHanBest for consistency.
-        
-        Priority order: dataset_description > hetero_general
+        LLM embeddings from LLMEmbeddingProvider come via historical_events
+        (which maps to x_hetero, per-sample embeddings).
         
         Args:
             kwargs: Forward pass keyword arguments
@@ -346,19 +342,15 @@ class Model(nn.Module):
         Returns:
             text_emb: [B, L, text_dim] or [B, text_dim] tensor
         """
-        text_emb = None
-        
-        # Try standard names (same priority as ZhangHanBest)
-        if 'dataset_description' in kwargs and kwargs['dataset_description'] is not None:
-            text_emb = kwargs['dataset_description']
-        elif 'hetero_general' in kwargs and kwargs['hetero_general'] is not None:
-            text_emb = kwargs['hetero_general']
-        else:
+        # LLM embeddings come via historical_events (from llm_embedding_provider → x_hetero)
+        if 'historical_events' not in kwargs or kwargs['historical_events'] is None:
             raise ValueError(
                 "Text embeddings not found in kwargs. "
-                "Expected 'dataset_description' or 'hetero_general' with pre-computed embeddings. "
-                "Ensure your data config includes embedding settings."
+                "Expected 'historical_events' with pre-computed LLM embeddings. "
+                "Ensure llm_embedding section is configured in your experiment config."
             )
+        
+        text_emb = kwargs['historical_events']
         
         # Convert numpy array to tensor
         if isinstance(text_emb, np.ndarray):
@@ -369,33 +361,24 @@ class Model(nn.Module):
         text_emb = text_emb.to(device)
         
         # Handle various input shapes
-        # DEBUG: Print initial shape
-        print(f"[DEBUG] _get_text_embeddings: initial shape={text_emb.shape}, self.text_dim={self.text_dim}")
-        
         if text_emb.dim() == 4:
             # [B, seq_len, num_items, text_dim] -> aggregate to [B, text_dim]
             text_emb = text_emb.mean(dim=(1, 2))
-            print(f"[DEBUG] After 4D mean: shape={text_emb.shape}")
         elif text_emb.dim() == 3:
             # Could be [B, L, text_dim] or [B, text_dim, L] (transposed)
             # Check if last dim matches expected text_dim; if not, transpose
-            print(f"[DEBUG] 3D input: shape[-1]={text_emb.shape[-1]}, shape[1]={text_emb.shape[1]}")
             if text_emb.shape[-1] != self.text_dim and text_emb.shape[1] == self.text_dim:
                 # Input is [B, text_dim, L] - transpose to [B, L, text_dim]
                 text_emb = text_emb.transpose(1, 2)
-                print(f"[DEBUG] After transpose: shape={text_emb.shape}")
             # Now it's [B, L, text_dim] - keep for token-level processing
         elif text_emb.dim() == 2:
             # [B, text_dim] - already aggregated, fine as-is
-            print(f"[DEBUG] 2D input, no change: shape={text_emb.shape}")
             pass
         else:
             raise ValueError(
                 f"Unexpected text embedding shape: {text_emb.shape}. "
                 f"Expected [B, text_dim], [B, L, text_dim], or [B, seq, items, text_dim]"
             )
-        
-        print(f"[DEBUG] _get_text_embeddings: final shape={text_emb.shape}")
         
         return text_emb
     

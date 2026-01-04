@@ -167,7 +167,7 @@ class Model(nn.Module):
         """Count number of trainable parameters."""
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
     
-    def forward(self, x, channel_description, x_mark_enc=None, **kwargs):
+    def forward(self, x, historical_events=None, x_mark_enc=None, **kwargs):
         """
         Forward pass for TimeCMA.
         
@@ -175,12 +175,12 @@ class Model(nn.Module):
         TimeCMA's expected inputs:
             - x → input_data: Input time series [B, seq_len, num_nodes]
             - x_mark_enc → input_data_mark: Time features (optional, not used)
-            - channel_description → embeddings: Precomputed LLM embeddings
+            - historical_events → embeddings: Precomputed LLM embeddings (per-sample, from LLMEmbeddingProvider)
                 Shape: [B, d_llm, num_nodes] or [B, d_llm, num_nodes, 1]
         
         Args:
             x: Input time series [B, seq_len, num_nodes]
-            channel_description: Precomputed LLM embeddings from LLMEmbeddingProvider
+            historical_events: Precomputed LLM embeddings from LLMEmbeddingProvider (per-sample)
             x_mark_enc: Time features (optional, not used in TimeCMA)
             **kwargs: Additional arguments (ignored for compatibility)
         
@@ -189,7 +189,7 @@ class Model(nn.Module):
         """
         # Map framework interface to TimeCMA's internal names
         input_data = x
-        embeddings = channel_description
+        embeddings = historical_events
         
         # Ensure float tensors
         input_data = input_data.float()
@@ -271,20 +271,20 @@ class Model(nn.Module):
         """
         Move data to device (compatibility with fidel-ts training loop).
         
-        For TimeCMA, the `hetero_channel` is expected to contain the
-        precomputed LLM embeddings (not channel descriptions like other models).
+        For TimeCMA, the `x_hetero` is expected to contain the
+        precomputed LLM embeddings (per-sample, from LLMEmbeddingProvider).
         
         Args:
             seq_x: Input time series [B, seq_len, N]
             seq_y: Target time series [B, pred_len, N]
             x_time: Input time features [B, seq_len, time_features]
             y_time: Target time features [B, pred_len, time_features]
-            x_hetero: Input heterogeneous features (not used)
+            x_hetero: LLM embeddings [B, d_llm, N] or [B, d_llm, N, 1] (per-sample)
             y_hetero: Target heterogeneous features (not used)
             hetero_x_time: Heterogeneous input timestamps (not used)
             hetero_y_time: Heterogeneous target timestamps (not used)
             hetero_general: General heterogeneous features (not used)
-            hetero_channel: LLM embeddings [B, d_llm, N] or [B, d_llm, N, 1]
+            hetero_channel: Channel-specific heterogeneous features (not used)
             device: Target device
         
         Returns:
@@ -294,7 +294,7 @@ class Model(nn.Module):
         seq_x = seq_x.float().to(device)
         seq_y = seq_y.float().to(device)
         x_time = x_time.float().to(device) if x_time is not None else x_time
-        hetero_channel = hetero_channel.float().to(device)  # LLM embeddings
+        x_hetero = x_hetero.float().to(device)  # LLM embeddings (per-sample)
         
         return (
             seq_x, seq_y, x_time, y_time,

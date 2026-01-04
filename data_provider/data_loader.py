@@ -320,9 +320,9 @@ class Universal_Dataset(Dataset):
         # Path 2: Traditional hetero_data_getter (Fidel-TS, Time-MMD text embeddings)
         
         if self.llm_embedding_provider is not None:
-            # LLM embeddings mode: hetero_channel comes from precomputed LLM cache
-            # Other hetero fields (x_hetero, y_hetero, etc.) are not used in this mode
-            hetero_channel = self.llm_embedding_provider[index]
+            # LLM embeddings mode: x_hetero comes from precomputed LLM cache
+            # Per-sample embeddings go to x_hetero (maps to historical_events in model forward)
+            x_hetero = self.llm_embedding_provider[index]
             
         elif self.preload_hetero:
             # Preloaded hetero mode: all hetero data was loaded at init
