@@ -38,6 +38,8 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+        wandb:
+          tags: ["lynx_film_raw", "nyc_traffic_speed"]
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/nyc_traffic_speed"

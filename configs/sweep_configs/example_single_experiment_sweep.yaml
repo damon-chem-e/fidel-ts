@@ -1,0 +1,25 @@
+# Example WandB Sweep Configuration for Single Experiment
+# This sweep runs on a single experiment config file
+
+program: scripts/wandb_sweep_wrapper.py
+method: random  # Options: grid, random, bayes
+metric:
+  name: val_loss
+  goal: minimize
+
+# Internal config - specify the base experiment config path
+_config_path: "configs/experiments/example_experiment.yaml"
+_experiment_type: "pytorch"  # Options: pytorch, lightning, llm, fm
+
+# Hyperparameters to sweep over
+parameters:
+  training.learning_rate:
+    distribution: log_uniform
+    min: 1e-5
+    max: 1e-2
+  
+  training.batch_size:
+    values: [64, 128, 256, 512]
+  
+  training.epochs:
+    values: [20, 50, 100]

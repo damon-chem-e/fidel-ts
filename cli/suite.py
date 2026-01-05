@@ -63,11 +63,17 @@ def run(
             console.print(f"[green]Running suite: {suite_name}[/green]")
             
         executor = SuiteExecutor(suite_config, init_only=init_only)
-        executor.execute()
+        result = executor.execute()
         
         if init_only:
             console.print(f"[green]Suite initialization completed[/green]")
             console.print(f"Use the following resume_suite_id for your job: [bold cyan]{executor.suite_name}[/bold cyan]")
+            # If return_ids was used, result will contain IDs (though CLI doesn't expose return_ids yet)
+            if result:
+                console.print(f"Suite ID: [bold cyan]{result['suite_id']}[/bold cyan]")
+                console.print(f"Experiment IDs:")
+                for exp_name, exp_id in result['experiment_ids'].items():
+                    console.print(f"  {exp_name}: [cyan]{exp_id}[/cyan]")
         else:
             console.print(f"[green]Suite execution completed[/green]")
         

@@ -112,7 +112,7 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     return args
 
 
-def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: Optional[Dict[str, Any]] = None, output_dir: Optional[str] = None, init_only: bool = False):
+def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: Optional[Dict[str, Any]] = None, output_dir: Optional[str] = None, init_only: bool = False, return_ids: bool = False):
     """
     Run Foundation Model testing experiment.
     
@@ -125,6 +125,11 @@ def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: 
         suite_info: Optional suite information dictionary
         output_dir: Optional base output directory (overrides config setting)
         init_only: If True, only initialize experiment structure without running testing
+        return_ids: If True, return experiment_id and suite_name as dict (useful for wandb sweeps)
+    
+    Returns:
+        If return_ids=True, returns dict with 'experiment_id' and 'suite_name' keys.
+        Otherwise returns None.
     
     Example:
         >>> from cli.config.loader import load_config
@@ -172,4 +177,11 @@ def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: 
         exp = Experiment(args, exp_manager=exp_manager)
         print(f'>>>>>>>start testing: {experiment_id}>>>>>>>>>>>>>>>>>>>>>>>>>>')
         exp.test(savepath=str(exp_manager.get_checkpoint_dir()))
+    
+    # Return IDs if requested (for wandb sweep integration)
+    if return_ids:
+        return {
+            'experiment_id': exp_manager.get_experiment_id(),
+            'suite_name': exp_manager.suite_name
+        }
 

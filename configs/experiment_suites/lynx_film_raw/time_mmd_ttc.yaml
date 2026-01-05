@@ -43,6 +43,8 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_agriculture"]
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
@@ -68,6 +70,8 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_climate"]
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
@@ -93,6 +97,8 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_economy"]
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
@@ -118,6 +124,8 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_energy"]
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
@@ -143,6 +151,8 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_environment"]
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
@@ -168,6 +178,8 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_health"]
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
@@ -193,6 +205,8 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_socialgood"]
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
@@ -218,6 +232,8 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_traffic"]
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
@@ -247,6 +263,8 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+        wandb:
+          tags: ["lynx_film_raw", "ttc_weather"]
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
@@ -272,6 +290,8 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+        wandb:
+          tags: ["lynx_film_raw", "ttc_medical"]
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"

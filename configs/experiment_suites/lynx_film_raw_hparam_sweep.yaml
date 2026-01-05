@@ -1,0 +1,42 @@
+# Experiment Suite: lynx_film_raw Hyperparameter Sweep
+# Description: Hyperparameter sweep for lynx_film_raw model on NYC Traffic Speed
+# Usage: Used with wandb sweep for architecture and training hyperparameter optimization
+# NOTE: Reduced to 7 epochs for sweep efficiency
+
+suite:
+  name: "lynx_film_raw_hparam_sweep"
+  description: "Hyperparameter sweep: lynx_film_raw architecture and training params on NYC Traffic Speed (7 epochs)"
+  tags: ["lynx_film_raw", "multimodal", "pytorch", "hparam_sweep", "film"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/lynx_film_raw_hparam_sweep"
+    
+  # Experiments in this suite
+  experiments:
+    # NYC Traffic Speed - 24-step prediction (hparam sweep)
+    - name: "lynx_film_raw_nyc_traffic_speed_24_sweep"
+      description: "lynx_film_raw on NYC Traffic Speed with 24-step prediction (HYPERPARAMETER SWEEP)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 360
+          output_len: 24
+          batch_size: 768  # Will be overridden by sweep
+          learning_rate: 8.66e-4  # Will be overridden by sweep
+          patience: 3
+          epochs: 7  # Reduced for sweep efficiency
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw_hparam_sweep"

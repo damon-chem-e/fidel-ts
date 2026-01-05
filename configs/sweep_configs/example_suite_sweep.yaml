@@ -1,0 +1,31 @@
+# Example WandB Sweep Configuration for Suite
+# This sweep runs on a suite config with hyperparameter optimization
+
+program: scripts/wandb_sweep_wrapper.py
+method: bayes  # Options: grid, random, bayes
+metric:
+  name: val_loss
+  goal: minimize
+
+# Internal config - specify the base suite config path
+_config_path: "configs/experiment_suites/lynx_film_raw_hparam_sweep.yaml"
+
+# Hyperparameters to sweep over
+parameters:
+  training.learning_rate:
+    distribution: log_uniform
+    min: 1e-5
+    max: 1e-2
+  
+  training.batch_size:
+    values: [256, 512, 768, 1024]
+  
+  training.patience:
+    values: [3, 5, 10]
+  
+  # Add more parameters as needed
+  # training.input_len:
+  #   values: [180, 360, 720]
+  
+  # training.output_len:
+  #   values: [24, 48, 96]

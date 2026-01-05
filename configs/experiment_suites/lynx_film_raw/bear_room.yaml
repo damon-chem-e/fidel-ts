@@ -9,6 +9,7 @@ suite:
   name: "lynx_film_raw_bear_room"
   description: "Train lynx_film_raw model on Bear_room dataset with 1-day context, 12-hour prediction"
   tags: ["lynx_film_raw", "multimodal", "pytorch", "fidel-ts", "bear_room", "film"]
+  resume_suite_id: "lynx_film_raw_bear_room_20260105_124243"
   
   # Execution settings
   execution:
@@ -38,6 +39,9 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+        wandb:
+          tags: ["lynx_film_raw", "bear_room"]
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/bear_room"
+          resume_experiment_id: "20260105-124243_4a8a0c764258"

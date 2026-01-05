@@ -104,7 +104,7 @@ def substitute_placeholders(config: Dict[str, Any], experiment_name: str,
 class SuiteExecutor:
     """Execute experiment suites defined in YAML configs."""
     
-    def __init__(self, suite_config: Dict[str, Any], log_dir: Optional[str] = None, output_dir: Optional[str] = None, init_only: bool = False):
+    def __init__(self, suite_config: Dict[str, Any], log_dir: Optional[str] = None, output_dir: Optional[str] = None, init_only: bool = False, return_ids: bool = False):
         """
         Initialize suite executor.
         
@@ -113,9 +113,13 @@ class SuiteExecutor:
             log_dir: Directory for suite execution logs (optional)
             output_dir: Base directory for experiment outputs (optional, defaults to ./output)
             init_only: If True, only initialize experiment structures without running them
+            return_ids: If True, track and return experiment IDs (useful for wandb sweeps)
         """
         self.suite_config = suite_config
         self.init_only = init_only
+        self.return_ids = return_ids
+        # Track experiment IDs when return_ids is enabled
+        self.experiment_ids: Dict[str, str] = {}
         self.suite_info = suite_config.get('suite', {})
         self.execution_config = self.suite_info.get('execution', {})
         self.log_dir = log_dir or self.execution_config.get('log_dir', './logs/suites')
@@ -210,8 +214,16 @@ class SuiteExecutor:
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(self.suite_config, f, default_flow_style=False, sort_keys=False)
     
-    def execute(self) -> None:
-        """Execute all experiments in the suite."""
+    def execute(self) -> Optional[Dict[str, Any]]:
+        """
+        Execute all experiments in the suite.
+        
+        Returns:
+            If return_ids=True, returns dict with:
+                - 'suite_id': Suite name with timestamp
+                - 'experiment_ids': Dictionary mapping experiment names to experiment IDs
+            Otherwise returns None.
+        """
         experiments = [
             exp for exp in self.suite_info.get('experiments', [])
             if exp.get('enabled', True)
@@ -273,6 +285,14 @@ class SuiteExecutor:
                     logger.info(f"Suite GPU monitoring summary: {summary}")
         
         logger.info(f"Suite execution completed: {success_count} successful, {error_count} errors")
+        
+        # Return suite and experiment IDs if requested
+        if self.return_ids:
+            return {
+                'suite_id': self.suite_name,
+                'experiment_ids': self.experiment_ids.copy()
+            }
+        return None
     
     def _execute_experiment(self, exp_config: Dict[str, Any]) -> None:
         """
@@ -337,17 +357,24 @@ class SuiteExecutor:
                 exp_name_with_len = f"{exp_name}_output{output_len}"
                 config_copy['experiment']['name'] = exp_name_with_len
                 
-                self._run_single_experiment(config_copy, exp_name_with_len)
+                experiment_id = self._run_single_experiment(config_copy, exp_name_with_len)
+                if experiment_id:
+                    self.experiment_ids[exp_name_with_len] = experiment_id
         else:
-            self._run_single_experiment(final_config, exp_name)
+            experiment_id = self._run_single_experiment(final_config, exp_name)
+            if experiment_id:
+                self.experiment_ids[exp_name] = experiment_id
     
-    def _run_single_experiment(self, config: Dict[str, Any], experiment_name: str) -> None:
+    def _run_single_experiment(self, config: Dict[str, Any], experiment_name: str) -> Optional[str]:
         """
         Run a single experiment configuration.
         
         Args:
             config: Complete experiment configuration dictionary
             experiment_name: Name of the experiment
+        
+        Returns:
+            experiment_id if return_ids is enabled, None otherwise
         """
         exp_type = config.get('experiment', {}).get('type', 'pytorch')
         
@@ -398,12 +425,13 @@ class SuiteExecutor:
             
             # Execute based on experiment type
             # Pass the timestamped suite name so experiments are saved in the correct directory
+            result = None
             if exp_type == 'pytorch':
-                run_pytorch(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only)
+                result = run_pytorch(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids)
             elif exp_type == 'lightning':
-                run_lightning(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only)
+                result = run_lightning(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids)
             elif exp_type == 'llm':
-                run_llm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only)
+                result = run_llm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids)
             elif exp_type == 'fm':
                 # FM experiments may have task specified at experiment level
                 if 'task' in config.get('experiment', {}):
@@ -412,9 +440,14 @@ class SuiteExecutor:
                     # Recreate ExperimentConfig with task field
                     experiment_config = ExperimentConfig(**config)
                     experiment_config.experiment_name = experiment_name
-                run_fm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only)
+                result = run_fm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids)
             else:
                 raise ValueError(f"Unknown experiment type: {exp_type}")
+            
+            # Extract experiment_id from result if available
+            if self.return_ids and result:
+                return result.get('experiment_id')
+            return None
 
 
 def load_suite_config(suite_config_path: str) -> Dict[str, Any]:
