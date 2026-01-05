@@ -28,6 +28,7 @@ suite:
         data:
           name: "time_mmd"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
+          timemmd_text_output: embedding
         training:
           input_len: 96  # Smaller for faster testing
           output_len: 24  # Smaller for faster testing
