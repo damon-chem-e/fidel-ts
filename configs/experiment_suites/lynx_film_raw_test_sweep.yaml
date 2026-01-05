@@ -25,6 +25,8 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # BERT embedding dimension (projects 768 -> text_dim=256)
         data:
           name: "time_mmd"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"

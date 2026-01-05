@@ -25,11 +25,11 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+        # NOTE: NYC Traffic Speed uses fidel-ts Heterogeneous_Dataset (not Time-MMD)
+        # with pre-computed 256-dim embeddings, so no input_text_dim override needed
         data:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
-        data_config:
-          timemmd_text_output: embedding
         training:
           input_len: 360
           output_len: 24
