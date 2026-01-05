@@ -372,8 +372,25 @@ def main():
     wandb.init()
     wandb_run = wandb.run
     
-    # Get config path from wandb config or environment
-    config_path = wandb_run.config.get('_config_path') or os.environ.get('WANDB_SWEEP_CONFIG_PATH')
+    # Get config path from multiple sources (in order of preference):
+    # 1. From wandb run config (if passed)
+    # 2. From sweep config (accessed via API)
+    # 3. From environment variable
+    config_path = wandb_run.config.get('_config_path')
+    
+    if not config_path:
+        # Try to get from sweep config via API
+        try:
+            api = wandb.Api()
+            sweep = api.sweep(f"{wandb_run.entity}/{wandb_run.project}/{wandb_run.sweep_id}")
+            config_path = sweep.config.get('_config_path')
+        except Exception as e:
+            print(f"[Sweep] Could not access sweep config via API: {e}")
+    
+    if not config_path:
+        # Fall back to environment variable
+        config_path = os.environ.get('WANDB_SWEEP_CONFIG_PATH')
+    
     if not config_path:
         raise ValueError(
             "Config path not specified. Set WANDB_SWEEP_CONFIG_PATH environment variable "
