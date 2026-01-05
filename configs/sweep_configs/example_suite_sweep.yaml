@@ -13,7 +13,7 @@ _config_path: "configs/experiment_suites/lynx_film_raw_hparam_sweep.yaml"
 # Hyperparameters to sweep over
 parameters:
   training.learning_rate:
-    distribution: log_uniform
+    distribution: log_uniform_values  # Use _values variant for actual value range
     min: 1e-5
     max: 1e-2
   

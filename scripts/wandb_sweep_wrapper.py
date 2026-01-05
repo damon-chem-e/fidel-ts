@@ -174,7 +174,12 @@ def set_job_status(wandb_run, status: str):
         status: Job status string
     """
     # Use config.update() with allow_val_change=True to update existing values
-    wandb_run.config.update({'_job_status': status}, allow_val_change=True)
+    # Handle case where run is already finished (e.g., experiment called wandb.finish())
+    try:
+        wandb_run.config.update({'_job_status': status}, allow_val_change=True)
+    except Exception as e:
+        # Run may already be finished - this is okay, status tracking is best-effort
+        print(f"[Sweep] Note: Could not update job status to '{status}' (run may be finished): {e}")
 
 
 def run_suite_sweep(suite_config_path: str, sweep_params: Dict[str, Any]) -> None:
