@@ -173,8 +173,8 @@ def set_job_status(wandb_run, status: str):
         wandb_run: wandb run object
         status: Job status string
     """
-    wandb_run.config['_job_status'] = status
-    wandb.run.config.update({'_job_status': status})
+    # Use config.update() with allow_val_change=True to update existing values
+    wandb_run.config.update({'_job_status': status}, allow_val_change=True)
 
 
 def run_suite_sweep(suite_config_path: str, sweep_params: Dict[str, Any]) -> None:
@@ -209,11 +209,12 @@ def run_suite_sweep(suite_config_path: str, sweep_params: Dict[str, Any]) -> Non
         experiment_ids = result['experiment_ids']
         
         # Store IDs and status in wandb
+        # Use allow_val_change=True in case this is a resume scenario
         wandb_run.config.update({
             '_suite_id': suite_id,
             '_experiment_ids': experiment_ids,
             '_job_status': STATUS_INITIALIZED
-        })
+        }, allow_val_change=True)
         
         print(f"[Sweep] Initialized suite: {suite_id}")
         print(f"[Sweep] Experiment IDs: {experiment_ids}")
@@ -310,11 +311,12 @@ def run_single_experiment_sweep(experiment_config_path: str, sweep_params: Dict[
         suite_name = result.get('suite_name')
         
         # Store IDs and status in wandb
+        # Use allow_val_change=True in case this is a resume scenario
         wandb_run.config.update({
             '_experiment_id': experiment_id,
             '_suite_name': suite_name,
             '_job_status': STATUS_INITIALIZED
-        })
+        }, allow_val_change=True)
         
         print(f"[Sweep] Initialized experiment: {experiment_id}")
         
