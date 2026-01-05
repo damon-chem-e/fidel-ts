@@ -1,0 +1,42 @@
+# Experiment Suite: lynx_film_raw Test Sweep
+# Description: Simple test sweep for wandb integration testing
+# Usage: Used with wandb sweep for quick testing (only learning_rate and batch_size)
+# NOTE: Very small dataset (time_mmd Traffic) and few epochs for fast testing
+
+suite:
+  name: "lynx_film_raw_test_sweep"
+  description: "Test sweep: lynx_film_raw on time_mmd Traffic (fast test with only LR and batch_size)"
+  tags: ["lynx_film_raw", "multimodal", "pytorch", "test_sweep", "film"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/lynx_film_raw_test_sweep"
+    
+  # Experiments in this suite
+  experiments:
+    # time_mmd Traffic - simple test sweep
+    - name: "lynx_film_raw_time_mmd_traffic_test"
+      description: "lynx_film_raw on time_mmd Traffic (TEST SWEEP - LR and batch_size only)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        data:
+          name: "time_mmd"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          input_len: 96  # Smaller for faster testing
+          output_len: 24  # Smaller for faster testing
+          batch_size: 32  # Will be overridden by sweep
+          learning_rate: 1e-3  # Will be overridden by sweep
+          patience: 2
+          epochs: 3  # Very few epochs for fast testing
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw_test_sweep"

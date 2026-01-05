@@ -1,0 +1,24 @@
+# WandB Sweep Configuration: lynx_film_raw Test Sweep
+# Description: Simple test sweep with only learning_rate and batch_size
+# Purpose: Test wandb sweep integration - fast and simple
+# Usage: wandb sweep configs/sweep_configs/lynx_film_raw_test_sweep.yaml --project fidel-ts
+
+program: scripts/wandb_sweep_wrapper.py
+method: random  # Use random for simplicity in testing
+metric:
+  name: val_loss
+  goal: minimize
+
+# Base suite config to sweep over
+_config_path: "configs/experiment_suites/lynx_film_raw_test_sweep.yaml"
+
+# Hyperparameters to sweep (only 2 for simple testing)
+parameters:
+  # Training Hyperparameters only
+  training.learning_rate:
+    distribution: log_uniform
+    min: 1e-4
+    max: 1e-2
+  
+  training.batch_size:
+    values: [16, 32, 64, 128]
