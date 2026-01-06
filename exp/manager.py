@@ -25,6 +25,16 @@ from rich.logging import RichHandler
 
 from cli.config.models import ExperimentConfig
 
+# Import sweep registry for completion tracking (optional - may not be in sweep context)
+try:
+    from exp.sweep_registry import SweepRegistry, get_location, CompletionReason
+    SWEEP_REGISTRY_AVAILABLE = True
+except ImportError:
+    SWEEP_REGISTRY_AVAILABLE = False
+    SweepRegistry = None
+    get_location = None
+    CompletionReason = None
+
 
 class ExperimentManager:
     """
@@ -128,6 +138,14 @@ class ExperimentManager:
         
         # GPU monitor reference (set by gpu_monitoring_context)
         self.gpu_monitor = None
+        
+        # Sweep registry reference (set externally when running in sweep context)
+        # This allows the ExperimentManager to update completion status
+        self.sweep_registry: Optional['SweepRegistry'] = None
+        self.wandb_run_id_for_registry: Optional[str] = None
+        
+        # Completion reason tracking (can be set by training code)
+        self._completion_reason: Optional[str] = None
         
         # Load job history if experiment already exists (for resume)
         # This must happen before wandb init so we can resume the same wandb run
@@ -786,13 +804,28 @@ class ExperimentManager:
         
         return vis_path
     
-    def end_experiment(self, final_metrics: Optional[Dict[str, Any]] = None) -> None:
+    def end_experiment(self, final_metrics: Optional[Dict[str, Any]] = None, sweep_completed: Optional[bool] = None) -> None:
         """
         Finalize experiment, log final metrics, and close wandb run.
         
         Args:
             final_metrics: Optional dictionary of final metrics to log
+            sweep_completed: Whether to mark the sweep run as completed in wandb.summary.
+                           - True: Explicitly mark as completed (all epochs finished)
+                           - False: Explicitly mark as incomplete (interrupted, should resume)
+                           - None (default): Auto-detect based on job_history epochs
+                           
+                           Auto-detection checks if current_epoch >= total_epochs in job_history.
+                           This prevents false positives where a partial run is marked complete.
         """
+        # Auto-detect sweep_completed if not explicitly provided
+        if sweep_completed is None:
+            sweep_completed = self._detect_training_completed()
+            if sweep_completed:
+                self.logger.info("Auto-detected training as COMPLETED (all epochs finished)")
+            else:
+                self.logger.info("Auto-detected training as INCOMPLETE (not all epochs finished)")
+        
         # Get GPU monitor summary before closing wandb (if monitor is active)
         gpu_metrics = None
         if self.gpu_monitor is not None:
@@ -839,6 +872,71 @@ class ExperimentManager:
                     self.wandb_run.summary.update(all_final_metrics)
                 except Exception as e:
                     print(f"Warning: Failed to update wandb summary: {e}")
+        
+        # Get epoch info for completion tracking
+        current_epoch = self.job_history.get("current_epoch", 0) if hasattr(self, 'job_history') else 0
+        total_epochs = self.job_history.get("total_epochs", self.config.training.epochs) if hasattr(self, 'job_history') else self.config.training.epochs
+        
+        # Determine completion reason
+        completion_reason = self._completion_reason
+        if completion_reason is None and sweep_completed:
+            # Default to "all_epochs" if completed and no specific reason set
+            completion_reason = "all_epochs"
+        
+        # Update local sweep registry (authoritative source for resumption)
+        if self.sweep_registry is not None and self.wandb_run_id_for_registry:
+            try:
+                if sweep_completed:
+                    self.sweep_registry.mark_complete(
+                        wandb_run_id=self.wandb_run_id_for_registry,
+                        completion_reason=completion_reason or "all_epochs",
+                        final_epoch=current_epoch,
+                        total_epochs=total_epochs
+                    )
+                    self.logger.info(f"Marked run as complete in local registry (reason: {completion_reason})")
+                else:
+                    self.sweep_registry.mark_needs_resume(
+                        wandb_run_id=self.wandb_run_id_for_registry,
+                        interrupt_reason="interrupted",
+                        final_epoch=current_epoch,
+                        total_epochs=total_epochs
+                    )
+                    self.logger.info("Marked run as needs_resume in local registry")
+            except Exception as e:
+                self.logger.warning(f"Failed to update sweep registry: {e}")
+        
+        # Mark sweep completion in wandb.summary BEFORE calling finish()
+        # This is for central visibility but NOT authoritative for resumption
+        if self.wandb_run is not None:
+            try:
+                completion_status = {
+                    '_sweep_completed': sweep_completed,
+                    '_sweep_completion_time': datetime.now().isoformat(),
+                    '_experiment_id': self.experiment_id,
+                    '_final_epoch': current_epoch,
+                    '_total_epochs': total_epochs,
+                    '_completion_reason': completion_reason,
+                    '_location': get_location() if SWEEP_REGISTRY_AVAILABLE and get_location else None,
+                }
+                if self.suite_name:
+                    completion_status['_suite_name'] = self.suite_name
+                
+                # Filter out None values
+                completion_status = {k: v for k, v in completion_status.items() if v is not None}
+                
+                self.wandb_run.summary.update(completion_status)
+                
+                # Also try to update config (may fail if sweep wrapper already called finish)
+                try:
+                    self.wandb_run.config.update({
+                        '_job_status': 'completed' if sweep_completed else 'interrupted'
+                    }, allow_val_change=True)
+                except Exception:
+                    # Config update failed - this is expected if run is finishing
+                    pass
+                    
+            except Exception as e:
+                print(f"Warning: Failed to update wandb completion status: {e}")
         
         # Close wandb run
         if self.wandb_run is not None:
@@ -1173,6 +1271,41 @@ class ExperimentManager:
         # Save periodically (every epoch)
         self._save_job_history()
     
+    def _detect_training_completed(self) -> bool:
+        """
+        Auto-detect whether training has completed all epochs.
+        
+        Checks job_history to see if current_epoch >= total_epochs.
+        This prevents false positives where a partial run is marked as complete.
+        
+        Returns:
+            True if all epochs have been completed, False otherwise
+        """
+        # If init_only mode, training hasn't started yet
+        if self.init_only:
+            return False
+        
+        # Check job_history for completion
+        if not hasattr(self, 'job_history') or not self.job_history:
+            # No job history - can't determine, assume incomplete for safety
+            self.logger.warning("No job_history available for completion detection, assuming incomplete")
+            return False
+        
+        current_epoch = self.job_history.get("current_epoch", 0)
+        total_epochs = self.job_history.get("total_epochs", 0)
+        
+        # If total_epochs is 0 or not set, try to get from config
+        if total_epochs == 0:
+            total_epochs = self.config.training.epochs
+        
+        # Check if current epoch meets or exceeds total epochs
+        if current_epoch >= total_epochs and total_epochs > 0:
+            self.logger.debug(f"Training completed: epoch {current_epoch} >= total {total_epochs}")
+            return True
+        else:
+            self.logger.debug(f"Training incomplete: epoch {current_epoch} < total {total_epochs}")
+            return False
+    
     def get_resume_info(self) -> Optional[Dict[str, Any]]:
         """
         Get resume information for training.
@@ -1181,4 +1314,39 @@ class ExperimentManager:
             Dictionary with resume info (start_epoch, checkpoint_path) or None
         """
         return self.resume_info
+    
+    def set_completion_reason(self, reason: str) -> None:
+        """
+        Set the reason for training completion.
+        
+        This should be called by training code when training ends for a specific
+        reason (e.g., early stopping, hyperband pruning, convergence).
+        
+        Valid reasons:
+        - "all_epochs": Completed all planned epochs
+        - "early_stopping": Patience-based early stopping triggered
+        - "hyperband": Sweep controller (Hyperband) pruned the run
+        - "converged": Reached convergence threshold
+        - "manual_stop": Manually stopped
+        
+        Args:
+            reason: Completion reason string
+        """
+        self._completion_reason = reason
+        self.logger.info(f"Training completion reason set: {reason}")
+    
+    def set_sweep_registry(self, registry: 'SweepRegistry', wandb_run_id: str) -> None:
+        """
+        Set the sweep registry for this experiment.
+        
+        This is called by the sweep wrapper to allow the ExperimentManager
+        to update the local registry with completion status.
+        
+        Args:
+            registry: SweepRegistry instance
+            wandb_run_id: W&B run ID for this sweep trial
+        """
+        self.sweep_registry = registry
+        self.wandb_run_id_for_registry = wandb_run_id
+        self.logger.debug(f"Sweep registry set for run {wandb_run_id}")
 
