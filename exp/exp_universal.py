@@ -661,15 +661,21 @@ class Experiment(Exp_Basic):
         
         return start_epoch
     
-    def _update_job_history_after_epoch(self, path: str) -> None:
+    def _update_job_history_after_epoch(self, path: str) -> bool:
         """
         Update job history after each epoch completes.
         
+        This method updates the epoch progress and checks for external stop signals
+        (e.g., Hyperband pruning). Returns True if training should stop.
+        
         Args:
             path: Checkpoint directory path
+            
+        Returns:
+            True if training should stop (e.g., Hyperband pruning), False otherwise
         """
         if not self.exp_manager:
-            return
+            return False
         
         # Get checkpoint path if available (store as absolute path)
         checkpoint_path = None
@@ -678,7 +684,8 @@ class Experiment(Exp_Basic):
             # Convert to absolute path for storage
             checkpoint_path = os.path.abspath(best_checkpoint)
         
-        self.exp_manager.update_current_epoch(
+        # Update epoch and check for stop signals (Hyperband, etc.)
+        return self.exp_manager.update_current_epoch(
             epoch=self.current_epoch,
             checkpoint_path=checkpoint_path
         )
@@ -808,10 +815,11 @@ class Experiment(Exp_Basic):
             )
             
             # Update job history after each epoch
-            self._update_job_history_after_epoch(path)
+            # This also checks for Hyperband pruning and other stop signals
+            should_stop_epoch = self._update_job_history_after_epoch(path)
             
-            # Break if early stopping triggered
-            if should_stop:
+            # Break if early stopping triggered OR external stop signal (Hyperband, etc.)
+            if should_stop or should_stop_epoch:
                 break
         
         # Finalize training: load best model and save final checkpoint

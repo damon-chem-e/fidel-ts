@@ -11,7 +11,7 @@ Key benefits:
 - Fast: No API calls needed to determine resumption status
 
 Usage:
-    registry = SweepRegistry(suite_dir="/path/to/suite", sweep_id="abc123")
+    registry = SweepRegistry(sweep_root_dir="/path/to/sweep_root", sweep_id="abc123")
     
     # Register a new run
     registry.register_run(
@@ -99,12 +99,12 @@ class SweepRegistry:
     """
     Local file-based registry for tracking sweep run status.
     
-    Each sweep has its own registry file stored in the suite directory.
+    Each sweep has its own registry file stored in the sweep root directory.
     The registry uses file locking to handle concurrent access from
     multiple SLURM jobs or processes.
     
     Attributes:
-        suite_dir: Path to the suite directory containing this sweep's runs
+        sweep_root_dir: Path to the sweep root directory (output_dir/sweep_{sweep_id})
         sweep_id: W&B sweep ID
         location: Location identifier for this machine
         registry_path: Path to the registry JSON file
@@ -114,7 +114,7 @@ class SweepRegistry:
     
     def __init__(
         self,
-        suite_dir: str,
+        sweep_root_dir: str,
         sweep_id: str,
         location: Optional[str] = None,
         create_if_missing: bool = True
@@ -123,23 +123,23 @@ class SweepRegistry:
         Initialize the sweep registry.
         
         Args:
-            suite_dir: Path to the suite directory for this sweep
+            sweep_root_dir: Path to the sweep root directory (output_dir/sweep_{sweep_id})
             sweep_id: W&B sweep ID
             location: Location identifier (default: from env or hostname)
             create_if_missing: Create registry file if it doesn't exist
         """
-        self.suite_dir = Path(suite_dir).resolve()
+        self.sweep_root_dir = Path(sweep_root_dir).resolve()
         self.sweep_id = sweep_id
         self.location = location or get_location()
         self.machine_id = get_machine_id()
         
-        # Registry file is in the suite directory
-        self.registry_path = self.suite_dir / self.REGISTRY_FILENAME
-        self.lock_path = self.suite_dir / f"{self.REGISTRY_FILENAME}.lock"
+        # Registry file is in the sweep root directory
+        self.registry_path = self.sweep_root_dir / self.REGISTRY_FILENAME
+        self.lock_path = self.sweep_root_dir / f"{self.REGISTRY_FILENAME}.lock"
         
         # Create directory and initialize registry if needed
         if create_if_missing:
-            self.suite_dir.mkdir(parents=True, exist_ok=True)
+            self.sweep_root_dir.mkdir(parents=True, exist_ok=True)
             if not self.registry_path.exists():
                 self._initialize_registry()
     

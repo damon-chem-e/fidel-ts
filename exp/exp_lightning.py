@@ -339,7 +339,12 @@ def train_lightning_model(args, exp_manager):
             self.exp_manager = exp_manager
         
         def on_train_epoch_end(self, trainer, pl_module):
-            """Update job history after each training epoch."""
+            """
+            Update job history after each training epoch.
+            
+            This also checks for external stop signals (Hyperband pruning, etc.)
+            and stops training if needed.
+            """
             if trainer.sanity_checking:
                 return
             
@@ -350,10 +355,15 @@ def train_lightning_model(args, exp_manager):
             if hasattr(trainer.checkpoint_callback, 'last_model_path') and trainer.checkpoint_callback.last_model_path:
                 checkpoint_path = trainer.checkpoint_callback.last_model_path
             
-            self.exp_manager.update_current_epoch(
+            # Update epoch and check for stop signals (Hyperband, etc.)
+            should_stop = self.exp_manager.update_current_epoch(
                 epoch=current_epoch,
                 checkpoint_path=checkpoint_path
             )
+            
+            # Stop training if external signal detected (e.g., Hyperband pruning)
+            if should_stop:
+                trainer.should_stop = True
     
     # Configure callbacks
     early_stopping = EarlyStopping(

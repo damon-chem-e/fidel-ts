@@ -247,7 +247,8 @@ class SweepExecutor:
         experiment_type: str = "pytorch",
         resume_ids: Optional[Dict[str, str]] = None,
         shutdown_check: Optional[Callable[[], bool]] = None,
-        wandb_run_id: Optional[str] = None
+        wandb_run_id: Optional[str] = None,
+        sweep_root: Optional[Path] = None
     ) -> SweepTrialResult:
         """
         Execute a single sweep trial.
@@ -263,6 +264,9 @@ class SweepExecutor:
             shutdown_check: Callback that returns True if shutdown was requested.
                            Training should check this periodically and exit gracefully.
             wandb_run_id: Optional W&B run ID (for resuming same wandb run)
+            sweep_root: Optional sweep root directory (output_dir/sweep_{sweep_id}).
+                       If provided, experiments will be created directly under sweep_root.
+                       If None, uses output_dir from config (legacy behavior).
         
         Returns:
             SweepTrialResult with completion status and metadata
@@ -284,7 +288,8 @@ class SweepExecutor:
                     sweep_params=sweep_params,
                     resume_ids=resume_ids,
                     shutdown_check=shutdown_check,
-                    wandb_run_id=wandb_run_id
+                    wandb_run_id=wandb_run_id,
+                    sweep_root=sweep_root
                 )
             else:
                 result = self._execute_single_trial(
@@ -293,7 +298,8 @@ class SweepExecutor:
                     experiment_type=experiment_type,
                     resume_ids=resume_ids,
                     shutdown_check=shutdown_check,
-                    wandb_run_id=wandb_run_id
+                    wandb_run_id=wandb_run_id,
+                    sweep_root=sweep_root
                 )
             
             # Detect completion reason if not set
@@ -337,7 +343,8 @@ class SweepExecutor:
         sweep_params: Dict[str, Any],
         resume_ids: Optional[Dict[str, str]] = None,
         shutdown_check: Optional[Callable[[], bool]] = None,
-        wandb_run_id: Optional[str] = None
+        wandb_run_id: Optional[str] = None,
+        sweep_root: Optional[Path] = None
     ) -> SweepTrialResult:
         """
         Execute a suite sweep trial.
@@ -362,8 +369,13 @@ class SweepExecutor:
         # Apply sweep parameters
         suite_config = self._apply_sweep_params_to_suite(suite_config, sweep_params)
         
-        # Get output directory and total epochs for tracking
-        output_dir = Path(suite_config.get('suite', {}).get('output_dir', './output')).resolve()
+        # Determine output directory - use sweep_root if provided, otherwise from config
+        if sweep_root is not None:
+            output_dir = sweep_root
+        else:
+            output_dir = Path(suite_config.get('suite', {}).get('output_dir', './output')).resolve()
+        
+        # Get total epochs for tracking
         experiments = suite_config.get('suite', {}).get('experiments', [])
         first_exp = next((e for e in experiments if e.get('enabled', True)), experiments[0] if experiments else {})
         
@@ -395,7 +407,12 @@ class SweepExecutor:
             
             # First: Initialize to get IDs (if not resuming)
             if not resume_ids:
-                executor = SuiteExecutor(suite_config, init_only=True, return_ids=True)
+                executor = SuiteExecutor(
+                    suite_config, 
+                    init_only=True, 
+                    return_ids=True,
+                    output_dir=str(output_dir) if output_dir else None
+                )
                 init_result = executor.execute()
                 
                 if not init_result:
@@ -424,7 +441,11 @@ class SweepExecutor:
                 return result
             
             # Execute training
-            executor = SuiteExecutor(suite_config, init_only=False)
+            executor = SuiteExecutor(
+                suite_config, 
+                init_only=False,
+                output_dir=str(output_dir) if output_dir else None
+            )
             executor.execute()
             
             # If we get here, training completed without exception
@@ -459,7 +480,8 @@ class SweepExecutor:
         experiment_type: str = "pytorch",
         resume_ids: Optional[Dict[str, str]] = None,
         shutdown_check: Optional[Callable[[], bool]] = None,
-        wandb_run_id: Optional[str] = None
+        wandb_run_id: Optional[str] = None,
+        sweep_root: Optional[Path] = None
     ) -> SweepTrialResult:
         """
         Execute a single experiment sweep trial.
@@ -492,6 +514,14 @@ class SweepExecutor:
             return result
         result.total_epochs = experiment_config.training.epochs
         
+        # Determine output directory
+        # If sweep_root is provided, use sweep_root directly as the output directory
+        # This ensures experiments are nested under the sweep root structure
+        if sweep_root is not None:
+            output_dir = sweep_root
+        else:
+            output_dir = None  # Use default from config
+        
         # Set resume IDs if provided
         if resume_ids:
             experiment_config.resume_experiment_id = resume_ids.get('experiment_id')
@@ -520,7 +550,12 @@ class SweepExecutor:
             
             # Initialize to get IDs if not resuming
             if not resume_ids:
-                init_result = run(experiment_config, init_only=True, return_ids=True)
+                init_result = run(
+                    experiment_config,
+                    init_only=True,
+                    return_ids=True,
+                    output_dir=str(output_dir) if output_dir else None
+                )
                 
                 if not init_result:
                     result.error = "Failed to initialize experiment"
@@ -544,7 +579,11 @@ class SweepExecutor:
                 return result
             
             # Execute training
-            run(experiment_config, init_only=False)
+            run(
+                experiment_config,
+                init_only=False,
+                output_dir=str(output_dir) if output_dir else None
+            )
             
             # If we get here, training completed without exception
             result.success = True
@@ -652,7 +691,7 @@ class SweepExecutor:
         self,
         experiment_id: str,
         suite_id: Optional[str],
-        output_dir: Path
+        sweep_root: Optional[Path] = None
     ) -> Optional[int]:
         """
         Read the final completed epoch from job_history.json.
@@ -661,21 +700,32 @@ class SweepExecutor:
         so this gives us the authoritative final epoch even if training
         was interrupted mid-epoch.
         
+        Uses the new sweep root directory structure:
+        - If sweep_root provided: sweep_root / {suite_id} / {experiment_id} / job_history.json
+        - Legacy fallback: output_dir / {suite_id} / {experiment_id} / job_history.json
+        
         Args:
             experiment_id: Experiment ID
             suite_id: Optional suite ID (if part of suite)
-            output_dir: Base output directory
+            sweep_root: Optional sweep root directory (output_dir/sweep_{sweep_id})
             
         Returns:
             Final epoch number, or None if job_history not found
         """
         import json
         
-        # Determine experiment directory path
-        if suite_id:
-            exp_dir = output_dir / suite_id / experiment_id
+        # Determine experiment directory path using new structure
+        if sweep_root is not None:
+            # New structure: sweep_root / suite_id / experiment_id
+            if suite_id:
+                exp_dir = sweep_root / suite_id / experiment_id
+            else:
+                exp_dir = sweep_root / experiment_id
         else:
-            exp_dir = output_dir / experiment_id
+            # Legacy fallback (shouldn't happen in new code, but for compatibility)
+            # This would need output_dir, but we don't have it here
+            # Try to infer from common locations
+            return None
         
         job_history_path = exp_dir / "job_history.json"
         

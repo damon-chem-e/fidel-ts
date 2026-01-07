@@ -1264,16 +1264,78 @@ class ExperimentManager:
         self._save_job_history()
         self.logger.info(f"Registered job end: epoch {end_epoch}, status={status}")
     
-    def update_current_epoch(self, epoch: int, checkpoint_path: Optional[str] = None) -> None:
+    def check_should_stop(self) -> tuple[bool, Optional[str]]:
+        """
+        Check if training should stop early due to external signals.
+        
+        This method checks for stop signals that should be checked after each epoch:
+        1. wandb.run.should_stop() - Set by Hyperband/ASHA scheduler when run is pruned
+        2. wandb.run.stopped - Alternative check for Hyperband pruning
+        
+        This is particularly important for sweep runs where:
+        - Hyperband may prune runs early based on performance
+        - Shutdown signals may be received (though these are typically handled
+          by the training loop checking shutdown_check callback)
+        
+        Returns:
+            Tuple of (should_stop: bool, reason: Optional[str])
+            - should_stop: True if training should exit gracefully
+            - reason: Completion reason if stopping ("hyperband", etc.), None otherwise
+        
+        Example:
+            # In training loop after each epoch:
+            should_stop, reason = exp_manager.check_should_stop()
+            if should_stop:
+                if reason:
+                    exp_manager.set_completion_reason(reason)
+                break  # Exit training loop gracefully
+        """
+        # Check wandb for Hyperband/ASHA pruning
+        try:
+            import wandb
+            if wandb.run is not None:
+                # Check should_stop() method (preferred)
+                if hasattr(wandb.run, 'should_stop') and callable(wandb.run.should_stop):
+                    if wandb.run.should_stop():
+                        self.logger.info("Training stopped: wandb.run.should_stop() returned True (Hyperband pruning)")
+                        return True, "hyperband"
+                
+                # Check stopped attribute (fallback)
+                if getattr(wandb.run, 'stopped', False):
+                    self.logger.info("Training stopped: wandb.run.stopped is True (Hyperband pruning)")
+                    return True, "hyperband"
+        except Exception:
+            pass  # wandb not available or error
+        
+        return False, None
+    
+    def update_current_epoch(self, epoch: int, checkpoint_path: Optional[str] = None) -> bool:
         """
         Update current epoch in job history (called after each epoch).
+        
+        This method:
+        1. Updates job_history.json with the current epoch progress
+        2. Automatically checks for early termination signals (Hyperband, shutdown, etc.)
+        3. Returns True if training should stop, False otherwise
+        
+        For sweep runs, this automatically detects Hyperband pruning via
+        wandb.run.should_stop() and sets the completion reason appropriately.
         
         Args:
             epoch: Current epoch number (1-indexed)
             checkpoint_path: Optional path to checkpoint saved at this epoch
+            
+        Returns:
+            True if training should stop (e.g., Hyperband pruning), False otherwise
+            
+        Example:
+            # In training loop after each epoch:
+            should_stop = exp_manager.update_current_epoch(epoch, checkpoint_path)
+            if should_stop:
+                break  # Exit training loop gracefully
         """
         if not self.job_history.get("jobs"):
-            return
+            return False
         
         # Update current job's epochs_completed list
         current_job = self.job_history["jobs"][-1]
@@ -1286,7 +1348,21 @@ class ExperimentManager:
             self.job_history["last_checkpoint"] = checkpoint_path
         
         # Save periodically (every epoch)
+        # This ensures job_history.json is always up-to-date, even if SIGTERM
+        # kills the process before end_experiment() can run. The registry
+        # reconciliation in SweepManager will read this to determine final state.
         self._save_job_history()
+        
+        # Check for early termination signals (Hyperband pruning, etc.)
+        # This is called automatically after each epoch to detect external stop signals
+        should_stop, reason = self.check_should_stop()
+        if should_stop:
+            # Set completion reason if provided (e.g., "hyperband")
+            if reason:
+                self.set_completion_reason(reason)
+            return True
+        
+        return False
     
     def _detect_training_completed(self) -> bool:
         """

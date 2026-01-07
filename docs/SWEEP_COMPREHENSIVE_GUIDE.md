@@ -24,6 +24,8 @@ The sweep system enables hyperparameter optimization across distributed compute 
 - **Local Registry**: File-based tracking eliminates race conditions with W&B server
 - **Location-Aware Resumption**: Runs resume only where checkpoints exist
 - **Graceful Shutdown**: Signal handling for clean SLURM timeout handling
+- **Self-Healing**: Registry reconciliation automatically fixes state after hard kills
+- **Per-Epoch Stop Checks**: Detects Hyperband pruning and shutdown signals after each epoch
 - **Multi-Platform**: Works across SLURM, RunPod, and local machines
 
 ### What It Supports
@@ -459,9 +461,22 @@ if loss < convergence_threshold:
 When a signal is received (SIGTERM, SIGINT):
 
 1. **SweepManager's signal handler** sets `shutdown_requested = True`
+   - Signal handler does NOT update registry (avoids race conditions)
+   - Signal handler does NOT raise exceptions (clean shutdown)
 2. **Training detects shutdown** via callback and exits gracefully
 3. **SweepExecutor returns** `SweepTrialResult` with `interrupted=True`
 4. **SweepManager finalizes** and marks run as `NEEDS_RESUME`
+
+**Self-Healing After SIGTERM:**
+
+If SIGTERM kills the process before `_finalize_run()` can update the registry:
+
+1. **Registry reconciliation** runs automatically at startup
+2. **Reads job_history.json** (updated every epoch by ExperimentManager)
+3. **Determines actual state**: COMPLETED if `current_epoch >= total_epochs`, else NEEDS_RESUME
+4. **Updates registry** to reflect true state
+
+This ensures the registry accurately reflects run state even after hard kills, without requiring signal-time writes that could cause race conditions.
 
 ---
 
@@ -475,21 +490,64 @@ The local registry solves several problems:
 2. **Location-Aware**: Runs only resume where checkpoints exist
 3. **Fast**: No API calls needed to check resumption status
 4. **Robust**: Works even if W&B is temporarily unavailable
+5. **Self-Healing**: Automatically reconciles state after hard kills
+
+### Self-Healing Mechanism
+
+The registry implements a self-healing mechanism that ensures accurate state even after hard kills:
+
+**Problem:** If SIGTERM kills the process before `_finalize_run()` can update the registry, entries may remain in `RUNNING` state indefinitely.
+
+**Solution:** Registry reconciliation runs automatically at startup:
+
+1. **Finds RUNNING entries** for this location
+2. **Reads job_history.json** (updated every epoch by ExperimentManager)
+3. **Determines actual state**:
+   - `COMPLETED` if `current_epoch >= total_epochs` or completion_reason is set
+   - `NEEDS_RESUME` otherwise (with correct final_epoch)
+4. **Updates registry** to reflect true state
+
+**Benefits:**
+- No signal-time writes (avoids race conditions)
+- Works even if process is hard-killed
+- Uses `job_history.json` as authoritative source (updated every epoch)
+- Automatic - no manual intervention needed
+
+**When It Runs:**
+- Automatically at the start of `run_loop()` (unless `new_only=True`)
+- Before checking for incomplete runs
+- Ensures registry is accurate before making resumption decisions
 
 ### Registry Location
 
-Each sweep has its own registry file:
+Each sweep has its own registry file stored in a deterministic sweep root directory:
 
 ```
 output/
-└── suite_name_timestamp/
-    ├── .sweep_registry.json      # Registry for this sweep
-    ├── .sweep_registry.json.lock # Lock file
-    └── experiment_id/
+└── sweep_{sweep_id}/              # Sweep root directory
+    ├── .sweep_registry.json       # Registry for this sweep
+    ├── .sweep_registry.json.lock  # Lock file
+    └── {suite_id}/                # Suite directories (if part of suite)
+        └── {experiment_id}/
+            ├── checkpoints/
+            ├── job_history.json
+            └── ...
+    └── {experiment_id}/            # Single experiment directories (if not part of suite)
         ├── checkpoints/
         ├── job_history.json
         └── ...
 ```
+
+**Key Design Principles:**
+
+1. **Single Sweep Root**: Each sweep has a deterministic root at `output_dir/sweep_{sweep_id}/`
+2. **Registry Always Here**: The registry is always at `sweep_root/.sweep_registry.json`
+3. **Experiments Directly Under Sweep Root**: All experiment directories are nested directly under `sweep_root/` (no intermediate `runs/` subdirectory)
+4. **No Ambiguity**: This structure eliminates confusion about where registry vs experiments are stored
+
+**Legacy Support:**
+
+The system also checks legacy locations (`output_dir/suites/*`) for migration compatibility, but new sweeps always use the new structure.
 
 ### Registry Status Values
 
@@ -608,7 +666,7 @@ exp_manager.set_completion_reason("early_stopping")
    - Ensure `--output-dir` points to the same location.
 
 3. **Run marked as failed**: Run had an error and can't be resumed.
-   - Check registry status: `cat output/suite_dir/.sweep_registry.json`
+   - Check registry status: `cat output/sweep_{sweep_id}/.sweep_registry.json`
 
 ### Sweep Shows as Finished But Runs Incomplete
 
@@ -637,7 +695,20 @@ python scripts/local_sweep_agent.py SWEEP_ID --project my-project --resume-only
 
 **Fix:** 
 1. Check for zombie processes: `ps aux | grep sweep`
-2. Remove lock file if needed: `rm output/suite_dir/.sweep_registry.json.lock`
+2. Remove lock file if needed: `rm output/sweep_{sweep_id}/.sweep_registry.json.lock`
+
+### Registry Shows RUNNING But Job Finished
+
+**Symptom:** Registry shows status `RUNNING` but job actually completed or was interrupted.
+
+**Cause:** SIGTERM killed the process before `_finalize_run()` could update the registry.
+
+**Fix:** This is automatically handled by registry reconciliation on startup. The next time you run the sweep agent, it will:
+1. Find all `RUNNING` entries for this location
+2. Read `job_history.json` to determine actual progress
+3. Update registry: `COMPLETED` if `current_epoch >= total_epochs`, else `NEEDS_RESUME`
+
+No manual intervention needed - the system self-heals!
 
 ---
 
@@ -708,9 +779,39 @@ When running on SLURM + RunPod simultaneously:
 
 | File | Purpose |
 |------|---------|
-| `output/suite_dir/.sweep_registry.json` | Local run status registry |
-| `output/suite_dir/exp_id/job_history.json` | Experiment job tracking |
-| `output/suite_dir/exp_id/checkpoints/` | Model checkpoints |
+| `output/sweep_{sweep_id}/.sweep_registry.json` | Local run status registry |
+| `output/sweep_{sweep_id}/{suite_id}/{exp_id}/job_history.json` | Experiment job tracking (suite experiments) |
+| `output/sweep_{sweep_id}/{exp_id}/job_history.json` | Experiment job tracking (single experiments) |
+| `output/sweep_{sweep_id}/{suite_id}/{exp_id}/checkpoints/` | Model checkpoints (suite experiments) |
+| `output/sweep_{sweep_id}/{exp_id}/checkpoints/` | Model checkpoints (single experiments) |
+
+**Directory Structure:**
+
+```
+output/
+└── sweep_{sweep_id}/                    # Sweep root (deterministic)
+    ├── .sweep_registry.json             # Registry (single source of truth)
+    ├── .sweep_registry.json.lock        # Lock file for concurrent access
+    └── {suite_id}/                      # Suite directory (if part of suite)
+        └── {experiment_id}/             # Individual experiment
+            ├── job_history.json         # Updated every epoch (authoritative)
+            ├── checkpoints/             # Model checkpoints
+            ├── logs/                    # Training logs
+            └── ...
+    └── {experiment_id}/                 # Single experiment (if not part of suite)
+        ├── job_history.json             # Updated every epoch (authoritative)
+        ├── checkpoints/                 # Model checkpoints
+        ├── logs/                        # Training logs
+        └── ...
+```
+
+**Why This Structure?**
+
+1. **Deterministic Registry Location**: Always at `sweep_root/.sweep_registry.json`
+2. **No Ambiguity**: Clear separation between registry and experiments
+3. **Simplified Structure**: Experiments are directly under sweep root (no redundant `runs/` subdirectory)
+4. **Self-Healing**: Registry reconciliation reads `job_history.json` from experiments
+5. **Scalable**: Supports multiple suites/experiments per sweep
 
 ---
 
@@ -792,4 +893,4 @@ The sweep system provides robust hyperparameter optimization with:
 - **Clean architecture**: Single owner of state and signals
 - **Flexible execution**: Works on SLURM, RunPod, and local machines
 
-For questions or issues, check the troubleshooting section or examine the local registry (`cat output/suite_dir/.sweep_registry.json`) for debugging information.
+For questions or issues, check the troubleshooting section or examine the local registry (`cat output/sweep_{sweep_id}/.sweep_registry.json`) for debugging information.

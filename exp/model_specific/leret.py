@@ -325,7 +325,10 @@ def _run_lightning_pretrain(args, exp_manager, data_module, leret_config):
         def __init__(self, em): self.em = em
         def on_train_epoch_end(self, trainer, pl_module):
             if not trainer.sanity_checking:
-                self.em.update_current_epoch(trainer.current_epoch + 1)
+                # Update epoch and check for stop signals (Hyperband pruning, etc.)
+                should_stop = self.em.update_current_epoch(trainer.current_epoch + 1)
+                if should_stop:
+                    trainer.should_stop = True
     
     trainer = pl.Trainer(
         max_epochs=leret_config.pretrain_epochs,
@@ -400,7 +403,10 @@ def _run_lightning_finetune(args, exp_manager, data_module, leret_config, pretra
         def __init__(self, em, offset): self.em, self.offset = em, offset
         def on_train_epoch_end(self, trainer, pl_module):
             if not trainer.sanity_checking:
-                self.em.update_current_epoch(trainer.current_epoch + 1 + self.offset)
+                # Update epoch and check for stop signals (Hyperband pruning, etc.)
+                should_stop = self.em.update_current_epoch(trainer.current_epoch + 1 + self.offset)
+                if should_stop:
+                    trainer.should_stop = True
     
     trainer = pl.Trainer(
         max_epochs=args.train_epochs,
@@ -721,7 +727,12 @@ class LeRetPyTorchTrainer:
                 break
             
             adjust_learning_rate(optimizer, epoch, self.args)
-            self.exp_manager.update_current_epoch(epoch)
+            
+            # Update epoch and check for stop signals (Hyperband pruning, etc.)
+            should_stop = self.exp_manager.update_current_epoch(epoch)
+            if should_stop:
+                self.exp_manager.logger.info("Training stopped: external signal detected (e.g., Hyperband pruning)")
+                break
         
         # Save final pretrain checkpoint with metadata
         pretrain_ckpt_path = checkpoint_dir / 'pretrain_checkpoint.pth'
@@ -800,7 +811,12 @@ class LeRetPyTorchTrainer:
                 break
             
             adjust_learning_rate(optimizer, epoch, self.args)
-            self.exp_manager.update_current_epoch(total_epoch)
+            
+            # Update epoch and check for stop signals (Hyperband pruning, etc.)
+            should_stop = self.exp_manager.update_current_epoch(total_epoch)
+            if should_stop:
+                self.exp_manager.logger.info("Training stopped: external signal detected (e.g., Hyperband pruning)")
+                break
         
         # Load best model for testing
         best_model_path = checkpoint_dir / 'checkpoint.pth'

@@ -52,7 +52,13 @@ project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from exp.sweep_registry import SweepRegistry, get_location
+from exp.sweep_registry import (
+    SweepRegistry,
+    get_location,
+    RunStatus,
+    CompletionReason as RegistryCompletionReason,
+    InterruptReason as RegistryInterruptReason
+)
 from exp.sweep_executor import SweepExecutor, SweepTrialResult, CompletionReason, InterruptReason
 
 
@@ -197,19 +203,46 @@ class SweepManager:
         except (AttributeError, ValueError):
             pass  # Not available on Windows
     
-    def _get_or_create_registry(self, suite_dir: Path) -> SweepRegistry:
+    def _get_sweep_root(self) -> Path:
+        """
+        Get the sweep root directory for this sweep.
+        
+        The sweep root directory follows a deterministic structure:
+        output_dir / sweep_{sweep_id} /
+            .sweep_registry.json          # Registry file
+            {suite_id}/                   # Suite directories (if part of suite)
+                {experiment_id}/
+            {experiment_id}/              # Single experiment directories (if not part of suite)
+        
+        This ensures:
+        - Registry is always at a predictable location
+        - Experiments are organized directly under sweep root
+        - Single sweep root per sweep_id eliminates ambiguity
+        
+        Returns:
+            Path to sweep root directory
+        """
+        sweep_root = self.config.output_dir / f"sweep_{self.config.sweep_id}"
+        sweep_root.mkdir(parents=True, exist_ok=True)
+        return sweep_root
+    
+    def _get_or_create_registry(self) -> SweepRegistry:
         """
         Get or create the sweep registry for this sweep.
         
-        Args:
-            suite_dir: Directory for the suite/sweep
-            
+        The registry is always stored at:
+        sweep_root / .sweep_registry.json
+        
+        where sweep_root = output_dir / sweep_{sweep_id}
+        
         Returns:
             SweepRegistry instance
         """
-        if self.registry is None or self.registry.suite_dir != suite_dir:
+        sweep_root = self._get_sweep_root()
+        
+        if self.registry is None or self.registry.sweep_root_dir != str(sweep_root):
             self.registry = SweepRegistry(
-                suite_dir=str(suite_dir),
+                sweep_root_dir=str(sweep_root),
                 sweep_id=self.config.sweep_id,
                 location=self.config.location
             )
@@ -221,20 +254,27 @@ class SweepManager:
         
         Uses deterministic path: output_dir / sweep_{sweep_id} / .sweep_registry.json
         
+        This method implements the single sweep root directory structure:
+        - Sweep root: output_dir / sweep_{sweep_id}/
+        - Registry: sweep_root / .sweep_registry.json
+        - Experiments: sweep_root / {suite_id} / {experiment_id}/ (or sweep_root / {experiment_id}/ for single experiments)
+        
+        Also checks legacy locations for migration compatibility.
+        
         Returns:
             SweepRegistry if found, None otherwise
         """
         if not self.config.output_dir.exists():
             return None
         
-        # Deterministic path: output_dir / sweep_{sweep_id} / .sweep_registry.json
-        sweep_dir = self.config.output_dir / f"sweep_{self.config.sweep_id}"
-        registry_path = sweep_dir / SweepRegistry.REGISTRY_FILENAME
+        # Primary location: output_dir / sweep_{sweep_id} / .sweep_registry.json
+        sweep_root = self.config.output_dir / f"sweep_{self.config.sweep_id}"
+        registry_path = sweep_root / SweepRegistry.REGISTRY_FILENAME
         
         if registry_path.exists():
             try:
                 registry = SweepRegistry(
-                    suite_dir=str(sweep_dir),
+                    sweep_root_dir=str(sweep_root),
                     sweep_id=self.config.sweep_id,
                     location=self.config.location,
                     create_if_missing=False
@@ -246,28 +286,125 @@ class SweepManager:
             except Exception:
                 pass
         
-        # Also check suites directory (for legacy/migration cases)
-        suites_dir = self.config.output_dir / "suites"
-        if suites_dir.exists():
-            for suite_subdir in suites_dir.iterdir():
-                if not suite_subdir.is_dir():
-                    continue
-                registry_path = suite_subdir / SweepRegistry.REGISTRY_FILENAME
-                if registry_path.exists():
-                    try:
-                        registry = SweepRegistry(
-                            suite_dir=str(suite_subdir),
-                            sweep_id=self.config.sweep_id,
-                            location=self.config.location,
-                            create_if_missing=False
-                        )
-                        data = registry._load()
-                        if data.get('sweep_id') == self.config.sweep_id:
-                            return registry
-                    except Exception:
-                        continue
         
         return None
+    
+    def _reconcile_registry(self) -> None:
+        """
+        Reconcile registry state by checking RUNNING entries against job_history.json.
+        
+        This method implements self-healing for runs that were interrupted before
+        _finalize_run() could update the registry. It:
+        
+        1. Finds all runs with status RUNNING on this location
+        2. Reads job_history.json for each run to get actual progress
+        3. Determines if run completed (current_epoch >= total_epochs or completion_reason set)
+        4. Updates registry: COMPLETED if done, NEEDS_RESUME if interrupted
+        
+        This ensures the registry accurately reflects run state even after:
+        - SIGTERM that kills the process before _finalize_run()
+        - Hard crashes or OOM kills
+        - Network interruptions
+        
+        Called automatically at the start of run_loop() to ensure consistency.
+        """
+        registry = self._find_registry_for_sweep()
+        if registry is None:
+            return
+        
+        self.registry = registry
+        data = registry._load()
+        
+        # Find all RUNNING entries for this location
+        running_runs = []
+        for run_id, run_info in data["runs"].items():
+            if run_info.get("status") == RunStatus.RUNNING.value:
+                if run_info.get("location") == self.config.location:
+                    running_runs.append((run_id, run_info))
+        
+        if not running_runs:
+            return
+        
+        print(f"[SweepManager] Reconciling {len(running_runs)} RUNNING entry(ies)...")
+        
+        for wandb_run_id, run_info in running_runs:
+            experiment_id = run_info.get("experiment_id")
+            suite_id = run_info.get("suite_id")
+            
+            if not experiment_id:
+                print(f"[SweepManager] Warning: Run {wandb_run_id} has no experiment_id, skipping reconciliation")
+                continue
+            
+            # Determine experiment directory path
+            sweep_root = self._get_sweep_root()
+            if suite_id:
+                # New structure: sweep_root / suite_id / experiment_id
+                exp_dir = sweep_root / suite_id / experiment_id
+            else:
+                # Single experiment: sweep_root / experiment_id
+                exp_dir = sweep_root / experiment_id
+                if not exp_dir.exists() and suite_id:
+                    # Try legacy suites structure
+                    exp_dir = self.config.output_dir / suite_id / experiment_id
+            
+            job_history_path = exp_dir / "job_history.json"
+            
+            if not job_history_path.exists():
+                print(f"[SweepManager] Warning: job_history.json not found for {wandb_run_id} at {job_history_path}")
+                # Mark as needs_resume with epoch 0 (will start fresh)
+                registry.mark_needs_resume(
+                    wandb_run_id=wandb_run_id,
+                    interrupt_reason=InterruptReason.UNKNOWN.value,
+                    final_epoch=0,
+                    total_epochs=run_info.get("total_epochs", 100)
+                )
+                continue
+            
+            # Read job_history.json (authoritative source for epoch progress)
+            try:
+                import json
+                with open(job_history_path, 'r', encoding='utf-8') as f:
+                    job_history = json.load(f)
+            except Exception as e:
+                print(f"[SweepManager] Error reading job_history.json for {wandb_run_id}: {e}")
+                continue
+            
+            current_epoch = job_history.get("current_epoch", 0)
+            total_epochs = job_history.get("total_epochs", run_info.get("total_epochs", 100))
+            
+            # Check for completion reason in job_history (set by ExperimentManager)
+            completion_reason = None
+            if "completion_reason" in job_history:
+                completion_reason = job_history["completion_reason"]
+            
+            # Check if training completed
+            is_complete = False
+            if completion_reason:
+                # Explicit completion reason set (early stopping, hyperband, etc.)
+                is_complete = True
+            elif current_epoch >= total_epochs > 0:
+                # All epochs completed
+                is_complete = True
+                completion_reason = CompletionReason.ALL_EPOCHS.value
+            
+            if is_complete:
+                # Run completed successfully
+                registry.mark_complete(
+                    wandb_run_id=wandb_run_id,
+                    completion_reason=completion_reason or RegistryCompletionReason.ALL_EPOCHS.value,
+                    final_epoch=current_epoch,
+                    total_epochs=total_epochs
+                )
+                print(f"[SweepManager] Reconciled {wandb_run_id}: COMPLETED (epoch {current_epoch}/{total_epochs}, reason: {completion_reason})")
+            else:
+                # Run was interrupted, needs resumption
+                registry.mark_needs_resume(
+                    wandb_run_id=wandb_run_id,
+                    interrupt_reason=InterruptReason.UNKNOWN.value,
+                    final_epoch=current_epoch,
+                    total_epochs=total_epochs
+                )
+                print(f"[SweepManager] Reconciled {wandb_run_id}: NEEDS_RESUME (epoch {current_epoch}/{total_epochs})")
     
     def get_incomplete_runs(self) -> List[Dict[str, Any]]:
         """
@@ -321,6 +458,11 @@ class SweepManager:
         print("[SweepManager] Starting run loop")
         print(f"[SweepManager] Mode: {mode}")
         print(f"[SweepManager] Max runs: {count if count else 'unlimited'}")
+        
+        # Reconcile registry on startup to heal any RUNNING entries
+        # This handles cases where SIGTERM killed the process before _finalize_run()
+        if not new_only:
+            self._reconcile_registry()
         
         while True:
             # Check run limit
@@ -431,24 +573,22 @@ class SweepManager:
                 'experiment_ids': config.get('_experiment_ids', {})
             }
             
-            # Ensure we have registry
-            if suite_id:
-                suite_dir = self.config.output_dir / suite_id
-            else:
-                suite_dir = self.config.output_dir / f"sweep_{self.config.sweep_id}"
-            self._get_or_create_registry(suite_dir)
+            # Ensure we have registry (using new sweep root structure)
+            self._get_or_create_registry()
             
             # Mark as running
             self.registry.mark_running(wandb_run_id, run_info.get('total_epochs', 100))
             
-            # Execute trial
+            # Execute trial with sweep root directory
+            sweep_root = self._get_sweep_root()
             result = self.executor.execute_trial(
                 config_path=config_path,
                 sweep_params=sweep_params,
                 experiment_type=config.get('_experiment_type', self.config.experiment_type),
                 resume_ids=resume_ids,
                 shutdown_check=lambda: self.shutdown_requested,
-                wandb_run_id=wandb_run_id
+                wandb_run_id=wandb_run_id,
+                sweep_root=sweep_root
             )
             
             # Add run info to result
@@ -522,20 +662,21 @@ class SweepManager:
                 # Get hyperparams
                 sweep_params = {k: v for k, v in config.items() if not k.startswith('_')}
                 
-                # Execute trial
+                # Execute trial with sweep root directory
+                sweep_root = self._get_sweep_root()
                 result = self.executor.execute_trial(
                     config_path=config_path,
                     sweep_params=sweep_params,
                     experiment_type=config.get('_experiment_type', self.config.experiment_type),
-                    shutdown_check=lambda: self.shutdown_requested
+                    shutdown_check=lambda: self.shutdown_requested,
+                    sweep_root=sweep_root
                 )
                 
                 # Add wandb info
                 result.wandb_run_id = wandb.run.id
                 
                 # Ensure registry exists
-                suite_dir = self.config.output_dir / (result.suite_id or f"sweep_{self.config.sweep_id}")
-                self._get_or_create_registry(suite_dir)
+                self._get_or_create_registry()
                 
                 # Register run in registry if not already
                 if not self.registry.run_exists(result.wandb_run_id):
@@ -600,11 +741,12 @@ class SweepManager:
         # gives us the authoritative final epoch even if training was interrupted.
         final_epoch = result.final_epoch
         if final_epoch == 0 and result.experiment_id:
-            # Try to read from job_history
+            # Try to read from job_history (using new directory structure)
+            sweep_root = self._get_sweep_root()
             final_epoch = self.executor._read_final_epoch_from_job_history(
                 experiment_id=result.experiment_id,
                 suite_id=result.suite_id,
-                output_dir=self.config.output_dir
+                sweep_root=sweep_root
             ) or 0
         
         total_epochs = result.total_epochs
