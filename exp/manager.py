@@ -7,6 +7,45 @@ This module provides the ExperimentManager class that handles:
 - Local metrics logging
 - WandB integration for cloud-based experiment tracking
 - Complete experiment reproducibility
+- Sweep integration for hyperparameter optimization (optional)
+
+Sweep Integration
+-----------------
+The ExperimentManager provides completion signals to the sweep system:
+
+1. Training code can call set_completion_reason() when training ends
+   for reasons other than completing all epochs (e.g., early stopping)
+
+2. ExperimentManager uses _detect_training_completed() to determine if
+   training finished successfully (all epochs, early stopping, etc.)
+
+3. On end_experiment(), the manager updates wandb.summary with completion
+   status (for visibility, but NOT authoritative for resumption)
+
+Note: The SweepManager (see exp/sweep_manager.py) owns the sweep registry
+and reads completion status from job_history.json. ExperimentManager does
+not directly update the registry - this ensures single ownership of state.
+
+Completion Detection
+--------------------
+The ExperimentManager detects training completion by checking:
+1. current_epoch >= total_epochs in job_history
+2. Any explicitly set completion reason (early stopping, etc.)
+
+Training code should call set_completion_reason() when training ends
+for reasons other than completing all epochs (e.g., early stopping).
+
+Usage:
+    # Basic experiment (no sweep)
+    manager = ExperimentManager(config, output_dir="./output")
+    # ... training ...
+    manager.end_experiment(final_metrics)
+
+    # With sweep integration (SweepManager reads job_history.json)
+    manager = ExperimentManager(config, output_dir="./output")
+    # ... training ...
+    manager.set_completion_reason("early_stopping")  # if applicable
+    manager.end_experiment(final_metrics)
 """
 
 import os
@@ -139,12 +178,8 @@ class ExperimentManager:
         # GPU monitor reference (set by gpu_monitoring_context)
         self.gpu_monitor = None
         
-        # Sweep registry reference (set externally when running in sweep context)
-        # This allows the ExperimentManager to update completion status
-        self.sweep_registry: Optional['SweepRegistry'] = None
-        self.wandb_run_id_for_registry: Optional[str] = None
-        
         # Completion reason tracking (can be set by training code)
+        # This is used by the sweep system to detect completion (early stopping, etc.)
         self._completion_reason: Optional[str] = None
         
         # Load job history if experiment already exists (for resume)
@@ -883,27 +918,9 @@ class ExperimentManager:
             # Default to "all_epochs" if completed and no specific reason set
             completion_reason = "all_epochs"
         
-        # Update local sweep registry (authoritative source for resumption)
-        if self.sweep_registry is not None and self.wandb_run_id_for_registry:
-            try:
-                if sweep_completed:
-                    self.sweep_registry.mark_complete(
-                        wandb_run_id=self.wandb_run_id_for_registry,
-                        completion_reason=completion_reason or "all_epochs",
-                        final_epoch=current_epoch,
-                        total_epochs=total_epochs
-                    )
-                    self.logger.info(f"Marked run as complete in local registry (reason: {completion_reason})")
-                else:
-                    self.sweep_registry.mark_needs_resume(
-                        wandb_run_id=self.wandb_run_id_for_registry,
-                        interrupt_reason="interrupted",
-                        final_epoch=current_epoch,
-                        total_epochs=total_epochs
-                    )
-                    self.logger.info("Marked run as needs_resume in local registry")
-            except Exception as e:
-                self.logger.warning(f"Failed to update sweep registry: {e}")
+        # Note: Sweep registry updates are handled by SweepManager._finalize_run()
+        # The ExperimentManager no longer directly updates the registry.
+        # This ensures single ownership of registry state.
         
         # Mark sweep completion in wandb.summary BEFORE calling finish()
         # This is for central visibility but NOT authoritative for resumption
@@ -1273,19 +1290,53 @@ class ExperimentManager:
     
     def _detect_training_completed(self) -> bool:
         """
-        Auto-detect whether training has completed all epochs.
+        Auto-detect whether training has completed successfully.
         
-        Checks job_history to see if current_epoch >= total_epochs.
-        This prevents false positives where a partial run is marked as complete.
+        This method determines if training is COMPLETE (should NOT be resumed).
+        It checks multiple signals in priority order:
+        
+        1. Explicit completion reason (set via set_completion_reason())
+           - early_stopping, hyperband, converged, manual_stop
+        
+        2. wandb.run.stopped (set by Hyperband/ASHA scheduler)
+           - Indicates sweep controller pruned the run
+        
+        3. Epoch comparison (current_epoch >= total_epochs)
+           - All planned epochs have been completed
+        
+        If none of these are true, the run is considered INCOMPLETE and
+        should be resumed later.
         
         Returns:
-            True if all epochs have been completed, False otherwise
+            True if training completed successfully (should NOT be resumed)
+            False if training is incomplete (should be resumed)
+            
+        Note:
+            This method is used by end_experiment() to auto-detect completion
+            status when sweep_completed is not explicitly provided.
         """
         # If init_only mode, training hasn't started yet
         if self.init_only:
             return False
         
-        # Check job_history for completion
+        # Priority 1: Check for explicit completion reason
+        # This handles early stopping, hyperband, convergence, etc.
+        if self._completion_reason is not None:
+            self.logger.debug(f"Training completed: explicit reason set ({self._completion_reason})")
+            return True
+        
+        # Priority 2: Check wandb.run.stopped (Hyperband/ASHA pruning)
+        # The sweep controller sets this flag when pruning a run
+        try:
+            import wandb
+            if wandb.run is not None and getattr(wandb.run, 'stopped', False):
+                self.logger.debug("Training completed: wandb.run.stopped is True (Hyperband pruning)")
+                self._completion_reason = "hyperband"  # Record the reason
+                return True
+        except Exception:
+            pass  # wandb not available or error
+        
+        # Priority 3: Check job_history for epoch completion
         if not hasattr(self, 'job_history') or not self.job_history:
             # No job history - can't determine, assume incomplete for safety
             self.logger.warning("No job_history available for completion detection, assuming incomplete")
@@ -1319,34 +1370,41 @@ class ExperimentManager:
         """
         Set the reason for training completion.
         
-        This should be called by training code when training ends for a specific
-        reason (e.g., early stopping, hyperband pruning, convergence).
+        This method should be called by training code when training ends for a
+        specific reason OTHER than completing all epochs. This ensures the sweep
+        system correctly identifies the run as COMPLETE (not needing resumption).
         
-        Valid reasons:
-        - "all_epochs": Completed all planned epochs
+        Why This Matters
+        ----------------
+        Without setting a completion reason, the sweep system would see that
+        current_epoch < total_epochs and incorrectly mark the run for resumption.
+        By setting an explicit reason, we signal that the run is intentionally
+        complete even though it didn't finish all epochs.
+        
+        Valid reasons (see exp.sweep_executor.CompletionReason):
+        - "all_epochs": Completed all planned epochs (usually auto-detected)
         - "early_stopping": Patience-based early stopping triggered
-        - "hyperband": Sweep controller (Hyperband) pruned the run
+        - "hyperband": Sweep controller (Hyperband/ASHA) pruned the run
         - "converged": Reached convergence threshold
-        - "manual_stop": Manually stopped
+        - "manual_stop": Intentionally stopped (not the same as interrupted)
+        
+        When to Call
+        ------------
+        - Early stopping callback triggers → set_completion_reason("early_stopping")
+        - Convergence threshold reached → set_completion_reason("converged")
+        - Manual stop requested by user → set_completion_reason("manual_stop")
+        - Hyperband: Usually detected automatically via wandb.run.stopped
         
         Args:
-            reason: Completion reason string
+            reason: Completion reason string (see valid reasons above)
+            
+        Example:
+            # In your training loop's early stopping callback:
+            if early_stopping.should_stop:
+                exp_manager.set_completion_reason("early_stopping")
+                break
         """
         self._completion_reason = reason
         self.logger.info(f"Training completion reason set: {reason}")
     
-    def set_sweep_registry(self, registry: 'SweepRegistry', wandb_run_id: str) -> None:
-        """
-        Set the sweep registry for this experiment.
-        
-        This is called by the sweep wrapper to allow the ExperimentManager
-        to update the local registry with completion status.
-        
-        Args:
-            registry: SweepRegistry instance
-            wandb_run_id: W&B run ID for this sweep trial
-        """
-        self.sweep_registry = registry
-        self.wandb_run_id_for_registry = wandb_run_id
-        self.logger.debug(f"Sweep registry set for run {wandb_run_id}")
 
