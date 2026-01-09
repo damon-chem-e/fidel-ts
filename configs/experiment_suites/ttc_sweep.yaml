@@ -30,6 +30,7 @@ suite:
           enc_in: 4  # Number of features: Respiratory_Rate, Heart_Rate, SaO2, FiO2
           # e_layers, d_model, n_heads will be overridden by sweep
           n_heads: 8
+          e_layers: 2
         data:
           name: "ttc_medical"
           config_path: "data_configs/ttc/medical/config.yaml"
@@ -41,8 +42,9 @@ suite:
           output_len: 7       # Prediction length from Table 4
           batch_size: 8       # Will be overridden by sweep (default in middle of range)
           learning_rate: 0.00025  # Will be overridden by sweep (default in middle of good range)
-          patience: 5
-          epochs: 50
+          lradj: constant      # Keep learning rate constant (no exponential decay)
+          patience: 3
+          epochs: 10
           track_per_sample: false
           evaluate_test_during_training: false
         wandb:

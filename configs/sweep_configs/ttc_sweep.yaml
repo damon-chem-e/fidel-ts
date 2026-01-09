@@ -16,9 +16,6 @@ _config_path: "configs/experiment_suites/ttc_sweep.yaml"
 parameters:
   # Model Architecture Parameters (via model_config_overrides)
   # These override values in model_configs/general/lynx_film_raw.yaml
-  # Sweeping around e_layers=2
-  model_config_overrides.e_layers:  # Depth: number of transformer layers
-    values: [1, 2, 3]
   
   # Sweeping around d_model=512
   model_config_overrides.d_model:  # Width: model dimension
@@ -28,9 +25,9 @@ parameters:
   # Sweeping around learning_rate=0.00025
   training.learning_rate:
     distribution: log_uniform_values  # Use _values variant for actual value range
-    min: 1.5e-4  # Range around 0.00025
+    min: 1.0e-4  # Range around 0.00025
     max: 4e-4
   
   # Sweeping around batch_size=8
   training.batch_size:
-    values: [8, 12, 16]  # Range around batch_size=8
+    values: [8, 16, 32, 64, 128]  # Range around batch_size=8
