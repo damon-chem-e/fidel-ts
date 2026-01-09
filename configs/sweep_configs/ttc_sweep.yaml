@@ -1,0 +1,40 @@
+# WandB Sweep Configuration: TTC Medical Sweep
+# Description: Hyperparameter sweep with architecture parameters (e_layers, d_model, n_heads) and training hyperparameters (LR, batch_size)
+# Purpose: Sweep around parameter values: LR=0.00025, batch_size=8, d_model=512, e_layers=2, n_heads=8
+# Usage: wandb sweep configs/sweep_configs/ttc_sweep.yaml --project fidel-ts
+
+program: scripts/wandb_sweep_wrapper.py
+method: random  # Use random for hyperparameter search
+metric:
+  name: val_loss
+  goal: minimize
+
+# Base suite config to sweep over
+_config_path: "configs/experiment_suites/lynx_film_raw/ttc_sweep.yaml"
+
+# Hyperparameters to sweep
+parameters:
+  # Model Architecture Parameters (via model_config_overrides)
+  # These override values in model_configs/general/lynx_film_raw.yaml
+  # Sweeping around e_layers=2
+  model_config_overrides.e_layers:  # Depth: number of transformer layers
+    values: [1, 2, 3]
+  
+  # Sweeping around d_model=512
+  model_config_overrides.d_model:  # Width: model dimension
+    values: [256, 512, 768]
+  
+  # Sweeping around n_heads=8
+  model_config_overrides.n_heads:  # Number of attention heads
+    values: [4, 8, 12]
+  
+  # Training Hyperparameters
+  # Sweeping around learning_rate=0.00025
+  training.learning_rate:
+    distribution: log_uniform_values  # Use _values variant for actual value range
+    min: 1.5e-4  # Range around 0.00025
+    max: 4e-4
+  
+  # Sweeping around batch_size=8
+  training.batch_size:
+    values: [8, 12, 16]  # Range around batch_size=8

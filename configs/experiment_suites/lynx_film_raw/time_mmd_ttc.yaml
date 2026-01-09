@@ -31,14 +31,17 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+          d_model: 512
+          e_layers: 2
+          n_heads: 8
         data:
           name: "time_mmd_agriculture"
           config_path: "data_configs/time_mmd/Algriculture/config.yaml"
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 768
-          learning_rate: 8.66e-4
+          batch_size: 8
+          learning_rate: 0.00025
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -58,14 +61,17 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+          d_model: 512
+          e_layers: 2
+          n_heads: 8
         data:
           name: "time_mmd_climate"
           config_path: "data_configs/time_mmd/Climate/config.yaml"
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 768
-          learning_rate: 8.66e-4
+          batch_size: 8
+          learning_rate: 0.00025
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -85,14 +91,17 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+          d_model: 512
+          e_layers: 2
+          n_heads: 8
         data:
           name: "time_mmd_economy"
           config_path: "data_configs/time_mmd/Economy/config.yaml"
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 768
-          learning_rate: 8.66e-4
+          batch_size: 8
+          learning_rate: 0.00025
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -112,14 +121,17 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+          d_model: 512
+          e_layers: 2
+          n_heads: 8
         data:
           name: "time_mmd_energy"
           config_path: "data_configs/time_mmd/Energy/config.yaml"
         training:
           input_len: 24       # Context length from Table 4
           output_len: 12      # Prediction length from Table 4
-          batch_size: 768
-          learning_rate: 8.66e-4
+          batch_size: 8
+          learning_rate: 0.00025
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -139,14 +151,17 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+          d_model: 512
+          e_layers: 2
+          n_heads: 8
         data:
           name: "time_mmd_environment"
           config_path: "data_configs/time_mmd/Environment/config.yaml"
         training:
           input_len: 24       # Context length from Table 4
           output_len: 48      # Prediction length from Table 4
-          batch_size: 768
-          learning_rate: 8.66e-4
+          batch_size: 8
+          learning_rate: 0.00025
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -166,14 +181,17 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+          d_model: 512
+          e_layers: 2
+          n_heads: 8
         data:
           name: "time_mmd_health"
           config_path: "data_configs/time_mmd/Public_Health/config.yaml"
         training:
           input_len: 24       # Context length from Table 4
           output_len: 12      # Prediction length from Table 4
-          batch_size: 768
-          learning_rate: 8.66e-4
+          batch_size: 8
+          learning_rate: 0.00025
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -193,14 +211,17 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+          d_model: 512
+          e_layers: 2
+          n_heads: 8
         data:
           name: "time_mmd_socialgood"
           config_path: "data_configs/time_mmd/SocialGood/config.yaml"
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 768
-          learning_rate: 8.66e-4
+          batch_size: 8
+          learning_rate: 0.00025
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -220,14 +241,17 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+          d_model: 512
+          e_layers: 2
+          n_heads: 8
         data:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 768
-          learning_rate: 8.66e-4
+          batch_size: 8
+          learning_rate: 0.00025
           patience: 5
           epochs: 50
           track_per_sample: false
