@@ -10,7 +10,7 @@ metric:
   goal: minimize
 
 # Base suite config to sweep over
-_config_path: "configs/experiment_suites/lynx_film_raw/ttc_sweep.yaml"
+_config_path: "configs/experiment_suites/ttc_sweep.yaml"
 
 # Hyperparameters to sweep
 parameters:
