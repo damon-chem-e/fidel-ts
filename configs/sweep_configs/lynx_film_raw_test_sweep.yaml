@@ -1,6 +1,6 @@
 # WandB Sweep Configuration: lynx_film_raw Test Sweep
-# Description: Simple test sweep with only learning_rate and batch_size
-# Purpose: Test wandb sweep integration - fast and simple
+# Description: Test sweep with architecture parameters (e_layers, d_model, n_heads) and training hyperparameters (LR, batch_size)
+# Purpose: Test wandb sweep integration with architecture + training parameters on smaller dataset
 # Usage: wandb sweep configs/sweep_configs/lynx_film_raw_test_sweep.yaml --project fidel-ts
 
 program: scripts/wandb_sweep_wrapper.py
@@ -12,13 +12,24 @@ metric:
 # Base suite config to sweep over
 _config_path: "configs/experiment_suites/lynx_film_raw_test_sweep.yaml"
 
-# Hyperparameters to sweep (only 2 for simple testing)
+# Hyperparameters to sweep
 parameters:
-  # Training Hyperparameters only
+  # Model Architecture Parameters (via model_config_overrides)
+  # These override values in model_configs/general/lynx_film_raw.yaml
+  model_config_overrides.e_layers:  # Depth: number of transformer layers
+    values: [2, 3, 4, 5]
+  
+  model_config_overrides.d_model:  # Width: model dimension
+    values: [128, 256, 512]
+  
+  model_config_overrides.n_heads:  # Number of attention heads
+    values: [4, 8]
+  
+  # Training Hyperparameters
   training.learning_rate:
     distribution: log_uniform_values  # Use _values variant for actual value range
-    min: 1e-4
-    max: 1e-2
+    min: 1.5e-4  # Tightened around good range (0.0002-0.0003)
+    max: 4e-4
   
   training.batch_size:
-    values: [16, 32, 64, 128]
+    values: [8, 16, 32]  # Below 64, focused around 16 or lower

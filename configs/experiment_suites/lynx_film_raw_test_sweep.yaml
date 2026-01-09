@@ -1,11 +1,11 @@
 # Experiment Suite: lynx_film_raw Test Sweep
-# Description: Simple test sweep for wandb integration testing
-# Usage: Used with wandb sweep for quick testing (only learning_rate and batch_size)
-# NOTE: Very small dataset (time_mmd Traffic) and few epochs for fast testing
+# Description: Test sweep for wandb integration testing with architecture and training parameters
+# Usage: Used with wandb sweep for testing architecture (e_layers, d_model, n_heads) and training (LR, batch_size) parameters
+# NOTE: Small dataset (time_mmd Traffic) with 5 epochs for testing
 
 suite:
   name: "lynx_film_raw_test_sweep"
-  description: "Test sweep: lynx_film_raw on time_mmd Traffic (fast test with only LR and batch_size)"
+  description: "Test sweep: lynx_film_raw on time_mmd Traffic (architecture + training params, 5 epochs)"
   tags: ["lynx_film_raw", "multimodal", "pytorch", "test_sweep", "film"]
   
   # Execution settings
@@ -16,9 +16,9 @@ suite:
     
   # Experiments in this suite
   experiments:
-    # time_mmd Traffic - simple test sweep
+    # time_mmd Traffic - test sweep with architecture parameters
     - name: "lynx_film_raw_time_mmd_traffic_test"
-      description: "lynx_film_raw on time_mmd Traffic (TEST SWEEP - LR and batch_size only)"
+      description: "lynx_film_raw on time_mmd Traffic (TEST SWEEP - architecture + training params)"
       enabled: true
       template: "configs/templates/pytorch_training.yaml"
       overrides:
@@ -27,6 +27,7 @@ suite:
           config_path: "model_configs/general/lynx_film_raw.yaml"
         model_config_overrides:
           input_text_dim: 768  # BERT embedding dimension (projects 768 -> text_dim=256)
+          # e_layers, d_model, n_heads will be overridden by sweep
         data:
           name: "time_mmd"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
@@ -35,10 +36,10 @@ suite:
         training:
           input_len: 96  # Smaller for faster testing
           output_len: 24  # Smaller for faster testing
-          batch_size: 32  # Will be overridden by sweep
-          learning_rate: 1e-3  # Will be overridden by sweep
+          batch_size: 16  # Will be overridden by sweep (default in middle of range)
+          learning_rate: 2.5e-4  # Will be overridden by sweep (default in middle of good range)
           patience: 2
-          epochs: 3  # Very few epochs for fast testing
+          epochs: 5  # 5 epochs for testing
           track_per_sample: false
           evaluate_test_during_training: false
         experiment:
