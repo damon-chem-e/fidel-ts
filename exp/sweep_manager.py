@@ -490,6 +490,10 @@ class SweepManager:
                     success = self._resume_run(run_info)
                     if success:
                         runs_completed += 1
+                        # Check count limit immediately after incrementing
+                        if count is not None and runs_completed >= count:
+                            print(f"[SweepManager] Completed {runs_completed} runs. Exiting.")
+                            break
                     else:
                         # Brief pause before trying next
                         time.sleep(5)
@@ -520,6 +524,10 @@ class SweepManager:
             
             if success:
                 runs_completed += 1
+                # Check count limit immediately after incrementing
+                if count is not None and runs_completed >= count:
+                    print(f"[SweepManager] Completed {runs_completed} runs. Exiting.")
+                    break
             else:
                 # Brief pause before retrying to prevent rapid-fire failures
                 # This avoids overwhelming the system if there's a persistent issue
@@ -635,7 +643,14 @@ class SweepManager:
                 # wandb.init is called by wandb.agent
                 wandb.init()
                 self._current_wandb_run = wandb.run
-                self.current_run_id = wandb.run.id
+                # Capture wandb_run_id immediately before it might become None
+                # (ExperimentManager.end_experiment() finishes the run, setting wandb.run to None)
+                wandb_run_id = wandb.run.id if wandb.run else None
+                self.current_run_id = wandb_run_id
+                
+                if wandb_run_id is None:
+                    print("[SweepManager] Warning: wandb.run is None after init, cannot proceed")
+                    return
                 
                 # Get config
                 config = dict(wandb.run.config)
@@ -672,8 +687,8 @@ class SweepManager:
                     sweep_root=sweep_root
                 )
                 
-                # Add wandb info
-                result.wandb_run_id = wandb.run.id
+                # Add wandb info (use captured value, not wandb.run.id which may be None)
+                result.wandb_run_id = wandb_run_id
                 
                 # Ensure registry exists
                 self._get_or_create_registry()
