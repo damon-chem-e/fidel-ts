@@ -27,11 +27,15 @@ suite:
           config_path: "model_configs/general/lynx_film_raw.yaml"
         model_config_overrides:
           input_text_dim: 768  # BERT embedding dimension (projects 768 -> text_dim=256)
+          enc_in: 4  # Number of features: Respiratory_Rate, Heart_Rate, SaO2, FiO2
           # e_layers, d_model, n_heads will be overridden by sweep
           n_heads: 8
         data:
           name: "ttc_medical"
           config_path: "data_configs/ttc/medical/config.yaml"
+        data_config:
+          filter_insufficient_entities: true  # Filter out entities without enough data for 7/7 input/output with 70/10/20 split
+          missing_value_strategy: forward_fill_indicators  # Forward fill missing values and create indicator variables
         training:
           input_len: 7        # Context length from Table 4
           output_len: 7       # Prediction length from Table 4
