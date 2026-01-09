@@ -55,6 +55,7 @@ if str(project_root) not in sys.path:
 from exp.sweep_registry import (
     SweepRegistry,
     get_location,
+    get_machine_id,
     RunStatus,
     CompletionReason as RegistryCompletionReason,
     InterruptReason as RegistryInterruptReason
@@ -70,6 +71,7 @@ class SweepConfig:
     sweep_id: str
     output_dir: Path
     location: str
+    machine_id: str
     config_path: Optional[str] = None
     experiment_type: str = "pytorch"
 
@@ -141,6 +143,7 @@ class SweepManager:
             sweep_id=sweep_id,
             output_dir=Path(output_dir).resolve(),
             location=location or get_location(),
+            machine_id=get_machine_id(),
             config_path=config_path,
             experiment_type=experiment_type
         )
@@ -163,6 +166,7 @@ class SweepManager:
         print(f"[SweepManager] Project: {project}")
         print(f"[SweepManager] Sweep ID: {sweep_id}")
         print(f"[SweepManager] Location: {self.config.location}")
+        print(f"[SweepManager] Machine ID: {self.config.machine_id}")
         print(f"[SweepManager] Output dir: {self.config.output_dir}")
     
     def _register_signal_handlers(self) -> None:
@@ -289,7 +293,7 @@ class SweepManager:
         
         return None
     
-    def _reconcile_registry(self) -> None:
+    def _reconcile_registry(self, lock_staleness_hours: float = 48.0) -> None:
         """
         Reconcile registry state by checking RUNNING entries against job_history.json.
         
@@ -297,16 +301,28 @@ class SweepManager:
         _finalize_run() could update the registry. It:
         
         1. Finds all runs with status RUNNING on this location
-        2. Reads job_history.json for each run to get actual progress
-        3. Determines if run completed (current_epoch >= total_epochs or completion_reason set)
-        4. Updates registry: COMPLETED if done, NEEDS_RESUME if interrupted
+        2. Respects locks: Only reconciles runs locked by this agent, or unlocked legacy runs
+        3. Releases stale locks: Detects and releases locks older than threshold
+        4. Reads job_history.json for each run to get actual progress
+        5. Determines if run completed (current_epoch >= total_epochs or completion_reason set)
+        6. Updates registry: COMPLETED if done, NEEDS_RESUME if interrupted
+        
+        Lock handling (Option B):
+        - If run is locked by another agent and not stale: Skip (don't reconcile)
+        - If run is locked by this agent: Reconcile it
+        - If run is RUNNING but not locked (legacy): Reconcile it
+        - If run has stale lock: Release lock, then reconcile
         
         This ensures the registry accurately reflects run state even after:
         - SIGTERM that kills the process before _finalize_run()
         - Hard crashes or OOM kills
         - Network interruptions
+        - Agent crashes while holding a lock
         
         Called automatically at the start of run_loop() to ensure consistency.
+        
+        Args:
+            lock_staleness_hours: Hours threshold for stale lock detection (default: 48)
         """
         registry = self._find_registry_for_sweep()
         if registry is None:
@@ -315,24 +331,52 @@ class SweepManager:
         self.registry = registry
         data = registry._load()
         
+        # Convert hours to seconds for stale lock detection
+        stale_threshold_seconds = int(lock_staleness_hours * 3600)
+        
         # Find all RUNNING entries for this location
         running_runs = []
         for run_id, run_info in data["runs"].items():
             if run_info.get("status") == RunStatus.RUNNING.value:
                 if run_info.get("location") == self.config.location:
-                    running_runs.append((run_id, run_info))
+                    locked_by = run_info.get("locked_by")
+                    
+                    # Respect locks but handle stale locks
+                    if locked_by:
+                        if locked_by == self.config.machine_id:
+                            # Locked by this agent - reconcile it
+                            running_runs.append((run_id, run_info, "locked_by_self"))
+                        elif registry.is_lock_stale(run_info, stale_threshold_seconds):
+                            # Stale lock - release it and reconcile
+                            print(f"[SweepManager] Detected stale lock on {run_id} (locked by {locked_by})")
+                            # Clear lock fields directly (we have access to the dict)
+                            run_info.pop("locked_by", None)
+                            run_info.pop("locked_at", None)
+                            run_info.pop("lock_timeout", None)
+                            data["runs"][run_id] = run_info  # Update in-memory data
+                            registry._save(data)  # Save immediately
+                            running_runs.append((run_id, run_info, "stale_lock_released"))
+                        else:
+                            # Locked by another agent and not stale - skip
+                            continue
+                    else:
+                        # Legacy run (RUNNING but not locked) - reconcile it
+                        running_runs.append((run_id, run_info, "legacy"))
         
         if not running_runs:
             return
         
         print(f"[SweepManager] Reconciling {len(running_runs)} RUNNING entry(ies)...")
         
-        for wandb_run_id, run_info in running_runs:
+        for wandb_run_id, run_info, reconcile_reason in running_runs:
             experiment_id = run_info.get("experiment_id")
             suite_id = run_info.get("suite_id")
             
             if not experiment_id:
                 print(f"[SweepManager] Warning: Run {wandb_run_id} has no experiment_id, skipping reconciliation")
+                # Release lock if we're reconciling it
+                if reconcile_reason in ["locked_by_self", "stale_lock_released"]:
+                    registry.release_lock(wandb_run_id, machine_id=self.config.machine_id)
                 continue
             
             # Determine experiment directory path
@@ -352,6 +396,7 @@ class SweepManager:
             if not job_history_path.exists():
                 print(f"[SweepManager] Warning: job_history.json not found for {wandb_run_id} at {job_history_path}")
                 # Mark as needs_resume with epoch 0 (will start fresh)
+                # mark_needs_resume() will automatically release any lock
                 registry.mark_needs_resume(
                     wandb_run_id=wandb_run_id,
                     interrupt_reason=InterruptReason.UNKNOWN.value,
@@ -398,25 +443,38 @@ class SweepManager:
                 print(f"[SweepManager] Reconciled {wandb_run_id}: COMPLETED (epoch {current_epoch}/{total_epochs}, reason: {completion_reason})")
             else:
                 # Run was interrupted, needs resumption
+                # mark_needs_resume() will automatically release any lock
                 registry.mark_needs_resume(
                     wandb_run_id=wandb_run_id,
                     interrupt_reason=InterruptReason.UNKNOWN.value,
                     final_epoch=current_epoch,
                     total_epochs=total_epochs
                 )
-                print(f"[SweepManager] Reconciled {wandb_run_id}: NEEDS_RESUME (epoch {current_epoch}/{total_epochs})")
+                print(f"[SweepManager] Reconciled {wandb_run_id}: NEEDS_RESUME (epoch {current_epoch}/{total_epochs}, reason: {reconcile_reason})")
     
-    def get_incomplete_runs(self) -> List[Dict[str, Any]]:
+    def get_incomplete_runs(self, lock_staleness_hours: float = 48.0) -> List[Dict[str, Any]]:
         """
-        Get all incomplete runs from local registry for this location.
+        Get an incomplete run by atomically locking it.
         
-        This is the AUTHORITATIVE source for resumption decisions.
-        Only returns runs that:
-            1. Have status NEEDS_RESUME
-            2. Were started on this location (checkpoints exist locally)
+        This is the AUTHORITATIVE source for resumption decisions. Instead of
+        just listing available runs, this method uses atomic lock acquisition
+        to prevent race conditions when multiple agents run concurrently.
+        
+        The method:
+            1. Finds a NEEDS_RESUME run from this location
+            2. Atomically locks it (prevents other agents from grabbing it)
+            3. Changes status from NEEDS_RESUME to RUNNING
+            4. Returns the locked run (as a list for compatibility)
+        
+        Only one run is returned at a time to ensure atomic lock acquisition.
+        The calling code should process this run and then call this method again
+        to get the next run.
+        
+        Args:
+            lock_staleness_hours: Hours threshold for stale lock detection (default: 48)
         
         Returns:
-            List of run info dicts, sorted by priority (highest first)
+            List containing at most one run info dict (empty list if no available runs)
         """
         # Find registry
         registry = self._find_registry_for_sweep()
@@ -424,27 +482,46 @@ class SweepManager:
             return []
         
         self.registry = registry
-        return registry.get_runs_needing_resume()
+        
+        # Use atomic lock acquisition to get and lock a run
+        # Convert hours to seconds for the registry method
+        stale_threshold_seconds = int(lock_staleness_hours * 3600)
+        locked_run = registry.try_lock_and_get_run(
+            machine_id=self.config.machine_id,
+            stale_threshold_seconds=stale_threshold_seconds
+        )
+        
+        if locked_run:
+            # Return as list for compatibility with existing code
+            return [locked_run]
+        
+        return []
     
     def run_loop(
         self,
         count: Optional[int] = None,
         resume_only: bool = False,
-        new_only: bool = False
+        new_only: bool = False,
+        reconcile_registry: bool = True,
+        lock_staleness_hours: float = 48.0
     ) -> int:
         """
         Main loop: check for incomplete runs, resume or start new.
         
         This is the primary entry point for running sweeps. It:
-            1. Checks local registry for runs needing resumption
-            2. Resumes incomplete runs (from this location)
-            3. Requests new hyperparameters from wandb (if not resume_only)
-            4. Executes trials and records results
+            1. Optionally reconciles registry on startup (if reconcile_registry=True)
+            2. Checks local registry for runs needing resumption
+            3. Atomically locks and resumes incomplete runs (from this location)
+            4. Requests new hyperparameters from wandb (if not resume_only)
+            5. Executes trials and records results
         
         Args:
             count: Maximum number of runs to execute (None = unlimited)
             resume_only: If True, only resume incomplete runs
             new_only: If True, skip checking for incomplete runs
+            reconcile_registry: If True, reconcile registry on startup (default: True)
+                               Set to False when running concurrent agents to avoid conflicts
+            lock_staleness_hours: Hours threshold for stale lock detection (default: 48.0)
             
         Returns:
             Number of runs completed
@@ -458,11 +535,14 @@ class SweepManager:
         print("[SweepManager] Starting run loop")
         print(f"[SweepManager] Mode: {mode}")
         print(f"[SweepManager] Max runs: {count if count else 'unlimited'}")
+        print(f"[SweepManager] Reconcile registry: {reconcile_registry}")
+        print(f"[SweepManager] Lock staleness threshold: {lock_staleness_hours} hours")
         
         # Reconcile registry on startup to heal any RUNNING entries
         # This handles cases where SIGTERM killed the process before _finalize_run()
-        if not new_only:
-            self._reconcile_registry()
+        # Only do this if reconcile_registry=True (skip for concurrent agents)
+        if not new_only and reconcile_registry:
+            self._reconcile_registry(lock_staleness_hours=lock_staleness_hours)
         
         while True:
             # Check run limit
@@ -477,15 +557,16 @@ class SweepManager:
             
             # Step 1: Check for incomplete runs (unless new_only)
             if not new_only:
-                incomplete_runs = self.get_incomplete_runs()
+                # get_incomplete_runs() now uses atomic lock acquisition
+                # It returns at most one run (the one it just locked)
+                incomplete_runs = self.get_incomplete_runs(lock_staleness_hours=lock_staleness_hours)
                 
                 if incomplete_runs:
-                    print(f"[SweepManager] Found {len(incomplete_runs)} incomplete run(s)")
-                    
-                    # Resume highest priority run
+                    # The run is already locked and status changed to RUNNING by get_incomplete_runs()
                     run_info = incomplete_runs[0]
-                    print(f"[SweepManager] Resuming: {run_info['wandb_run_id']}")
+                    print(f"[SweepManager] Resuming (locked): {run_info['wandb_run_id']}")
                     print(f"[SweepManager]   Progress: {run_info.get('final_epoch', 0)}/{run_info.get('total_epochs', '?')}")
+                    print(f"[SweepManager]   Locked by: {run_info.get('locked_by', 'unknown')}")
                     
                     success = self._resume_run(run_info)
                     if success:
@@ -495,7 +576,7 @@ class SweepManager:
                             print(f"[SweepManager] Completed {runs_completed} runs. Exiting.")
                             break
                     else:
-                        # Brief pause before trying next
+                        # Brief pause before trying next (lock will be released by mark_needs_resume/failed)
                         time.sleep(5)
                     
                     continue
@@ -791,6 +872,16 @@ class SweepManager:
             print(f"[SweepManager] Error resuming run: {e}")
             import traceback
             traceback.print_exc()
+            
+            # Release lock if we acquired it (run was locked by get_incomplete_runs())
+            # This ensures the run becomes available again if resumption fails
+            if self.registry and wandb_run_id:
+                try:
+                    self.registry.release_lock(wandb_run_id, machine_id=self.config.machine_id)
+                    print(f"[SweepManager] Released lock on {wandb_run_id} due to error")
+                except Exception as lock_error:
+                    print(f"[SweepManager] Warning: Could not release lock: {lock_error}")
+            
             return False
         finally:
             self.current_run_id = None

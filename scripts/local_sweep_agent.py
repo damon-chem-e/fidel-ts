@@ -152,6 +152,19 @@ Environment Variables:
         help='Experiment type (default: pytorch)'
     )
     
+    parser.add_argument(
+        '--no-reconcile-registry',
+        action='store_true',
+        help='Skip registry reconciliation on startup. Use when running concurrent agents to avoid conflicts.'
+    )
+    
+    parser.add_argument(
+        '--lock-staleness-hours',
+        type=float,
+        default=48.0,
+        help='Hours threshold for detecting stale locks (default: 48.0). Locks older than this are considered stale and released.'
+    )
+    
     args = parser.parse_args()
     
     # Validate mutually exclusive options
@@ -193,7 +206,9 @@ Environment Variables:
     runs_completed = manager.run_loop(
         count=args.count,
         resume_only=args.resume_only,
-        new_only=args.new_only
+        new_only=args.new_only,
+        reconcile_registry=not args.no_reconcile_registry,
+        lock_staleness_hours=args.lock_staleness_hours
     )
     
     print(f"\n[LocalSweepAgent] Finished. Runs completed: {runs_completed}")

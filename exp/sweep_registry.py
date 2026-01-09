@@ -306,6 +306,9 @@ class SweepRegistry:
         """
         Mark a run as successfully completed.
         
+        This method also releases any lock on the run since the run is finished
+        and no longer needs to be resumed.
+        
         Args:
             wandb_run_id: W&B run ID
             completion_reason: Why the run completed (see CompletionReason)
@@ -315,7 +318,13 @@ class SweepRegistry:
         def update():
             data = self._load()
             if wandb_run_id in data["runs"]:
-                data["runs"][wandb_run_id].update({
+                run_info = data["runs"][wandb_run_id]
+                
+                # Release lock fields (run is complete, no longer needs locking)
+                self._release_lock_fields(run_info)
+                
+                # Update status and completion info
+                run_info.update({
                     "status": RunStatus.COMPLETED.value,
                     "completed_at": datetime.now().isoformat(),
                     "final_epoch": final_epoch,
@@ -337,6 +346,8 @@ class SweepRegistry:
         Mark a run as needing resumption.
         
         Called when training is interrupted (e.g., SLURM timeout).
+        This method releases any existing lock so the run becomes available
+        for locking by any agent when resumption is attempted.
         
         Args:
             wandb_run_id: W&B run ID
@@ -347,7 +358,13 @@ class SweepRegistry:
         def update():
             data = self._load()
             if wandb_run_id in data["runs"]:
-                data["runs"][wandb_run_id].update({
+                run_info = data["runs"][wandb_run_id]
+                
+                # Release lock fields (run will be available for locking again)
+                self._release_lock_fields(run_info)
+                
+                # Update status and interrupt info
+                run_info.update({
                     "status": RunStatus.NEEDS_RESUME.value,
                     "final_epoch": final_epoch,
                     "total_epochs": total_epochs,
@@ -365,6 +382,9 @@ class SweepRegistry:
         """
         Mark a run as failed (not resumable).
         
+        This method also releases any lock on the run since failed runs
+        cannot be resumed and don't need locking.
+        
         Args:
             wandb_run_id: W&B run ID
             error_message: Optional error message
@@ -372,7 +392,13 @@ class SweepRegistry:
         def update():
             data = self._load()
             if wandb_run_id in data["runs"]:
-                data["runs"][wandb_run_id].update({
+                run_info = data["runs"][wandb_run_id]
+                
+                # Release lock fields (run failed, no longer needs locking)
+                self._release_lock_fields(run_info)
+                
+                # Update status and error info
+                run_info.update({
                     "status": RunStatus.FAILED.value,
                     "completed_at": datetime.now().isoformat(),
                     "error_message": error_message,
@@ -394,13 +420,111 @@ class SweepRegistry:
         data = self._load()
         return data["runs"].get(wandb_run_id)
     
-    def get_runs_needing_resume(self) -> List[Dict[str, Any]]:
+    def is_lock_stale(
+        self, 
+        run_info: Dict[str, Any], 
+        stale_threshold_seconds: int = 172800
+    ) -> bool:
+        """
+        Check if a lock is stale (locked too long without progress).
+        
+        A lock is considered stale if:
+        - The run has a locked_at timestamp
+        - The time since locked_at exceeds the threshold (default: 48 hours)
+        
+        This helps recover from cases where an agent crashed while holding a lock.
+        
+        Args:
+            run_info: Run info dictionary
+            stale_threshold_seconds: Lock age threshold in seconds (default: 48 hours = 172800)
+            
+        Returns:
+            True if lock is stale, False otherwise
+        """
+        locked_at = run_info.get("locked_at")
+        if not locked_at:
+            # No lock timestamp means not locked
+            return False
+        
+        try:
+            locked_time = datetime.fromisoformat(locked_at)
+            age_seconds = (datetime.now() - locked_time).total_seconds()
+            return age_seconds > stale_threshold_seconds
+        except (ValueError, TypeError):
+            # Invalid timestamp format - treat as not stale (will be handled by other checks)
+            return False
+    
+    def _release_lock_fields(self, run_info: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Remove lock-related fields from a run info dictionary.
+        
+        This is a helper method to clear lock fields when releasing a lock.
+        Used internally by lock release operations.
+        
+        Args:
+            run_info: Run info dictionary to modify
+            
+        Returns:
+            Modified run info dictionary with lock fields removed
+        """
+        # Remove lock fields if they exist
+        run_info.pop("locked_by", None)
+        run_info.pop("locked_at", None)
+        run_info.pop("lock_timeout", None)
+        return run_info
+    
+    def release_lock(self, wandb_run_id: str, machine_id: Optional[str] = None) -> bool:
+        """
+        Release a lock on a run.
+        
+        This method can be used to manually release a lock if needed.
+        If machine_id is provided, only releases the lock if it's held by that machine.
+        If machine_id is None, releases the lock regardless of who holds it.
+        
+        Args:
+            wandb_run_id: W&B run ID
+            machine_id: Optional machine ID - if provided, only releases if locked by this machine
+            
+        Returns:
+            True if lock was released, False otherwise
+        """
+        def update():
+            data = self._load()
+            if wandb_run_id not in data["runs"]:
+                return False
+            
+            run_info = data["runs"][wandb_run_id]
+            
+            # Check if locked
+            locked_by = run_info.get("locked_by")
+            if not locked_by:
+                # Not locked, nothing to release
+                return False
+            
+            # If machine_id provided, only release if locked by that machine
+            if machine_id is not None and locked_by != machine_id:
+                # Locked by different machine, don't release
+                return False
+            
+            # Release the lock
+            self._release_lock_fields(run_info)
+            self._save(data)
+            return True
+        
+        return self._with_lock(update)
+    
+    def get_runs_needing_resume(self, exclude_locked: bool = True) -> List[Dict[str, Any]]:
         """
         Get all runs that need resumption on this location.
         
         Only returns runs that:
         1. Have status NEEDS_RESUME
         2. Were started on this location (checkpoints are here)
+        3. Are not locked by another agent (if exclude_locked=True)
+        
+        Args:
+            exclude_locked: If True, exclude runs that are currently locked by another agent.
+                           Runs locked by this agent (same machine_id) are always included.
         
         Returns:
             List of run info dictionaries, sorted by priority
@@ -417,6 +541,13 @@ class SweepRegistry:
             if run_info.get("location") != self.location:
                 continue
             
+            # Check if locked by another agent (if exclude_locked is True)
+            if exclude_locked:
+                locked_by = run_info.get("locked_by")
+                if locked_by and locked_by != self.machine_id:
+                    # Locked by another agent, skip it
+                    continue
+            
             # Calculate priority based on progress
             final_epoch = run_info.get("final_epoch", 0) or 0
             total_epochs = run_info.get("total_epochs", 1) or 1
@@ -432,6 +563,101 @@ class SweepRegistry:
         incomplete.sort(key=lambda x: -x["priority"])
         
         return incomplete
+    
+    def try_lock_and_get_run(
+        self, 
+        machine_id: str,
+        stale_threshold_seconds: int = 172800
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Atomically lock and return a run that needs resumption.
+        
+        This method prevents race conditions where multiple agents try to grab
+        the same job. It:
+        1. Finds NEEDS_RESUME runs from this location (excluding already-locked runs)
+        2. Checks for stale locks and releases them
+        3. Atomically locks the highest-priority available run
+        4. Changes status from NEEDS_RESUME to RUNNING
+        5. Returns the locked run info
+        
+        The locking is atomic thanks to _with_lock(), which ensures only one
+        agent can modify the registry at a time.
+        
+        Args:
+            machine_id: Machine ID of this agent (from get_machine_id())
+            stale_threshold_seconds: Lock age threshold for stale lock detection (default: 48 hours)
+            
+        Returns:
+            Run info dictionary if successfully locked, None if no available runs
+        """
+        def update():
+            data = self._load()
+            
+            # Get all runs needing resume, excluding ones locked by other agents
+            # But we'll check stale locks manually here
+            candidate_runs = []
+            for run_id, run_info in data["runs"].items():
+                # Check status
+                if run_info.get("status") != RunStatus.NEEDS_RESUME.value:
+                    continue
+                
+                # Check location
+                if run_info.get("location") != self.location:
+                    continue
+                
+                # Check lock status
+                locked_by = run_info.get("locked_by")
+                
+                # If locked by another agent, check if stale
+                if locked_by and locked_by != machine_id:
+                    if self.is_lock_stale(run_info, stale_threshold_seconds):
+                        # Stale lock - release it and make this run available
+                        print(f"[SweepRegistry] Releasing stale lock on {run_id} (locked by {locked_by})")
+                        self._release_lock_fields(run_info)
+                        # Continue to add this run as a candidate
+                    else:
+                        # Locked by another agent and not stale - skip
+                        continue
+                
+                # Calculate priority
+                final_epoch = run_info.get("final_epoch", 0) or 0
+                total_epochs = run_info.get("total_epochs", 1) or 1
+                progress = final_epoch / total_epochs if total_epochs > 0 else 0
+                
+                candidate_runs.append({
+                    "run_id": run_id,
+                    "run_info": run_info,
+                    "progress": progress,
+                    "priority": progress * 100,
+                })
+            
+            if not candidate_runs:
+                return None
+            
+            # Sort by priority (highest first)
+            candidate_runs.sort(key=lambda x: -x["priority"])
+            
+            # Lock the highest priority run
+            target = candidate_runs[0]
+            run_id = target["run_id"]
+            run_info = target["run_info"]
+            
+            # Atomically lock the run
+            run_info["locked_by"] = machine_id
+            run_info["locked_at"] = datetime.now().isoformat()
+            run_info["status"] = RunStatus.RUNNING.value
+            
+            # Save the updated registry
+            self._save(data)
+            
+            # Return the locked run with priority info
+            return {
+                **run_info,
+                "progress": target["progress"],
+                "priority": target["priority"],
+            }
+        
+        return self._with_lock(update)
     
     def get_all_runs(self) -> Dict[str, Dict[str, Any]]:
         """
