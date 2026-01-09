@@ -406,14 +406,8 @@ class SweepExecutor:
         # Set resume IDs if provided
         if resume_ids:
             suite_config['suite']['resume_suite_id'] = resume_ids.get('suite_id')
-            for exp in suite_config['suite'].get('experiments', []):
-                if exp.get('enabled', True):
-                    exp_name = exp.get('name', '')
-                    exp_ids = resume_ids.get('experiment_ids', {})
-                    for name, exp_id in exp_ids.items():
-                        if exp_name in name or name in exp_name:
-                            exp.setdefault('overrides', {})['resume_experiment_id'] = exp_id
-                            break
+            # Use robust matching method to set resume_experiment_id for each experiment
+            self._set_resume_experiment_ids(suite_config, resume_ids)
         
         try:
             # Check for shutdown before starting
@@ -440,13 +434,20 @@ class SweepExecutor:
                 result.suite_id = init_result['suite_id']
                 result.experiment_id = list(init_result['experiment_ids'].values())[0] if init_result['experiment_ids'] else None
                 
-                # Set resume IDs for execution
+                # Store experiment_ids and original experiment names in wandb config for resumption
+                self._save_experiment_ids_to_wandb(
+                    experiment_ids=init_result['experiment_ids'],
+                    suite_config=suite_config,
+                    suite_id=result.suite_id,
+                    wandb_run_id=wandb_run_id
+                )
+                
+                # Set resume IDs for execution using robust matching
                 suite_config['suite']['resume_suite_id'] = result.suite_id
-                for exp_name, exp_id in init_result['experiment_ids'].items():
-                    for exp in suite_config['suite']['experiments']:
-                        if exp.get('name') == exp_name or f"{exp.get('name')}_output" in exp_name:
-                            exp.setdefault('overrides', {})['resume_experiment_id'] = exp_id
-                            break
+                resume_ids_dict = {
+                    'experiment_ids': init_result['experiment_ids']
+                }
+                self._set_resume_experiment_ids(suite_config, resume_ids_dict)
             else:
                 result.suite_id = resume_ids.get('suite_id')
                 exp_ids = resume_ids.get('experiment_ids', {})
@@ -640,6 +641,143 @@ class SweepExecutor:
                 result.error = None
         
         return result
+    
+    def _save_experiment_ids_to_wandb(
+        self,
+        experiment_ids: Dict[str, str],
+        suite_config: Dict[str, Any],
+        suite_id: str,
+        wandb_run_id: Optional[str] = None
+    ) -> None:
+        """
+        Save experiment_ids and original experiment names to wandb config for resumption.
+        
+        This method stores two mappings:
+        1. _experiment_ids: Maps executor names (with _output suffix) -> experiment IDs
+        2. _experiment_names: Maps original config names -> experiment IDs (for robust matching)
+        
+        This ensures we can match experiment IDs to config names when resuming, even if
+        experiment names have been modified (e.g., with _output{number} suffixes).
+        
+        Args:
+            experiment_ids: Dictionary mapping executor experiment names to experiment IDs
+            suite_config: Suite configuration dictionary
+            suite_id: Suite ID to store
+            wandb_run_id: Optional W&B run ID (if None, tries to use wandb.run)
+        """
+        if not wandb_run_id:
+            return
+        
+        try:
+            import wandb
+            if wandb.run is None:
+                return
+            
+            # Create experiment_names mapping (original config names -> experiment IDs)
+            # This provides robust matching during resumption
+            experiment_names = {}  # Maps original config names to experiment IDs
+            for exp_name_in_ids, exp_id in experiment_ids.items():
+                # Find original experiment name from suite config
+                matched = False
+                for exp in suite_config['suite'].get('experiments', []):
+                    original_name = exp.get('name', '')
+                    # Match if exp_name_in_ids equals original_name or has _output suffix
+                    if (exp_name_in_ids == original_name or 
+                        exp_name_in_ids.startswith(f"{original_name}_output")):
+                        experiment_names[original_name] = exp_id
+                        matched = True
+                        break
+                # If no match found, use the key from experiment_ids as-is
+                if not matched:
+                    experiment_names[exp_name_in_ids] = exp_id
+            
+            # Store both mappings in wandb config
+            wandb_config_updates = {
+                '_experiment_ids': experiment_ids,  # Executor name -> ID mapping
+                '_experiment_names': experiment_names,  # Original name -> ID mapping for robust matching
+                '_suite_id': suite_id
+            }
+            wandb.run.config.update(wandb_config_updates, allow_val_change=True)
+        except Exception as e:
+            # Non-fatal: log warning but continue
+            print(f"[SweepExecutor] Warning: Could not save experiment_ids to wandb config: {e}")
+    
+    def _set_resume_experiment_ids(
+        self,
+        suite_config: Dict[str, Any],
+        resume_ids: Dict[str, Any]
+    ) -> None:
+        """
+        Set resume_experiment_id for each experiment in suite using robust matching.
+        
+        This method uses multiple matching strategies:
+        1. Exact match on original experiment name
+        2. Match with _output{number} suffix patterns
+        3. Substring matching (last resort)
+        
+        It also checks wandb config directly for _experiment_names (more robust mapping)
+        if not found in resume_ids.
+        
+        Args:
+            suite_config: Suite configuration dictionary (modified in-place)
+            resume_ids: Dictionary with experiment_ids mapping (from SweepManager._find_experiment_ids_for_resume)
+        """
+        experiment_ids = resume_ids.get('experiment_ids', {})
+        
+        # Also check wandb config directly for _experiment_names (more robust mapping)
+        # This provides a fallback if experiment_ids wasn't populated correctly
+        if not experiment_ids:
+            try:
+                import wandb
+                if wandb.run and hasattr(wandb.run, 'config'):
+                    config = wandb.run.config
+                    # Prefer _experiment_names (original names -> IDs) over _experiment_ids
+                    if '_experiment_names' in config:
+                        experiment_ids = config['_experiment_names']
+                    elif '_experiment_ids' in config:
+                        experiment_ids = config['_experiment_ids']
+            except Exception:
+                pass
+        
+        if not experiment_ids:
+            return
+        
+        for exp in suite_config['suite'].get('experiments', []):
+            if not exp.get('enabled', True):
+                continue
+            
+            exp_name = exp.get('name', '')
+            if not exp_name:
+                continue
+            
+            # Try multiple matching strategies
+            matched_exp_id = None
+            
+            # Strategy 1: Exact match
+            if exp_name in experiment_ids:
+                matched_exp_id = experiment_ids[exp_name]
+            
+            # Strategy 2: Match with _output{number} suffix patterns
+            if not matched_exp_id:
+                for stored_name, exp_id in experiment_ids.items():
+                    # Check if stored_name is exp_name with _output suffix
+                    if stored_name.startswith(f"{exp_name}_output"):
+                        matched_exp_id = exp_id
+                        break
+                    # Check if exp_name matches stored_name pattern
+                    if exp_name.startswith(f"{stored_name}_output") or stored_name == exp_name:
+                        matched_exp_id = exp_id
+                        break
+            
+            # Strategy 3: Substring matching (last resort, but check both directions)
+            if not matched_exp_id:
+                for stored_name, exp_id in experiment_ids.items():
+                    if exp_name in stored_name or stored_name in exp_name:
+                        matched_exp_id = exp_id
+                        break
+            
+            if matched_exp_id:
+                exp.setdefault('overrides', {})['resume_experiment_id'] = matched_exp_id
     
     def _apply_sweep_params_to_suite(
         self,

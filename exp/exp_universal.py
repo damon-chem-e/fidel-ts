@@ -592,6 +592,8 @@ class Experiment(Exp_Basic):
             print("Early stopping")
             # Log final metrics if early stopping
             if self.exp_manager is not None:
+                # Set completion reason for sweep system
+                self.exp_manager.set_completion_reason("early_stopping")
                 final_metrics = {
                     'best_epoch': epoch + 1,
                     'final_train_loss': train_loss,

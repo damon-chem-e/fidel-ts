@@ -210,7 +210,8 @@ class SweepRegistry:
         experiment_id: str,
         hyperparams: Optional[Dict[str, Any]] = None,
         suite_id: Optional[str] = None,
-        config_path: Optional[str] = None
+        config_path: Optional[str] = None,
+        experiment_ids: Optional[Dict[str, str]] = None
     ) -> None:
         """
         Register a new run in the registry.
@@ -223,6 +224,7 @@ class SweepRegistry:
             hyperparams: Hyperparameters for this run
             suite_id: Suite ID if part of a suite
             config_path: Path to config file used for this run (for resumption)
+            experiment_ids: Optional dict mapping experiment names to IDs (for suite runs)
         """
         def update():
             data = self._load()
@@ -235,6 +237,7 @@ class SweepRegistry:
                 "machine_id": self.machine_id,
                 "hyperparams": hyperparams or {},
                 "config_path": config_path,  # Store config path for resumption
+                "experiment_ids": experiment_ids or {},  # Store experiment_ids dict for suite runs
                 "registered_at": datetime.now().isoformat(),
                 "started_at": None,
                 "completed_at": None,

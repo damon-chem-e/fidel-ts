@@ -620,6 +620,77 @@ class SweepManager:
         
         return None
     
+    def _find_experiment_ids_for_resume(
+        self,
+        wandb_config: Dict[str, Any],
+        run_info: Dict[str, Any],
+        suite_config: Optional[Dict[str, Any]] = None,
+        suite_id: Optional[str] = None,
+        experiment_id: Optional[str] = None
+    ) -> Dict[str, str]:
+        """
+        Find experiment_ids mapping for suite resumption using multiple sources.
+        
+        This is a modular method that tries multiple sources in priority order:
+        1. wandb config (_experiment_names or _experiment_ids)
+        2. Registry run info (experiment_ids field)
+        3. Suite metadata files (if available)
+        4. Fallback: Use single experiment_id if only one experiment in suite
+        
+        Args:
+            wandb_config: Config dictionary from wandb.run.config
+            run_info: Run info dictionary from registry
+            suite_config: Optional suite configuration dictionary
+            suite_id: Optional suite ID for checking metadata
+            experiment_id: Optional single experiment ID for fallback
+        
+        Returns:
+            Dictionary mapping experiment names to experiment IDs
+        """
+        experiment_ids = {}
+        
+        # Priority 1: Check wandb config for _experiment_names or _experiment_ids
+        # _experiment_names maps original config names -> IDs (more robust)
+        if '_experiment_names' in wandb_config:
+            # Use the more robust mapping (original names -> IDs)
+            experiment_ids = wandb_config['_experiment_names']
+        elif '_experiment_ids' in wandb_config:
+            # experiment_ids maps executor names (with _output suffix) -> IDs
+            # We'll use it but may need to match carefully
+            exp_ids_from_wandb = wandb_config['_experiment_ids']
+            if isinstance(exp_ids_from_wandb, dict):
+                experiment_ids = exp_ids_from_wandb
+        
+        # Priority 2: Check registry run info
+        if not experiment_ids and 'experiment_ids' in run_info:
+            experiment_ids = run_info['experiment_ids']
+        
+        # Priority 3: Try reading from suite metadata (if available)
+        if not experiment_ids and suite_id:
+            try:
+                import json
+                sweep_root = self._get_sweep_root()
+                suite_metadata_path = sweep_root / suite_id / "suite_metadata.json"
+                if suite_metadata_path.exists():
+                    with open(suite_metadata_path, 'r', encoding='utf-8') as f:
+                        suite_metadata = json.load(f)
+                    if 'experiment_ids' in suite_metadata:
+                        experiment_ids = suite_metadata['experiment_ids']
+            except Exception:
+                pass
+        
+        # Priority 4: Fallback - if only one experiment in suite and we have experiment_id
+        if not experiment_ids and experiment_id and suite_config:
+            experiments = suite_config.get('suite', {}).get('experiments', [])
+            enabled_experiments = [e for e in experiments if e.get('enabled', True)]
+            if len(enabled_experiments) == 1:
+                # Single experiment suite - use the provided experiment_id
+                exp_name = enabled_experiments[0].get('name', '')
+                if exp_name:
+                    experiment_ids = {exp_name: experiment_id}
+        
+        return experiment_ids
+    
     def _resume_run(self, run_info: Dict[str, Any]) -> bool:
         """
         Resume an incomplete run.
@@ -666,11 +737,26 @@ class SweepManager:
             # Get hyperparams (exclude internal metadata)
             sweep_params = {k: v for k, v in config.items() if not k.startswith('_')}
             
-            # Prepare resume IDs
+            # Prepare resume IDs using modular method
+            # Load suite config if this is a suite run (needed for finding experiment_ids)
+            suite_config = None
+            if suite_id or config.get('_suite_id'):
+                try:
+                    from runs.suite_executor import load_suite_config
+                    suite_config = load_suite_config(config_path)
+                except Exception:
+                    pass  # Not a suite or can't load, will use fallback
+            
             resume_ids = {
                 'suite_id': suite_id or config.get('_suite_id'),
                 'experiment_id': experiment_id or config.get('_experiment_id'),
-                'experiment_ids': config.get('_experiment_ids', {})
+                'experiment_ids': self._find_experiment_ids_for_resume(
+                    wandb_config=config,
+                    run_info=run_info,
+                    suite_config=suite_config,
+                    suite_id=suite_id or config.get('_suite_id'),
+                    experiment_id=experiment_id or config.get('_experiment_id')
+                )
             }
             
             # Ensure we have registry (using new sweep root structure)
@@ -795,12 +881,23 @@ class SweepManager:
                 
                 # Register run in registry if not already
                 if not self.registry.run_exists(result.wandb_run_id):
+                    # Get experiment_ids if this is a suite run
+                    experiment_ids = None
+                    if result.suite_id:
+                        try:
+                            import wandb
+                            if wandb.run and hasattr(wandb.run, 'config'):
+                                experiment_ids = wandb.run.config.get('_experiment_names') or wandb.run.config.get('_experiment_ids')
+                        except Exception:
+                            pass
+                    
                     self.registry.register_run(
                         wandb_run_id=result.wandb_run_id,
                         experiment_id=result.experiment_id or "unknown",
                         hyperparams=sweep_params,
                         suite_id=result.suite_id,
-                        config_path=config_path
+                        config_path=config_path,
+                        experiment_ids=experiment_ids
                     )
                 
                 # Finalize
@@ -826,7 +923,15 @@ class SweepManager:
                 count=1
             )
         except Exception as e:
-            print(f"[SweepManager] wandb.agent error: {e}")
+            error_msg = str(e)
+            print(f"[SweepManager] wandb.agent error: {error_msg}")
+            
+            # Check if sweep is decommissioned/not running
+            if "not running" in error_msg.lower() or "decommissioned" in error_msg.lower():
+                print("[SweepManager] Sweep is no longer running. Exiting gracefully.")
+                # Don't treat this as an error - sweep was intentionally stopped
+                # Return True so the loop exits gracefully
+                return True
         
         return success
     

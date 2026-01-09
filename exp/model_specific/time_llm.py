@@ -582,6 +582,7 @@ class TimeLLMPyTorchTrainer:
             early_stopping(val_loss, self.model, str(checkpoint_dir))
             if early_stopping.early_stop:
                 self.exp_manager.logger.info("Early stopping triggered")
+                self.exp_manager.set_completion_reason("early_stopping")
                 break
             
             adjust_learning_rate(optimizer, epoch, self.args)
