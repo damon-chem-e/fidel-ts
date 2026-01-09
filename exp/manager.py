@@ -635,9 +635,20 @@ class ExperimentManager:
                 self.wandb_run = wandb.run
                 self.logger.info(f"Using existing WandB sweep run: {self.wandb_run.id}")
                 
-                # Update config with our metadata (wandb ignores project/entity in sweep context, but we can update config)
-                if wandb_config:
-                    self.wandb_run.config.update(wandb_config, allow_val_change=True)
+                # Update config with metadata only (exclude sweep-controlled parameters)
+                # Sweep parameters like training.batch_size, training.learning_rate are locked by wandb
+                # Only update metadata fields that we explicitly add, avoiding sweep-controlled params
+                metadata_only = {
+                    'git_commit': self.metadata.get('git_commit_hash'),
+                    'git_branch': self.metadata.get('git_branch'),
+                    'git_is_dirty': self.metadata.get('git_is_dirty'),
+                    'job_id': self.job_id,
+                    'job_name': self.job_name,
+                    'random_seed': self.config.random_seed,
+                    'experiment_id': self.experiment_id,
+                }
+                # Update only metadata fields (these are not sweep-controlled, so no warnings)
+                self.wandb_run.config.update(metadata_only, allow_val_change=True)
             else:
                 # Not in sweep context - initialize new wandb run
                 self.wandb_run = wandb.init(**init_kwargs)
