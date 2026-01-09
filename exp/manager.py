@@ -957,6 +957,13 @@ class ExperimentManager:
             # Default to "all_epochs" if completed and no specific reason set
             completion_reason = "all_epochs"
         
+        # Save completion_reason to job_history.json for sweep resumption tracking
+        # This ensures the sweep system can detect early stopping, hyperband pruning, etc.
+        if hasattr(self, 'job_history') and completion_reason:
+            self.job_history["completion_reason"] = completion_reason
+            self._save_job_history()
+            self.logger.debug(f"Saved completion_reason to job_history: {completion_reason}")
+        
         # Note: Sweep registry updates are handled by SweepManager._finalize_run()
         # The ExperimentManager no longer directly updates the registry.
         # This ensures single ownership of registry state.
@@ -1009,6 +1016,21 @@ class ExperimentManager:
         
         # Save final metadata
         self.metadata["end_timestamp"] = datetime.now().isoformat()
+        
+        # In sweep mode, ensure wandb config (including sweep hyperparameters) is saved to metadata
+        # This ensures consistency between local metadata and wandb config for resumption
+        if self.sweep and self.wandb_run is not None:
+            try:
+                # Save wandb run config to metadata (includes sweep hyperparameters)
+                wandb_config = dict(self.wandb_run.config)
+                self.metadata["wandb_config"] = wandb_config
+                # Also save config_path for easy access during resumption
+                if "_config_path" in wandb_config:
+                    self.metadata["config_path"] = wandb_config["_config_path"]
+                self.logger.debug("Saved wandb config to metadata for sweep consistency")
+            except Exception as e:
+                self.logger.warning(f"Could not save wandb config to metadata: {e}")
+        
         metadata_path = self.experiment_dir / "metadata.json"
         with open(metadata_path, 'w', encoding='utf-8') as f:
             json.dump(self.metadata, f, indent=2, default=str)

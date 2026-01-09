@@ -536,6 +536,90 @@ class SweepManager:
         print(f"[SweepManager] Run loop finished. Total completed: {runs_completed}")
         return runs_completed
     
+    def _find_config_path(
+        self,
+        wandb_config: Dict[str, Any],
+        run_info: Dict[str, Any],
+        experiment_id: Optional[str] = None,
+        suite_id: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Find config_path from multiple sources in priority order.
+        
+        This method checks multiple locations to find the config_path needed for resumption:
+        1. Wandb run config (_config_path)
+        2. Registry run info (config_path)
+        3. Sweep config via API (_config_path)
+        4. Experiment metadata.json (config_path or config.config_path)
+        5. Suite metadata.json if part of suite (config_path)
+        
+        Args:
+            wandb_config: Config dictionary from wandb.run.config
+            run_info: Run info dictionary from registry
+            experiment_id: Optional experiment ID for checking metadata
+            suite_id: Optional suite ID for checking suite metadata
+            
+        Returns:
+            Config path string if found, None otherwise
+        """
+        # Priority 1: Check wandb config
+        config_path = wandb_config.get('_config_path', self.config.config_path)
+        if config_path:
+            return config_path
+        
+        # Priority 2: Check registry run info
+        config_path = run_info.get('config_path')
+        if config_path:
+            return config_path
+        
+        # Priority 3: Check sweep config via API
+        try:
+            import wandb
+            api = wandb.Api()
+            sweep = api.sweep(f"{self.config.entity}/{self.config.project}/{self.config.sweep_id}")
+            config_path = sweep.config.get('_config_path')
+            if config_path:
+                return config_path
+        except Exception:
+            pass
+        
+        # Priority 4: Check experiment metadata if experiment_id available
+        if experiment_id:
+            sweep_root = self._get_sweep_root()
+            if suite_id:
+                exp_dir = sweep_root / suite_id / experiment_id
+            else:
+                exp_dir = sweep_root / experiment_id
+            
+            # Check metadata.json for config_path
+            metadata_path = exp_dir / "metadata.json"
+            if metadata_path.exists():
+                try:
+                    import json
+                    with open(metadata_path, 'r', encoding='utf-8') as f:
+                        metadata = json.load(f)
+                    config_path = metadata.get('config', {}).get('config_path') or metadata.get('config_path')
+                    if config_path:
+                        return config_path
+                except Exception:
+                    pass
+            
+            # Priority 5: Check suite_metadata.json if part of suite
+            if suite_id:
+                suite_metadata_path = sweep_root / suite_id / "suite_metadata.json"
+                if suite_metadata_path.exists():
+                    try:
+                        import json
+                        with open(suite_metadata_path, 'r', encoding='utf-8') as f:
+                            suite_metadata = json.load(f)
+                        config_path = suite_metadata.get('config_path')
+                        if config_path:
+                            return config_path
+                    except Exception:
+                        pass
+        
+        return None
+    
     def _resume_run(self, run_info: Dict[str, Any]) -> bool:
         """
         Resume an incomplete run.
@@ -565,10 +649,18 @@ class SweepManager:
             
             # Get config from wandb
             config = dict(self._current_wandb_run.config)
-            config_path = config.get('_config_path', self.config.config_path)
+            
+            # Find config_path using modular method
+            config_path = self._find_config_path(
+                wandb_config=config,
+                run_info=run_info,
+                experiment_id=experiment_id,
+                suite_id=suite_id
+            )
             
             if not config_path:
                 print("[SweepManager] Error: No config path found")
+                print(f"[SweepManager]   Checked: wandb config, registry, sweep config, experiment metadata")
                 return False
             
             # Get hyperparams (exclude internal metadata)
@@ -669,10 +761,18 @@ class SweepManager:
                     print("[SweepManager] Error: No config path found")
                     return
                 
-                # Store location in wandb
-                wandb.run.config.update({
-                    '_location': self.config.location
-                }, allow_val_change=True)
+                # Store metadata in wandb config for resumption (config_path, location, etc.)
+                wandb_config_updates = {
+                    '_location': self.config.location,
+                    '_config_path': config_path,  # Store config path for resumption
+                    '_experiment_type': config.get('_experiment_type', self.config.experiment_type)
+                }
+                # Only update if not already set (wandb may have locked these during sweep init)
+                try:
+                    wandb.run.config.update(wandb_config_updates, allow_val_change=True)
+                except Exception as e:
+                    # If update fails (e.g., sweep controller locked params), log warning but continue
+                    print(f"[SweepManager] Warning: Could not update all wandb config values: {e}")
                 
                 # Get hyperparams
                 sweep_params = {k: v for k, v in config.items() if not k.startswith('_')}
@@ -699,7 +799,8 @@ class SweepManager:
                         wandb_run_id=result.wandb_run_id,
                         experiment_id=result.experiment_id or "unknown",
                         hyperparams=sweep_params,
-                        suite_id=result.suite_id
+                        suite_id=result.suite_id,
+                        config_path=config_path
                     )
                 
                 # Finalize

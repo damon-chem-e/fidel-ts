@@ -369,10 +369,21 @@ class SweepExecutor:
         
         result = SweepTrialResult(hyperparams=sweep_params)
         
-        # Load base suite config
+        # Load base suite config (has template/default values)
         suite_config = load_suite_config(config_path)
         
-        # Apply sweep parameters
+        # Apply sweep parameters to restore/apply the correct hyperparameters for this run.
+        # 
+        # For NEW runs: sweep_params come from wandb.agent (new values selected by sweep controller)
+        # For RESUMED runs: sweep_params come from wandb.run.config (ORIGINAL values from when run was created)
+        #
+        # In both cases, we need to apply these to the base suite config because:
+        # - The base suite config template has default/template values
+        # - The sweep_params contain the actual hyperparameters for THIS specific run
+        # - Without applying them, training would use wrong/default hyperparameters
+        #
+        # The key difference: on resume, sweep_params are the ORIGINAL values (from wandb run config),
+        # not new ones. We're restoring them, not generating new ones.
         suite_config = self._apply_sweep_params_to_suite(suite_config, sweep_params)
         
         # Determine output directory - use sweep_root if provided, otherwise from config
@@ -510,10 +521,21 @@ class SweepExecutor:
         
         result = SweepTrialResult(hyperparams=sweep_params)
         
-        # Load base experiment config
+        # Load base experiment config (has template/default values)
         experiment_config = load_config(config_path)
         
-        # Apply sweep parameters
+        # Apply sweep parameters to restore/apply the correct hyperparameters for this run.
+        # 
+        # For NEW runs: sweep_params come from wandb.agent (new values selected by sweep controller)
+        # For RESUMED runs: sweep_params come from wandb.run.config (ORIGINAL values from when run was created)
+        #
+        # In both cases, we need to apply these to the base config because:
+        # - The base config template has default/template values
+        # - The sweep_params contain the actual hyperparameters for THIS specific run
+        # - Without applying them, training would use wrong/default hyperparameters
+        #
+        # The key difference: on resume, sweep_params are the ORIGINAL values (from wandb run config),
+        # not new ones. We're restoring them, not generating new ones.
         experiment_config = self._apply_sweep_params_to_experiment(experiment_config, sweep_params)
         
         # Get total epochs - must be set in config

@@ -209,7 +209,8 @@ class SweepRegistry:
         wandb_run_id: str,
         experiment_id: str,
         hyperparams: Optional[Dict[str, Any]] = None,
-        suite_id: Optional[str] = None
+        suite_id: Optional[str] = None,
+        config_path: Optional[str] = None
     ) -> None:
         """
         Register a new run in the registry.
@@ -221,6 +222,7 @@ class SweepRegistry:
             experiment_id: Local experiment ID
             hyperparams: Hyperparameters for this run
             suite_id: Suite ID if part of a suite
+            config_path: Path to config file used for this run (for resumption)
         """
         def update():
             data = self._load()
@@ -232,6 +234,7 @@ class SweepRegistry:
                 "location": self.location,
                 "machine_id": self.machine_id,
                 "hyperparams": hyperparams or {},
+                "config_path": config_path,  # Store config path for resumption
                 "registered_at": datetime.now().isoformat(),
                 "started_at": None,
                 "completed_at": None,
