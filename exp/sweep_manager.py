@@ -755,16 +755,86 @@ class SweepManager:
         # The ExperimentManager updates job_history after each epoch, so this
         # gives us the authoritative final epoch even if training was interrupted.
         final_epoch = result.final_epoch
-        if final_epoch == 0 and result.experiment_id:
-            # Try to read from job_history (using new directory structure)
-            sweep_root = self._get_sweep_root()
-            final_epoch = self.executor._read_final_epoch_from_job_history(
-                experiment_id=result.experiment_id,
-                suite_id=result.suite_id,
-                sweep_root=sweep_root
-            ) or 0
-        
         total_epochs = result.total_epochs
+        
+        # Read from job_history.json if needed (authoritative source)
+        if result.experiment_id:
+            sweep_root = self._get_sweep_root()
+            
+            # Determine experiment directory path
+            if result.suite_id:
+                exp_dir = sweep_root / result.suite_id / result.experiment_id
+            else:
+                exp_dir = sweep_root / result.experiment_id
+            
+            job_history_path = exp_dir / "job_history.json"
+            
+            if job_history_path.exists():
+                try:
+                    import json
+                    with open(job_history_path, 'r', encoding='utf-8') as f:
+                        job_history = json.load(f)
+                    
+                    print("[SweepManager]   Read job_history.json successfully")
+                    print(f"[SweepManager]   job_history keys: {list(job_history.keys())}")
+                    
+                    # Read final_epoch from job_history if not already set
+                    if final_epoch == 0 and "current_epoch" in job_history:
+                        final_epoch = job_history["current_epoch"]
+                        result.final_epoch = final_epoch
+                        print(f"[SweepManager]   Read final_epoch from job_history: {final_epoch}")
+                    elif final_epoch == 0:
+                        print("[SweepManager]   WARNING: final_epoch=0 and 'current_epoch' not in job_history")
+                    
+                    # Read total_epochs from job_history if not already set
+                    if total_epochs == 0 and "total_epochs" in job_history:
+                        total_epochs = job_history["total_epochs"]
+                        result.total_epochs = total_epochs
+                        print(f"[SweepManager]   Read total_epochs from job_history: {total_epochs}")
+                    elif total_epochs == 0:
+                        print("[SweepManager]   WARNING: total_epochs=0 and 'total_epochs' not in job_history")
+                    
+                    # Read completion_reason from job_history if available
+                    if not result.completion_reason and "completion_reason" in job_history:
+                        result.completion_reason = job_history["completion_reason"]
+                        print(f"[SweepManager]   Read completion_reason from job_history: {result.completion_reason}")
+                except Exception as e:
+                    print(f"[SweepManager]   ERROR: Could not read job_history.json: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"[SweepManager]   WARNING: job_history.json does not exist at {job_history_path}")
+        
+        # If completion_reason is not set but training completed all epochs, set it
+        # This is a fallback: if we successfully read epochs from job_history and they indicate
+        # completion, we infer the completion_reason even if it wasn't explicitly set
+        if not result.completion_reason and final_epoch > 0 and total_epochs > 0:
+            if final_epoch >= total_epochs:
+                result.completion_reason = CompletionReason.ALL_EPOCHS.value
+                print(f"[SweepManager]   Inferred completion_reason='all_epochs' from epochs ({final_epoch}/{total_epochs})")
+        
+        # Debug: Log result state before determining status
+        # EXPLANATION: SweepExecutor intentionally doesn't set final_epoch/completion_reason
+        # (see comment in _execute_suite_trial line 460-464). It expects us to read from
+        # job_history.json. If that reading fails or values are missing, we get:
+        # - final_epoch=0, total_epochs=0, completion_reason=None
+        # - is_complete=False (because 0 >= 0 > 0 is False)
+        # - should_resume=False (because success=True, interrupted=False, error=None)
+        # - Falls through to "failed" branch even though training succeeded
+        print(f"[SweepManager] Finalizing run: {result.wandb_run_id}")
+        print(f"[SweepManager]   Result from executor: success={result.success}, interrupted={result.interrupted}, error={result.error}")
+        print(f"[SweepManager]   Initial values: final_epoch={result.final_epoch}, total_epochs={result.total_epochs}, completion_reason={result.completion_reason}")
+        print(f"[SweepManager]   After reading job_history: final_epoch={final_epoch}, total_epochs={total_epochs}, completion_reason={result.completion_reason}")
+        print(f"[SweepManager]   Status checks: is_complete={result.is_complete}, should_resume={result.should_resume}")
+        if result.experiment_id:
+            sweep_root = self._get_sweep_root()
+            if result.suite_id:
+                exp_dir = sweep_root / result.suite_id / result.experiment_id
+            else:
+                exp_dir = sweep_root / result.experiment_id
+            job_history_path = exp_dir / "job_history.json"
+            print(f"[SweepManager]   job_history.json path: {job_history_path}")
+            print(f"[SweepManager]   job_history.json exists: {job_history_path.exists()}")
         
         # Determine final status
         if result.is_complete:
@@ -798,14 +868,52 @@ class SweepManager:
             print(f"[SweepManager]   Progress: {final_epoch}/{total_epochs}")
             
         else:
-            # Training failed
-            self.registry.mark_failed(
-                wandb_run_id=result.wandb_run_id,
-                error_message=result.error
-            )
-            
-            print(f"[SweepManager] Run failed: {result.wandb_run_id}")
-            print(f"[SweepManager]   Error: {result.error}")
+            # Neither is_complete nor should_resume is True
+            # This happens when:
+            # 1. completion_reason is None/not recognized
+            # 2. final_epoch < total_epochs (or total_epochs=0)
+            # 3. success=True, interrupted=False, error=None (so should_resume=False)
+            # 
+            # If success=True but we couldn't determine completion, try to infer from epochs
+            # This is a fallback for cases where job_history reading failed or values are missing
+            if result.success and not result.error and final_epoch > 0 and total_epochs > 0:
+                if final_epoch >= total_epochs:
+                    # Actually completed all epochs, mark as complete
+                    completion_reason = CompletionReason.ALL_EPOCHS.value
+                    self.registry.mark_complete(
+                        wandb_run_id=result.wandb_run_id,
+                        completion_reason=completion_reason,
+                        final_epoch=final_epoch,
+                        total_epochs=total_epochs
+                    )
+                    print(f"[SweepManager] Run completed (inferred from epochs): {result.wandb_run_id}")
+                    print(f"[SweepManager]   Reason: {completion_reason}")
+                    print(f"[SweepManager]   Epochs: {final_epoch}/{total_epochs}")
+                else:
+                    # Partial progress, mark as needs resume
+                    self.registry.mark_needs_resume(
+                        wandb_run_id=result.wandb_run_id,
+                        interrupt_reason=InterruptReason.UNKNOWN.value,
+                        final_epoch=final_epoch,
+                        total_epochs=total_epochs
+                    )
+                    print(f"[SweepManager] Run needs resume (inferred from epochs): {result.wandb_run_id}")
+                    print(f"[SweepManager]   Progress: {final_epoch}/{total_epochs}")
+            else:
+                # Training failed or we can't determine status
+                # This branch is reached when:
+                # - success=False (exception occurred), OR
+                # - success=True but final_epoch=0 or total_epochs=0 (couldn't read from job_history)
+                self.registry.mark_failed(
+                    wandb_run_id=result.wandb_run_id,
+                    error_message=result.error or "Could not determine completion status (final_epoch=0 or total_epochs=0)"
+                )
+                
+                print(f"[SweepManager] Run failed: {result.wandb_run_id}")
+                print(f"[SweepManager]   Error: {result.error or 'Could not determine completion status'}")
+                if result.success and (final_epoch == 0 or total_epochs == 0):
+                    print("[SweepManager]   DIAGNOSIS: Training succeeded but couldn't read epoch info from job_history.json")
+                    print("[SweepManager]   This suggests job_history.json is missing, unreadable, or doesn't contain epoch info")
         
         # Also update wandb summary (for visibility, not authoritative)
         self._update_wandb_summary(result)

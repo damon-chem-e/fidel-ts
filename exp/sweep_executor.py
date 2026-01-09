@@ -303,8 +303,14 @@ class SweepExecutor:
                 )
             
             # Detect completion reason if not set
+            # Pass experiment info so we can read from job_history.json
             if result.success and not result.completion_reason and not result.interrupted:
-                result.completion_reason = self._detect_completion_reason(result)
+                result.completion_reason = self._detect_completion_reason(
+                    result,
+                    experiment_id=result.experiment_id,
+                    suite_id=result.suite_id,
+                    sweep_root=sweep_root
+                )
             
             return result
             
@@ -739,20 +745,69 @@ class SweepExecutor:
         except Exception:
             return None
     
-    def _detect_completion_reason(self, result: SweepTrialResult) -> Optional[str]:
+    def _detect_completion_reason(
+        self, 
+        result: SweepTrialResult,
+        experiment_id: Optional[str] = None,
+        suite_id: Optional[str] = None,
+        sweep_root: Optional[Path] = None
+    ) -> Optional[str]:
         """
         Detect why training completed if no explicit reason was set.
         
         This checks in priority order:
-        1. Check if wandb.run.stopped (Hyperband pruning)
-        2. Check if all epochs completed
+        1. Check job_history.json for explicit completion_reason
+        2. Check if wandb.run.stopped (Hyperband pruning)
+        3. Check if all epochs completed (read from job_history.json if needed)
         
         Args:
             result: Partially filled SweepTrialResult
+            experiment_id: Optional experiment ID to read job_history.json
+            suite_id: Optional suite ID for directory structure
+            sweep_root: Optional sweep root directory
             
         Returns:
             Completion reason string or None
         """
+        # First, try to read from job_history.json if experiment_id is available
+        if experiment_id and sweep_root is not None:
+            try:
+                # Read final_epoch from job_history if not already set
+                if result.final_epoch == 0:
+                    final_epoch = self._read_final_epoch_from_job_history(
+                        experiment_id=experiment_id,
+                        suite_id=suite_id,
+                        sweep_root=sweep_root
+                    )
+                    if final_epoch is not None:
+                        result.final_epoch = final_epoch
+                
+                # Read completion_reason from job_history if available
+                if suite_id:
+                    exp_dir = sweep_root / suite_id / experiment_id
+                else:
+                    exp_dir = sweep_root / experiment_id
+                
+                job_history_path = exp_dir / "job_history.json"
+                if job_history_path.exists():
+                    import json
+                    with open(job_history_path, 'r', encoding='utf-8') as f:
+                        job_history = json.load(f)
+                    
+                    # Check for explicit completion_reason in job_history
+                    if "completion_reason" in job_history:
+                        return job_history["completion_reason"]
+                    
+                    # Update final_epoch from job_history if available
+                    if "current_epoch" in job_history:
+                        result.final_epoch = job_history["current_epoch"]
+                    
+                    # Update total_epochs from job_history if available
+                    if "total_epochs" in job_history and result.total_epochs == 0:
+                        result.total_epochs = job_history["total_epochs"]
+            except Exception:
+                pass  # If reading fails, continue with other checks
+        
         # Check Hyperband pruning
         try:
             import wandb
@@ -761,8 +816,9 @@ class SweepExecutor:
         except Exception:
             pass
         
-        # Check if all epochs completed (only if final_epoch is set)
-        if result.final_epoch > 0 and result.final_epoch >= result.total_epochs:
-            return CompletionReason.ALL_EPOCHS.value
+        # Check if all epochs completed
+        if result.final_epoch > 0 and result.total_epochs > 0:
+            if result.final_epoch >= result.total_epochs:
+                return CompletionReason.ALL_EPOCHS.value
         
         return None
