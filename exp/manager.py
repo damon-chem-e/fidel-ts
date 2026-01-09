@@ -95,7 +95,8 @@ class ExperimentManager:
         job_name: Optional[str] = None,
         suite_name: Optional[str] = None,
         suite_info: Optional[Dict[str, Any]] = None,
-        init_only: bool = False
+        init_only: bool = False,
+        sweep: bool = False
     ):
         """
         Initialize ExperimentManager.
@@ -109,9 +110,11 @@ class ExperimentManager:
             suite_name: Optional suite name if experiment is part of a suite
             suite_info: Optional suite information dictionary (name, description, tags, etc.)
             init_only: If True, only initialize experiment structure without starting job
+            sweep: If True, running in wandb sweep context (use existing wandb.run instead of creating new)
         """
         self.config = config
         self.init_only = init_only
+        self.sweep = sweep
         # Ensure output_dir is absolute for reliable path operations
         self.output_dir = Path(output_dir).resolve()
         self.experiment_name = experiment_name or config.experiment_name
@@ -187,13 +190,18 @@ class ExperimentManager:
         self.job_history = self._load_job_history()
         
         if self.init_only:
-            # Pre-generate WandB run ID if enabled
+            # Pre-generate or use existing WandB run ID if enabled
             if self.config.wandb.enabled and not self.job_history.get("wandb_run_id"):
                 try:
                     import wandb
-                    # Generate a unique run ID offline
-                    self.job_history["wandb_run_id"] = wandb.util.generate_id()
-                    self.logger.info(f"Pre-generated WandB run ID: {self.job_history['wandb_run_id']}")
+                    if self.sweep and wandb.run is not None and hasattr(wandb.run, 'id'):
+                        # In sweep context: use existing wandb.run.id from wandb.agent()
+                        self.job_history["wandb_run_id"] = wandb.run.id
+                        self.logger.info(f"Using existing WandB sweep run ID: {self.job_history['wandb_run_id']}")
+                    else:
+                        # Not in sweep context: generate a unique run ID offline
+                        self.job_history["wandb_run_id"] = wandb.util.generate_id()
+                        self.logger.info(f"Pre-generated WandB run ID: {self.job_history['wandb_run_id']}")
                 except ImportError:
                     self.logger.warning("WandB not installed. Skipping run ID generation.")
             
@@ -621,8 +629,18 @@ class ExperimentManager:
                 # 2. Resuming existing run (resumes run on server)
                 init_kwargs['resume'] = 'allow'
             
-            # Initialize wandb run
-            self.wandb_run = wandb.init(**init_kwargs)
+            # Check if we're in a sweep context (wandb.run already exists from wandb.agent)
+            if self.sweep and wandb.run is not None:
+                # Use existing wandb run from sweep context
+                self.wandb_run = wandb.run
+                self.logger.info(f"Using existing WandB sweep run: {self.wandb_run.id}")
+                
+                # Update config with our metadata (wandb ignores project/entity in sweep context, but we can update config)
+                if wandb_config:
+                    self.wandb_run.config.update(wandb_config, allow_val_change=True)
+            else:
+                # Not in sweep context - initialize new wandb run
+                self.wandb_run = wandb.init(**init_kwargs)
             
             # Store wandb run_id in job_history for resume capability
             if self.wandb_run and hasattr(self.wandb_run, 'id'):
@@ -632,11 +650,21 @@ class ExperimentManager:
                     self.job_history["wandb_run_id"] = wandb_run_id
                     self._save_job_history()
                 elif self.job_history.get("wandb_run_id") != wandb_run_id:
-                    # Run ID mismatch - log warning but continue
-                    self.logger.warning(
-                        f"Wandb run_id mismatch: job_history has {self.job_history.get('wandb_run_id')}, "
-                        f"but resumed with {wandb_run_id}. This may indicate a configuration issue."
-                    )
+                    # Run ID mismatch - update job_history with correct ID (sweep context)
+                    # This can happen if init_only pre-generated a different ID before sweep run was created
+                    old_id = self.job_history.get("wandb_run_id")
+                    self.job_history["wandb_run_id"] = wandb_run_id
+                    self._save_job_history()
+                    if self.sweep:
+                        self.logger.warning(
+                            f"Updated WandB run_id in job_history: {old_id} -> {wandb_run_id} "
+                            f"(using sweep run ID). This should not happen."
+                        )
+                    else:
+                        self.logger.warning(
+                            f"Wandb run_id mismatch: job_history has {old_id}, "
+                            f"but resumed with {wandb_run_id}. This may indicate a configuration issue."
+                        )
             
             # Log config files as artifacts
             self._log_config_artifacts()

@@ -103,7 +103,7 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     return args
 
 
-def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: Optional[Dict[str, Any]] = None, output_dir: Optional[str] = None, init_only: bool = False, return_ids: bool = False):
+def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: Optional[Dict[str, Any]] = None, output_dir: Optional[str] = None, init_only: bool = False, return_ids: bool = False, sweep: bool = False):
     """
     Run LLM-based time series forecasting experiment.
     
@@ -117,6 +117,7 @@ def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: 
         output_dir: Optional base output directory (overrides config setting)
         init_only: If True, only initialize experiment structure without running inference
         return_ids: If True, return experiment_id and suite_name as dict (useful for wandb sweeps)
+        sweep: If True, running in wandb sweep context (pass to ExperimentManager)
     
     Returns:
         If return_ids=True, returns dict with 'experiment_id' and 'suite_name' keys.
@@ -140,7 +141,8 @@ def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: 
         job_name=config.job_name,
         suite_name=suite_name,
         suite_info=suite_info,
-        init_only=init_only
+        init_only=init_only,
+        sweep=sweep
     )
     
     if init_only:

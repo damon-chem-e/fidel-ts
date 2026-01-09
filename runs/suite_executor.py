@@ -104,7 +104,13 @@ def substitute_placeholders(config: Dict[str, Any], experiment_name: str,
 class SuiteExecutor:
     """Execute experiment suites defined in YAML configs."""
     
-    def __init__(self, suite_config: Dict[str, Any], log_dir: Optional[str] = None, output_dir: Optional[str] = None, init_only: bool = False, return_ids: bool = False):
+    def __init__(self, 
+                 suite_config: Dict[str, Any], 
+                 log_dir: Optional[str] = None, 
+                 output_dir: Optional[str] = None, 
+                 init_only: bool = False, 
+                 return_ids: bool = False, 
+                 sweep: bool = False):
         """
         Initialize suite executor.
         
@@ -114,10 +120,12 @@ class SuiteExecutor:
             output_dir: Base directory for experiment outputs (optional, defaults to ./output)
             init_only: If True, only initialize experiment structures without running them
             return_ids: If True, track and return experiment IDs (useful for wandb sweeps)
+            sweep: If True, running in wandb sweep context (pass to ExperimentManager)
         """
         self.suite_config = suite_config
         self.init_only = init_only
         self.return_ids = return_ids
+        self.sweep = sweep
         # Track experiment IDs when return_ids is enabled
         self.experiment_ids: Dict[str, str] = {}
         self.suite_info = suite_config.get('suite', {})
@@ -427,11 +435,11 @@ class SuiteExecutor:
             # Pass the timestamped suite name so experiments are saved in the correct directory
             result = None
             if exp_type == 'pytorch':
-                result = run_pytorch(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids)
+                result = run_pytorch(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids, sweep=self.sweep)
             elif exp_type == 'lightning':
-                result = run_lightning(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids)
+                result = run_lightning(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids, sweep=self.sweep)
             elif exp_type == 'llm':
-                result = run_llm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids)
+                result = run_llm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids, sweep=self.sweep)
             elif exp_type == 'fm':
                 # FM experiments may have task specified at experiment level
                 if 'task' in config.get('experiment', {}):
@@ -440,7 +448,7 @@ class SuiteExecutor:
                     # Recreate ExperimentConfig with task field
                     experiment_config = ExperimentConfig(**config)
                     experiment_config.experiment_name = experiment_name
-                result = run_fm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids)
+                result = run_fm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids, sweep=self.sweep)
             else:
                 raise ValueError(f"Unknown experiment type: {exp_type}")
             

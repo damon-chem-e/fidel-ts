@@ -417,7 +417,8 @@ class SweepExecutor:
                     suite_config, 
                     init_only=True, 
                     return_ids=True,
-                    output_dir=str(output_dir) if output_dir else None
+                    output_dir=str(output_dir) if output_dir else None,
+                    sweep=True
                 )
                 init_result = executor.execute()
                 
@@ -450,7 +451,8 @@ class SweepExecutor:
             executor = SuiteExecutor(
                 suite_config, 
                 init_only=False,
-                output_dir=str(output_dir) if output_dir else None
+                output_dir=str(output_dir) if output_dir else None,
+                sweep=True
             )
             executor.execute()
             
@@ -560,7 +562,8 @@ class SweepExecutor:
                     experiment_config,
                     init_only=True,
                     return_ids=True,
-                    output_dir=str(output_dir) if output_dir else None
+                    output_dir=str(output_dir) if output_dir else None,
+                    sweep=True
                 )
                 
                 if not init_result:
@@ -588,7 +591,8 @@ class SweepExecutor:
             run(
                 experiment_config,
                 init_only=False,
-                output_dir=str(output_dir) if output_dir else None
+                output_dir=str(output_dir) if output_dir else None,
+                sweep=True
             )
             
             # If we get here, training completed without exception
