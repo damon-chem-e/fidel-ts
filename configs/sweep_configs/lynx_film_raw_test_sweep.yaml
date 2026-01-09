@@ -17,13 +17,10 @@ parameters:
   # Model Architecture Parameters (via model_config_overrides)
   # These override values in model_configs/general/lynx_film_raw.yaml
   model_config_overrides.e_layers:  # Depth: number of transformer layers
-    values: [2, 3, 4, 5]
+    values: [1, 2]
   
   model_config_overrides.d_model:  # Width: model dimension
-    values: [128, 256, 512]
-  
-  model_config_overrides.n_heads:  # Number of attention heads
-    values: [4, 8]
+    values: [512, 768, 1024]
   
   # Training Hyperparameters
   training.learning_rate:
@@ -32,4 +29,4 @@ parameters:
     max: 4e-4
   
   training.batch_size:
-    values: [8, 16, 32]  # Below 64, focused around 16 or lower
+    values: [8, 12]  # Below 64, focused around 16 or lower

@@ -28,6 +28,7 @@ suite:
         model_config_overrides:
           input_text_dim: 768  # BERT embedding dimension (projects 768 -> text_dim=256)
           # e_layers, d_model, n_heads will be overridden by sweep
+          n_heads: 8
         data:
           name: "time_mmd"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
