@@ -885,7 +885,6 @@ class SweepManager:
                     experiment_ids = None
                     if result.suite_id:
                         try:
-                            import wandb
                             if wandb.run and hasattr(wandb.run, 'config'):
                                 experiment_ids = wandb.run.config.get('_experiment_names') or wandb.run.config.get('_experiment_ids')
                         except Exception:
