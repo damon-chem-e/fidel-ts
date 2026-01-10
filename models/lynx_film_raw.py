@@ -113,7 +113,10 @@ class Model(nn.Module):
         Project text embeddings from input_text_dim to text_dim if needed.
         
         Args:
-            news: News embeddings [B, l, news_num, input_text_dim]
+            news: Text embeddings [B, l, news_num, input_text_dim]
+                  - x_hetero (historical_events): [B, seq_len, num_items, input_text_dim]
+                  - y_hetero (news): [B, pred_len, num_items, input_text_dim]
+                  Both come from the same dataloader format: (num_timesteps, num_items, embedding_dim) -> [B, L, N, D]
             channel_description: Channel descriptions [B, C, input_text_dim] or [B, 1, C, input_text_dim]
             
         Returns:

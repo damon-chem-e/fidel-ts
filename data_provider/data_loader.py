@@ -134,7 +134,7 @@ class Universal_Dataset(Dataset):
         
         Different tasks require different input components:
         - TSF: Basic time series forecasting (seq_x, seq_y, x_time, y_time)
-        - TGTSF: Text-guided forecasting (adds future heterogeneous data)
+        - TGTSF: Text-guided forecasting (adds future heterogeneous data if timestamp_semantics is t_about, otherwise adds historical heterogeneous data if timestamp_semantics is t_known)
         - MTSF: Multi-modal forecasting (adds historical heterogeneous data)
         - Reasoning/all: Full multi-modal input with all components
         
@@ -152,7 +152,11 @@ class Universal_Dataset(Dataset):
             elif self.task == 'TSF':
                 self.custom_input = ['seq_x', 'seq_y', 'x_time', 'y_time']
             elif self.task == 'TGTSF':
-                self.custom_input = ['seq_x', 'seq_y', 'x_time', 'y_time', 'hetero_y_time', 'y_hetero', 'hetero_general', 'hetero_channel']
+                # Include both x_hetero and y_hetero for TGTSF models
+                # Models will select which to use based on timestamp_semantics:
+                # - t_about: Use y_hetero (news) - forecasts about prediction window
+                # - t_known: Use x_hetero (historical_events) - avoid lookahead bias
+                self.custom_input = ['seq_x', 'seq_y', 'x_time', 'y_time', 'hetero_x_time', 'x_hetero', 'hetero_y_time', 'y_hetero', 'hetero_general', 'hetero_channel']
             elif self.task == 'MTSF':
                 self.custom_input = ['seq_x', 'seq_y', 'x_time', 'y_time', 'hetero_x_time', 'x_hetero', 'hetero_general', 'hetero_channel']
             elif self.task == 'Reasoning' or 'all':
