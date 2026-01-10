@@ -177,9 +177,57 @@ class text_encoder(nn.Module):
         # reshape the text_emb
         text_emb=text_emb.view(B, L, C, D)
 
-        # add positional encoding
+        # ============================================================================
+        # Positional Encoding with Variable Input Length Support
+        # ============================================================================
+        # 
+        # BACKGROUND:
+        # -----------
+        # W_pos was initialized for L_pos = ceil(pred_len/stride) timesteps, matching
+        # the expected length of y_hetero (text aligned to prediction window).
+        # 
+        # However, when timestamp_semantics='t_known', we use x_hetero (historical text)
+        # instead of y_hetero. x_hetero has seq_len timesteps (aligned to input window),
+        # which typically differs from pred_len.
+        # 
+        # DIMENSION MEANINGS:
+        # -------------------
+        # - L = actual input text length (varies based on which hetero source is used)
+        # - L_pos = learnable positional encoding length (fixed at init = ceil(pred_len/stride))
+        # - For y_hetero (t_about): L = ceil(pred_len/hetero_stride), usually matches L_pos
+        # - For x_hetero (t_known): L = ceil(seq_len/hetero_stride), often > L_pos
+        # 
+        # HANDLING STRATEGY:
+        # ------------------
+        # 1. L == L_pos: Use positional encoding as-is (typical y_hetero case)
+        # 2. L < L_pos:  Slice positional encoding to match input (short sequences)
+        # 3. L > L_pos:  Use only the MOST RECENT L_pos timesteps' positional encoding
+        #                This aligns the positional encoding with the end of the sequence,
+        #                as recent historical text is most relevant for prediction.
+        # ============================================================================
+        
         x = rearrange(text_emb, 'b l c d -> (b c) l d', b=B, c=C)
-        x = x + self.W_pos.permute(1, 0, 2)
+        # x shape: [(B*C), L, D] where L is actual input text length
+        
+        # W_pos shape: (L_pos, 1, D) -> permute to (1, L_pos, D) for broadcasting
+        W_pos_permuted = self.W_pos.permute(1, 0, 2)  # (1, L_pos, D)
+        L_pos = W_pos_permuted.shape[1]  # Positional encoding length from initialization
+        
+        if L == L_pos:
+            # Case 1: Length matches (typical y_hetero case)
+            # Use full positional encoding as-is
+            x = x + W_pos_permuted
+        elif L < L_pos:
+            # Case 2: Input shorter than expected
+            # Slice positional encoding from the beginning
+            x = x + W_pos_permuted[:, :L, :]
+        else:
+            # Case 3: Input longer (typical x_hetero case when seq_len > pred_len)
+            # Use the positional encoding pattern repeated to cover the entire sequence
+            # This gives each text timestep a position, with the pattern repeating
+            repeats = int(np.ceil(L / L_pos))
+            W_pos_repeated = W_pos_permuted.repeat(1, repeats, 1)  # (1, L_pos*repeats, D)
+            x = x + W_pos_repeated[:, :L, :]  # Slice to exact length L
 
         x = self.dropout_layer(x)
 

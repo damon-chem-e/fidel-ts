@@ -3,15 +3,59 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class FiLMGenerator(nn.Module):
+    """
+    Generates FiLM (Feature-wise Linear Modulation) parameters from text embeddings.
+    
+    FiLM Modulation Semantics
+    =========================
+    FiLM modulates features as: y = gamma * x + beta
+    
+    This generator produces (gamma, beta) pairs for transformer layers:
+    - gamma1, beta1: Post-attention normalization modulation
+    - gamma2, beta2: Post-FFN normalization modulation
+    
+    Key Design: GLOBAL Text Conditioning
+    =====================================
+    The generator FLATTENS ALL text timesteps into a single vector:
+        [B, C, L, text_dim] -> [B, C, L * text_dim]
+    
+    Then produces ONE set of modulation parameters per channel:
+        [B, C, L * text_dim] -> MLP -> [B, C, output_dim * 4]
+    
+    This means:
+    - ALL text timesteps contribute to a SINGLE (gamma, beta) per channel
+    - There is NO timestamp-specific modulation
+    - All predictions receive the SAME modulation derived from aggregate text
+    
+    The intuition is that the text provides GLOBAL context (e.g., "storm approaching")
+    that uniformly affects how the model processes the time series.
+    
+    CRITICAL: Fixed Input Dimension
+    ===============================
+    The input Linear layer has FIXED input_dim = seq_len * text_dim.
+    The seq_len MUST match the actual text input length:
+    - For timestamp_semantics='t_about': seq_len = ceil(pred_len / hetero_stride) (y_hetero)
+    - For timestamp_semantics='t_known': seq_len = ceil(seq_len / hetero_stride) (x_hetero)
+    
+    A dimension mismatch will cause a runtime error!
+    """
+    
     def __init__(self, text_dim, output_dim, seq_len=1, hidden_dim=None):
         """
         Args:
-            text_dim: Dimension of text embeddings
+            text_dim: Dimension of text embeddings (D in [B, C, L, D])
             output_dim: Dimension of modulation parameters (d_model)
-            seq_len: Length of text sequence (L) to flatten
-            hidden_dim: Hidden dimension of MLP
+            seq_len: Length of text sequence (L) that will be flattened.
+                     MUST match actual input text length at runtime!
+                     - t_about: ceil(pred_len / hetero_stride) 
+                     - t_known: ceil(seq_len / hetero_stride)
+            hidden_dim: Hidden dimension of MLP (defaults to input_dim)
         """
         super().__init__()
+        # Store seq_len for debugging dimension mismatches
+        self.expected_seq_len = seq_len
+        self.text_dim = text_dim
+        
         # Flatten input: [B, C, L, text_dim] -> [B, C, L * text_dim]
         input_dim = seq_len * text_dim
         hidden_dim = hidden_dim or input_dim
@@ -24,14 +68,29 @@ class FiLMGenerator(nn.Module):
         )
         
     def forward(self, x):
-        # x: [B, C, L, text_dim] or [B, C, L*text_dim] if pre-flattened
+        """
+        Generate FiLM parameters from text embeddings.
+        
+        Args:
+            x: Text embeddings [B, C, L, text_dim] or [B, C, L*text_dim] if pre-flattened
+               - B: batch size
+               - C: number of channels (must match time series channels)
+               - L: number of text timesteps (MUST equal self.expected_seq_len)
+               - text_dim: embedding dimension (MUST equal self.text_dim)
+        
+        Returns:
+            gamma1, beta1, gamma2, beta2: Each [B, C, output_dim]
+            These are used by EncoderLayerFilm for modulation.
+        """
+        # Flatten text sequence: [B, C, L, D] -> [B, C, L*D]
         if x.dim() == 4:
             B, C, L, D = x.shape
             x = x.view(B, C, L * D)
             
-        params = self.net(x) # [B, C, output_dim * 4]
+        # Generate modulation parameters: [B, C, L*D] -> [B, C, output_dim * 4]
+        params = self.net(x)
         
-        # Split into 4 tensors
+        # Split into 4 tensors, each [B, C, output_dim]
         gamma1, beta1, gamma2, beta2 = torch.chunk(params, 4, dim=-1)
         return gamma1, beta1, gamma2, beta2
 

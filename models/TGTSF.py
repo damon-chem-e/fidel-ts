@@ -72,10 +72,18 @@ class Model(nn.Module):
         # Timestamp semantics determines which text input to use for TGTSF task
         # - t_about: Use news (y_hetero) - text describes prediction window, assumed known beforehand
         # - t_known: Use historical_events (x_hetero) - avoid lookahead bias
-        self.timestamp_semantics = getattr(configs, 'timestamp_semantics', 't_about')
+        self.timestamp_semantics = getattr(configs, 'timestamp_semantics', None)
+        if self.timestamp_semantics is None:
+            raise ValueError(
+                "TGTSF requires 'timestamp_semantics' in configs. "
+                "This must be set explicitly to avoid lookahead bias:\n"
+                "  - 't_about': Text timestamps refer to the event/target time (Fidel-TS datasets)\n"
+                "  - 't_known': Text timestamps refer to publication time (Time-MMD/TTC datasets)\n"
+                "Set timestamp_semantics in data_config (hetero_info.timestamp_semantics or top-level)."
+            )
         if self.timestamp_semantics not in ('t_about', 't_known'):
             raise ValueError(
-                f"Invalid timestamp_semantics: {self.timestamp_semantics}. "
+                f"Invalid timestamp_semantics: '{self.timestamp_semantics}'. "
                 f"Must be 't_about' or 't_known'."
             )
         print(f'[ info ] TGTSF: timestamp_semantics = {self.timestamp_semantics}')

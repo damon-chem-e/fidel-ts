@@ -11,6 +11,31 @@ class iTransformerFilm(nn.Module):
     """
     Modified iTransformer with FiLM modulation.
     Paper link: https://arxiv.org/abs/2310.06625
+    
+    FiLM Modulation and Text Input
+    ==============================
+    FiLM (Feature-wise Linear Modulation) uses text embeddings to generate
+    channel-wise scale (gamma) and shift (beta) parameters that modulate
+    the time series representation at each transformer layer.
+    
+    The text input is FLATTENED across all timesteps to generate GLOBAL
+    modulation parameters per channel. This means:
+    - ALL text timesteps contribute to a SINGLE set of (gamma, beta) per channel
+    - There is NO timestamp-specific modulation in FiLM
+    - All predictions are conditioned identically based on aggregate text info
+    
+    Text Source Based on timestamp_semantics
+    ========================================
+    - t_about (Fidel-TS): Uses y_hetero (news), text aligned to PREDICTION window
+      -> text_seq_len = ceil(pred_len / stride)
+      -> Assumption: Forecasts for t+k were available at time t
+    
+    - t_known (Time-MMD/TTC): Uses x_hetero (historical_events), text aligned to INPUT window
+      -> text_seq_len = ceil(seq_len / hetero_stride)
+      -> Avoids lookahead bias from using text published during prediction window
+    
+    The FiLMGenerator must be initialized with the CORRECT text_seq_len based on
+    which text source will be used, since it has a fixed input dimension.
     """
 
     def __init__(self, configs):
@@ -20,8 +45,54 @@ class iTransformerFilm(nn.Module):
         self.output_attention = configs.output_attention
         self.use_norm = configs.use_norm
         
-        # Calculate text sequence length based on TGTSF text_encoder logic
-        self.text_seq_len = int(np.ceil(configs.pred_len / configs.stride))
+        # ========================================================================
+        # Calculate text_seq_len based on timestamp_semantics
+        # ========================================================================
+        # 
+        # timestamp_semantics determines which text source the model receives:
+        # - t_about: y_hetero with pred_len timesteps (strided by hetero_stride)
+        # - t_known: x_hetero with seq_len timesteps (strided by hetero_stride)
+        #
+        # hetero_stride = stride if hetero_align_stride else 1 (set in data_factory)
+        #
+        # FiLMGenerator FLATTENS all text timesteps into a single vector, so
+        # we MUST initialize it with the exact input dimension it will receive.
+        # ========================================================================
+        
+        timestamp_semantics = getattr(configs, 'timestamp_semantics', None)
+        if timestamp_semantics is None:
+            raise ValueError(
+                "iTransformerFilm requires 'timestamp_semantics' in configs. "
+                "This must be set explicitly to avoid lookahead bias:\n"
+                "  - 't_about': Text timestamps refer to the event/target time (Fidel-TS datasets)\n"
+                "  - 't_known': Text timestamps refer to publication time (Time-MMD/TTC datasets)\n"
+                "Set timestamp_semantics in data_config (hetero_info.timestamp_semantics or top-level)."
+            )
+        if timestamp_semantics not in ('t_about', 't_known'):
+            raise ValueError(
+                f"Invalid timestamp_semantics: '{timestamp_semantics}'. "
+                f"Must be 't_about' or 't_known'."
+            )
+        
+        hetero_align_stride = getattr(configs, 'hetero_align_stride', True)
+        stride = configs.stride
+        
+        # Calculate effective hetero_stride (same logic as data_factory)
+        hetero_stride = stride if hetero_align_stride else 1
+        
+        if timestamp_semantics == 't_about':
+            # Using y_hetero: text aligned to prediction window
+            # Length = ceil(pred_len / hetero_stride)
+            # Note: hetero_stride for y_hetero is applied to pred_len
+            self.text_seq_len = int(np.ceil(self.pred_len / hetero_stride))
+            print(f'[ info ] iTransformerFilm: timestamp_semantics=t_about')
+            print(f'         -> text_seq_len = ceil({self.pred_len}/{hetero_stride}) = {self.text_seq_len} (from y_hetero/news)')
+        else:  # t_known
+            # Using x_hetero: text aligned to input window
+            # Length = ceil(seq_len / hetero_stride)
+            self.text_seq_len = int(np.ceil(self.seq_len / hetero_stride))
+            print(f'[ info ] iTransformerFilm: timestamp_semantics=t_known')
+            print(f'         -> text_seq_len = ceil({self.seq_len}/{hetero_stride}) = {self.text_seq_len} (from x_hetero/historical_events)')
         
         # Embedding
         self.enc_embedding = DataEmbedding_inverted(configs.seq_len, configs.d_model, configs.dropout)
