@@ -2,6 +2,20 @@
 
 This document describes how different types of text information flow through the fidel-ts codebase, from dataloaders to models (specifically `TGTSF` and `lynx_film_raw`).
 
+> **📋 Timestamp Semantics & Nomenclature**
+> 
+> Before using multimodal features, read **[Timestamp Semantics](timestamp_semantics.md)** to understand the difference between `t_about` and `t_known` timestamps.
+> 
+> **Nomenclature mapping (dataloader → model):**
+> - `x_hetero` → `historical_events` (text aligned to input window)
+> - `y_hetero` → `news` (text aligned to prediction window)
+> 
+> **TGTSF models automatically select text source based on `timestamp_semantics`:**
+> - **`t_about` (Fidel-TS):** Uses `news` (y_hetero) — forecasts about prediction window
+> - **`t_known` (Time-MMD/TTC):** Uses `historical_events` (x_hetero) — avoids lookahead bias
+> 
+> See also: **[TGTSF Migration Plan](time_mmd_mtsf_migration_plan.md)** for implementation details.
+
 ## Overview
 
 fidel-ts distinguishes between **four types of text information**:
@@ -160,28 +174,116 @@ static_info_embeddings.pkl → Heterogeneous_Dataset.load_embedding()
 - Scheduled maintenance/downtime announcements
 - Planned events that will affect the time series
 
+#### ⚠️ Critical: Two-Timestamp Semantics for Future Events
+
+For known planned future events, there are conceptually **TWO distinct timestamps**:
+
+| Timestamp Type | Description | Example (Weather Forecast) |
+|---------------|-------------|---------------------------|
+| **Publication Time** (`t_known`) | When the information became available | Monday 8:00 AM (forecast published) |
+| **Target Time** (`t_about`) | What time period the information describes | Wednesday (forecasted conditions) |
+
+**Why this matters:** To avoid lookahead bias, the model must only use information that was **known** (published) before the prediction start time. A weather forecast for Wednesday that was published on Monday is valid to use on Tuesday, but a forecast published on Wednesday afternoon would cause lookahead bias.
+
+#### Current Implementation: Single-Timestamp Limitation
+
+**⚠️ Important:** The current fidel-ts implementation uses a **single timestamp** per text entry in the dynamic data files. The semantic meaning of this timestamp depends on how the data was prepared:
+
+```
+Dynamic data structure: {timestamp_str: embedding_array}
+                            ↑
+                    Single timestamp - meaning depends on data preparation
+```
+
+**How matching works in `Universal_Dataset.__getitem__()`:**
+
+```python
+# data_provider/data_loader.py, lines 348-353
+if 'y_hetero' in self.custom_input:
+    y_hetero = self.hetero_data_getter(y_time[::self.hetero_stride])
+    hetero_y_time = y_hetero[0]
+    # ...
+```
+
+1. `y_time` contains timestamps from the **prediction window** `[t_end_input, t_end_input + pred_len)`
+2. These timestamps are passed to `hetero_data_getter()` → `time_matcher()`
+3. `time_matcher()` finds text entries based on the configured `matching` strategy
+
+**Matching Strategies and Their Implications:**
+
+| Strategy | Behavior | Use Case | Lookahead Risk |
+|----------|----------|----------|----------------|
+| `backward` | Find text at or before query timestamp | When text timestamp = publication time | ✅ Safe (text was available before query time) |
+| `forward` | Find text at or after query timestamp | NOT RECOMMENDED | ❌ Potential lookahead |
+| `nearest` | Find closest text to query timestamp | NOT RECOMMENDED | ❌ Potential lookahead |
+| `single` | Like backward, but deduplicated | Same as backward | ✅ Safe |
+
+#### Correct Interpretation for TGTSF
+
+For TGTSF to work correctly without lookahead bias, the data must be prepared such that:
+
+**Option A: Timestamps represent publication time (`t_known`)**
+- Dynamic data keys = when information was available
+- Use `matching: backward` with `y_time` (prediction window timestamps)
+- Result: Model gets text that was published before each prediction timestamp
+- **Limitation:** No guarantee the text is actually *about* the prediction window
+
+**Option B: Timestamps represent target time (`t_about`)** *(Assumed Fidel-TS approach)*
+- Dynamic data keys = what time the information describes
+- Weather forecast for Wednesday is stored under Wednesday's date
+- Use `matching: backward` with `y_time`
+- Result: Model gets text *about* the prediction window
+- **Assumption:** Data curator ensured no lookahead (forecasts were available before their target time)
+
+> **⚠️ Evidence from Fidel-TS data files:** Analysis of raw weather text in files like `merged_general_weather_report.json` reveals **consistent use of future tense** (e.g., "It's going to be a mostly cloudy day today", "Morning will be mostly cloudy", "Expect some passing clouds"). This linguistic evidence suggests timestamps represent `t_about` (what date the forecast describes), **NOT** `t_known` (when it was published). **Publication time (`t_known`) is not tracked** in the Fidel-TS dataset. Consequently, the current implementation assumes that the forecasts are all known at prediction time (assumes that forecasts for `t+k` are known at `t` where `k` is the prediction horizon). For Fidel-TS, we follow the original paper in this assumption (giving the benefit of the doubt to the original authors).
+
+#### Data Flow Diagram for y_hetero
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Sample at index i:                                                          │
+│  ┌────────────────────────┬────────────────────────────┐                     │
+│  │     Input Window       │      Prediction Window     │                     │
+│  │   [s_begin : s_end]    │    [r_begin : r_end]       │                     │
+│  │    (seq_len steps)     │    (pred_len steps)        │                     │
+│  └────────────────────────┴────────────────────────────┘                     │
+│            ↓                           ↓                                     │
+│         x_time                      y_time                                   │
+│    (input timestamps)          (prediction timestamps)                       │
+│                                        │                                     │
+│                                        ▼                                     │
+│                          ┌─────────────────────────────┐                     │
+│                          │    hetero_data_getter()     │                     │
+│                          │                             │                     │
+│                          │  time_matcher(y_time)       │                     │
+│                          │  matching='backward'        │                     │
+│                          └──────────────┬──────────────┘                     │
+│                                         │                                    │
+│                                         ▼                                    │
+│                          ┌─────────────────────────────┐                     │
+│                          │  Dynamic Embeddings Dict    │                     │
+│                          │  {                          │                     │
+│                          │    "20200901120000": emb1,  │← Single timestamp   │
+│                          │    "20200902120000": emb2,  │  per entry          │
+│                          │    ...                      │                     │
+│                          │  }                          │                     │
+│                          └──────────────┬──────────────┘                     │
+│                                         │                                    │
+│                                         ▼                                    │
+│                          y_hetero: [L, num_items, embed_dim]                 │
+│                          L = ceil(pred_len / stride) time segments           │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
 **Source Files:**
 - **Fidel-TS datasets:** Dynamic embeddings stored by timestamp
   - `dynamic_aggregate_text_v3.json` → embedded to `.pkl` files
   - Structure: `{timestamp_str: embedding_array}`
+  - **Timestamp meaning:** We assume it represent `t_about` (target time of forecast/event) based on linguistic analysis of raw text files (future tense: "will be", "going to be", "expect")
 
 - **Time-MMD/TTC datasets:** Text column in CSV aligned to timestamps
   - Column names: `Final_Search_*`, `Final_Output`, or `text`
-
-**Flow Path:**
-```
-dynamic_embeddings.pkl → Heterogeneous_Dataset.load_embedding()
-    → self.embeddings[timestamp]
-    → Universal_Dataset.__getitem__():
-        # Get timestamps for prediction window
-        y_time = self.timestamp[r_begin:r_end]  # r_begin = s_end, r_end = r_begin + pred_len
-        
-        # Fetch hetero data for these timestamps
-        y_hetero = self.hetero_data_getter(y_time[::self.hetero_stride])
-        # Returns embeddings for each timestamp in prediction window
-    → DataLoader collates to [B, L, num_items, embed_dim]
-    → Model.forward(news=y_hetero) receives [B, L, num_items, embed_dim]
-```
+  - **Timestamp meaning:** The row's timestamp (same as time series)
 
 **Task Configuration:**
 ```yaml
@@ -218,6 +320,20 @@ def forward(self, x, news, channel_description, **kwargs):
 - Historical news/events
 - Anomaly reports from the input window
 
+#### Single-Timestamp Semantics for Historical Events
+
+Unlike future events, historical text has **only ONE relevant timestamp**: when the information was available (which is also when the event occurred or was observed).
+
+```
+For historical text: t_known ≈ t_about
+(Publication time equals or closely follows the event time)
+```
+
+This is simpler because:
+- A news article about Monday's events was published on Monday
+- Past weather observations describe the time they were recorded
+- No "lead time" concept like with forecasts
+
 **Flow Path:**
 ```
 dynamic_embeddings.pkl → Heterogeneous_Dataset.load_embedding()
@@ -232,6 +348,16 @@ dynamic_embeddings.pkl → Heterogeneous_Dataset.load_embedding()
     → DataLoader collates to [B, L, num_items, embed_dim]
 ```
 
+**Matching for Historical Text:**
+
+| Strategy | Behavior | Lookahead Risk |
+|----------|----------|----------------|
+| `backward` | Find text at or before input timestamp | ✅ Always safe (past is past) |
+| `forward` | Find text at or after input timestamp | ⚠️ Could use future info |
+| `nearest` | Find closest text | ⚠️ Could use future info |
+
+**Recommendation:** Always use `matching: backward` for `x_hetero` to ensure text was available at each input timestamp.
+
 **Task Configuration:**
 ```yaml
 # For MTSF (Multi-modal Time Series Forecasting) or Reasoning tasks:
@@ -242,6 +368,37 @@ task: MTSF  # or 'Reasoning'
 ```
 
 **Note:** TGTSF task uses `y_hetero` (future) but not `x_hetero` (historical). To use historical text, configure `task: MTSF` or use `custom_input` override.
+
+---
+
+## Timestamp Semantics Summary
+
+| Text Type | # of Timestamps | Timestamp Meaning | Lookahead Concern |
+|-----------|-----------------|-------------------|-------------------|
+| **Channel Descriptions** | 0 (static) | N/A | None |
+| **General Information** | 0 (static) | N/A | None |
+| **Historical Text** (`x_hetero`) | 1 | When text was available ≈ What it describes | Low (use `backward` matching) |
+| **Future Events** (`y_hetero`) | 1 (but conceptually 2) | Depends on data preparation | **High** - must ensure text was known before prediction |
+
+### Future Work: Explicit Two-Timestamp Support
+
+A more robust implementation would explicitly track both timestamps for future events:
+
+```python
+# Hypothetical enhanced data structure
+{
+    "publication_time": "20200901080000",  # When forecast was made (Monday 8am)
+    "target_time": "20200903000000",       # What it forecasts (Wednesday)
+    "embedding": [0.1, 0.2, ...],
+    "text": "Weather forecast for Wednesday: sunny, high 75°F"
+}
+```
+
+This would allow the dataloader to:
+1. Filter by `publication_time <= prediction_start` (avoid lookahead)
+2. Filter by `target_time` overlapping with prediction window (relevance)
+
+Currently, this responsibility falls on the **data curator** to ensure the dynamic text files are prepared correctly
 
 ---
 
@@ -436,6 +593,52 @@ channel_info: ""
 
 ---
 
+## Lookahead Bias Prevention
+
+### What is Lookahead Bias?
+
+Lookahead bias occurs when a model uses information during training or inference that would not have been available at the time of prediction in a real-world scenario.
+
+### Sources of Lookahead Bias in Text-Guided Forecasting
+
+| Source | Risk Level | Description |
+|--------|------------|-------------|
+| Using text published after prediction start | 🔴 High | Weather forecast from Wednesday used to predict Wednesday |
+| Forward/nearest matching on dynamic text | 🟡 Medium | Matching may select future text entries |
+| Text about future but published before | 🟢 None | This is the intended use case (e.g., forecasts) |
+
+### Safeguards in fidel-ts
+
+1. **Matching Strategy:** Use `matching: backward` (default for most configs)
+   ```yaml
+   hetero_info:
+     matching: backward  # ✅ Safe - only uses text at or before query time
+   ```
+
+2. **Data Separation:** Input window and prediction window are strictly separated
+   ```python
+   # data_loader.py
+   seq_x = self.data[s_begin:s_end]      # Input: [t, t+seq_len)
+   seq_y = self.data[r_begin:r_end]      # Target: [t+seq_len, t+seq_len+pred_len)
+   # r_begin = s_end, ensuring no overlap
+   ```
+
+3. **Data Curator Responsibility:** For `y_hetero` (future events), the data curator must ensure:
+   - Text entries keyed by target time were actually available before that time
+   - Example: A weather forecast for Wednesday stored under Wednesday's date must have been published before Wednesday
+
+### Validation Checklist
+
+When using TGTSF with future text information:
+
+- [ ] Confirm `matching: backward` in data config
+- [ ] Verify dynamic text file timestamps represent appropriate time reference
+- [ ] For forecasts: Ensure forecasts were published before their target time
+- [ ] For scheduled events: Ensure schedules were known before the event time
+- [ ] Test on held-out data to detect any performance anomalies
+
+---
+
 ## Summary Table
 
 | Component | Source | Dataloader Output | Model Input | Shape |
@@ -452,3 +655,81 @@ Where:
 - `D` = embedding dimension (e.g., 768 for BERT, 256 internal)
 - `L` = number of time segments (`ceil(pred_len / stride)`)
 - `N` = number of text items per timestamp (typically 1-2)
+
+---
+
+## Appendix: Timestamp Semantics Deep Dive
+
+### The Two-Timestamp Problem for Future Events
+
+```
+Example: Weather Forecast
+
+Timeline:
+─────────────────────────────────────────────────────────────────────►
+   Mon 8am        Tue 12pm        Wed 12am        Thu 12pm
+     │               │               │               │
+     │               │               │               │
+     ▼               ▼               ▼               ▼
+  Forecast      Prediction      Forecast        End of
+  Published     Start Time      Target Day      Prediction
+  (t_known)     (t_pred_start)  (t_about)       Window
+
+
+Question: Can we use this forecast for predictions starting Tuesday?
+
+Answer depends on:
+1. t_known < t_pred_start?  → Yes, Monday < Tuesday ✓
+2. t_about overlaps prediction window? → Yes, Wednesday is in [Tue, Thu] ✓
+
+Both conditions must be true for valid usage.
+```
+
+### Current Implementation Behavior
+
+The current implementation stores ONE timestamp per text entry. Depending on what this timestamp represents:
+
+**Scenario A: Timestamp = t_known (publication time)**
+```
+Query: y_time = [Tue 12pm, Wed 12pm, Thu 12pm]
+Matching: backward
+Result: Finds forecast published Mon 8am (before all query times)
+✅ Correct: Uses available information
+⚠️ Issue: May not be ABOUT the prediction window
+```
+
+**Scenario B: Timestamp = t_about (target time)** ← **Assumed / suggested by evidence: This is what Fidel-TS uses**
+```
+Query: y_time = [Tue 12pm, Wed 12pm, Thu 12pm]
+Matching: backward
+Result: For Wed query, finds forecast about Wed (published Mon)
+✅ Correct: Gets relevant forecast
+⚠️ Assumption: Data curator ensured t_known < t_about
+```
+
+> **Linguistic Evidence:** Analysis of `merged_general_weather_report.json` shows forecasts use future tense:
+> - `"20170101"` → "It's **going to be** a mostly cloudy day **today**..."
+> - `"20170102"` → "Early morning on January 2nd **will be** quite chilly..."
+> 
+> The text describes what **will happen** on the timestamp date, suggesting timestamps = `t_about`.
+
+### Recommendation for Data Preparation
+
+For Fidel-TS datasets using weather forecasts:
+
+1. **Key by target time** (what the forecast is about)
+2. **Ensure forecasts have lead time** (published before target)
+3. **Document the lead time** in dataset metadata
+
+Example data preparation:
+```python
+# When creating dynamic_aggregate_text.json
+for forecast in weather_forecasts:
+    # Key by target time, but verify lead time
+    assert forecast.publication_time < forecast.target_time
+    data[forecast.target_time.strftime('%Y%m%d%H%M%S')] = forecast.text
+```
+
+This ensures that `backward` matching with `y_time` (prediction window timestamps) retrieves forecasts that are:
+1. About the prediction window (keyed by target time)
+2. Known before the prediction (by data preparation invariant)
