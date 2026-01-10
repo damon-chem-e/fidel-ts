@@ -50,3 +50,5 @@ hetero_info:
   matching: single
   input_format: json
   static_path: static_info.json
+  # Timestamp semantics: t_about means timestamps represent WHAT TIME the text DESCRIBES
+  timestamp_semantics: t_about

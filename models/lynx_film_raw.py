@@ -4,6 +4,32 @@ lynx-film-raw Model: FiLM-Modulated Raw Signal Learning
 This model learns the entire prediction structure using iTransformerFilm with FiLM modulation,
 without learning a residual to a frozen unimodal model. Similar to TGTSF but using iTransformer
 architecture with FiLM instead of TGTSF's patch-based architecture.
+
+Text Input Nomenclature
+=======================
+This model receives text from two sources, with different names in the
+dataloader vs model code:
+
+    Dataloader Name    Model Parameter      Description
+    ---------------    ---------------      -----------
+    x_hetero           historical_events    Text aligned to INPUT window timestamps
+    y_hetero           news                 Text aligned to PREDICTION window timestamps
+
+The model uses `timestamp_semantics` to determine which text input to use:
+
+    timestamp_semantics    Text Input Used    Datasets
+    -------------------    ---------------    --------
+    t_about                news (y_hetero)    Fidel-TS (timestamps = target time)
+    t_known                historical_events  Time-MMD, TTC (timestamps = publication time)
+
+For t_about:
+    news contains forecasts/schedules ABOUT the prediction window.
+    ASSUMPTION: The forecast for time t+k was known at time t.
+    This is assumed safe for prediction horizons within typical forecast lead times.
+
+For t_known:
+    news would contain text PUBLISHED during the prediction window, which is
+    LOOKAHEAD BIAS. Instead, we use historical_events (text about input window).
 """
 
 from torch import nn
@@ -25,6 +51,21 @@ class Model(nn.Module):
         # Store normalization configuration
         self.revin = getattr(configs, 'revin', True)
         self.use_norm = getattr(configs, 'use_norm', False)
+        
+        # Timestamp semantics determines which text input to use for TGTSF task
+        # - t_about: Use news (y_hetero) - text describes prediction window, assumed known beforehand
+        # - t_known: Use historical_events (x_hetero) - avoid lookahead bias
+        self.timestamp_semantics = getattr(configs, 'timestamp_semantics', 't_about')
+        if self.timestamp_semantics not in ('t_about', 't_known'):
+            raise ValueError(
+                f"Invalid timestamp_semantics: {self.timestamp_semantics}. "
+                f"Must be 't_about' or 't_known'."
+            )
+        print(f'[ info ] LYNX-FiLM-raw: timestamp_semantics = {self.timestamp_semantics}')
+        if self.timestamp_semantics == 't_about':
+            print(f'         -> Using news (y_hetero) - forecasts ABOUT prediction window')
+        else:
+            print(f'         -> Using historical_events (x_hetero) - avoiding lookahead bias')
         
         # Text dimension handling:
         # - input_text_dim: Dimension of input text embeddings (e.g., 768 for BERT)
@@ -177,25 +218,55 @@ class Model(nn.Module):
         
         return final_pred
         
-    def forward(self, x, news, channel_description, **kwargs):
+    def forward(self, x, news=None, channel_description=None, historical_events=None, **kwargs):
         """
         Forward pass: Learn raw signal prediction using iTransformerFilm with FiLM modulation.
         
         Args:
             x: Input time series [B, seq_len, C]
-            news: News embeddings [B, l, news_num, text_dim]
+            news: Text embeddings aligned to PREDICTION window (y_hetero from dataloader)
+                  Shape: [B, pred_len, num_items, text_dim]
+                  - For t_about: Forecasts/schedules ABOUT the prediction window (USE THIS)
+                  - For t_known: Text PUBLISHED during prediction window (LOOKAHEAD - don't use!)
             channel_description: Channel descriptions [B, C, d_model] or [B, 1, C, d_model]
-                Will be automatically expanded to [B, l, C, d_model] to match news time dimension
+                Will be automatically expanded to [B, l, C, d_model] to match text time dimension
+            historical_events: Text embeddings aligned to INPUT window (x_hetero from dataloader)
+                              Shape: [B, seq_len, num_items, text_dim]
+                              - Always safe to use (describes past, known at prediction time)
             **kwargs: Additional arguments (ignored)
             
         Returns:
             final_pred: Raw prediction [B, pred_len, C]
         """
+        # Select text input based on timestamp_semantics
+        # - t_about: news (y_hetero) contains forecasts ABOUT prediction window, assumed known at t
+        # - t_known: news (y_hetero) would be LOOKAHEAD; use historical_events (x_hetero) instead
+        if self.timestamp_semantics == 't_about':
+            # Fidel-TS datasets: timestamps = t_about (what time text describes)
+            # news contains forecasts/schedules for prediction window, assumed known beforehand
+            if news is None:
+                raise ValueError(
+                    "timestamp_semantics='t_about' requires 'news' (y_hetero) to be provided. "
+                    "Ensure task='TGTSF' and y_hetero is configured in data config."
+                )
+            text_input = news
+        elif self.timestamp_semantics == 't_known':
+            # Time-MMD/TTC datasets: timestamps = t_known (when text was published)
+            # Using news (y_hetero) would be lookahead bias; use historical_events instead
+            if historical_events is None:
+                raise ValueError(
+                    "timestamp_semantics='t_known' requires 'historical_events' (x_hetero) to be provided. "
+                    "Ensure x_hetero is configured in data config."
+                )
+            text_input = historical_events
+        else:
+            raise ValueError(f"Invalid timestamp_semantics: {self.timestamp_semantics}")
+        
         # Step 1: Normalize input
         x_norm, norm_params = self.normalize_input(x)
         
         # Step 2: Project text embeddings if input dimension differs from operational dimension
-        news, channel_description = self._project_text_embeddings(news, channel_description)
+        text_input, channel_description = self._project_text_embeddings(text_input, channel_description)
         
         # Step 3: Get Text Embeddings
         # text_encoder returns [B, L, C, text_dim] (L=time segments, C=channels)
@@ -204,9 +275,9 @@ class Model(nn.Module):
         if len(channel_description.shape) == 3:
             # If [B, C, D], unsqueeze to [B, 1, C, D]
             channel_description = channel_description.unsqueeze(1)
-        # Repeat along time dimension to match news shape: [B, L, C, D]
-        description = channel_description.repeat(1, news.shape[1], 1, 1)
-        text_emb = self.text_encoder(news, description)
+        # Repeat along time dimension to match text_input shape: [B, L, C, D]
+        description = channel_description.repeat(1, text_input.shape[1], 1, 1)
+        text_emb = self.text_encoder(text_input, description)
         
         # Step 3: Prepare text embeddings for FiLM
         # iTransformerFilm expects [B, C, L, text_dim]
@@ -226,35 +297,40 @@ class Model(nn.Module):
     def move_to_device(self, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, 
                       hetero_x_time, hetero_y_time, hetero_general, hetero_channel, device):
         """
-        Move data to device (same as TGTSF for compatibility).
-        
-        This method ensures all model components and input tensors are moved to
-        the specified device. It's critical for proper GPU/CPU device placement.
+        Move data to device.
         
         Args:
-            seq_x: Input sequences
-            seq_y: Target sequences
+            seq_x: Input time series [B, seq_len, C]
+            seq_y: Target time series [B, pred_len, C]
             x_time: Input timestamps
             y_time: Target timestamps
-            x_hetero: Input heterogeneous features
-            y_hetero: Target heterogeneous features
-            hetero_x_time: Heterogeneous input timestamps
-            hetero_y_time: Heterogeneous target timestamps
-            hetero_general: General heterogeneous features
+            x_hetero: Historical text embeddings (maps to historical_events in forward)
+                      Text aligned to INPUT window - always safe to use
+            y_hetero: Prediction window text embeddings (maps to news in forward)
+                      Text aligned to PREDICTION window
+                      - For t_about: Forecasts ABOUT prediction window (safe with lead time assumption)
+                      - For t_known: Text PUBLISHED during prediction window (LOOKAHEAD - don't use!)
+            hetero_x_time: Historical text timestamps
+            hetero_y_time: Prediction text timestamps
+            hetero_general: General dataset description
             hetero_channel: Channel descriptions
             device: Target device
             
         Returns:
-            tuple: All inputs moved to device
+            tuple: All inputs with relevant tensors moved to device
         """
-        # Move data tensors to device
+        # Move time series data
         seq_x = seq_x.float().to(device)
         seq_y = seq_y.float().to(device)
         hetero_channel = hetero_channel.float().to(device)
-        y_hetero = y_hetero.float().to(device)
         
-        # Model components are automatically moved when model.to(device) is called
-        # No need to explicitly move unimodal model (doesn't exist in this architecture)
+        # Move text based on timestamp_semantics
+        # - t_about: We use y_hetero (news) - forecasts ABOUT prediction window
+        # - t_known: We use x_hetero (historical_events) - avoids lookahead bias
+        if self.timestamp_semantics == 't_about':
+            y_hetero = y_hetero.float().to(device)
+        elif self.timestamp_semantics == 't_known':
+            x_hetero = x_hetero.float().to(device)
         
         return seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel
 

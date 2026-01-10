@@ -9,6 +9,23 @@ Architecture:
 - Base Model: TGTSF (Text-Guided Time Series Forecasting)
 - Unimodal Model: Pretrained frozen model (default: iTransformer)
 - Output: final_prediction = unimodal_prediction + residual_prediction
+
+Text Input Nomenclature
+=======================
+This model receives text from two sources, with different names in the
+dataloader vs model code:
+
+    Dataloader Name    Model Parameter      Description
+    ---------------    ---------------      -----------
+    x_hetero           historical_events    Text aligned to INPUT window timestamps
+    y_hetero           news                 Text aligned to PREDICTION window timestamps
+
+The model uses `timestamp_semantics` to determine which text input to use:
+
+    timestamp_semantics    Text Input Used    Datasets
+    -------------------    ---------------    --------
+    t_about                news (y_hetero)    Fidel-TS (timestamps = target time)
+    t_known                historical_events  Time-MMD, TTC (timestamps = publication time)
 """
 
 import torch
@@ -42,6 +59,21 @@ class Model(nn.Module):
                 - pretrained_model_config_path: Optional path to pretrained model config
         """
         super().__init__()
+        
+        # Timestamp semantics determines which text input to use for TGTSF task
+        # - t_about: Use news (y_hetero) - text describes prediction window, assumed known beforehand
+        # - t_known: Use historical_events (x_hetero) - avoid lookahead bias
+        self.timestamp_semantics = getattr(configs, 'timestamp_semantics', 't_about')
+        if self.timestamp_semantics not in ('t_about', 't_known'):
+            raise ValueError(
+                f"Invalid timestamp_semantics: {self.timestamp_semantics}. "
+                f"Must be 't_about' or 't_known'."
+            )
+        print(f'[ info ] LYNX: timestamp_semantics = {self.timestamp_semantics}')
+        if self.timestamp_semantics == 't_about':
+            print(f'         -> Using news (y_hetero) - forecasts ABOUT prediction window')
+        else:
+            print(f'         -> Using historical_events (x_hetero) - avoiding lookahead bias')
         
         # Load TGTSF parameters (same as TGTSF)
         c_in = configs.enc_in 
@@ -248,19 +280,39 @@ class Model(nn.Module):
         else:
             return x
     
-    def forward(self, x, news, channel_description, **kwargs):
+    def forward(self, x, news=None, channel_description=None, historical_events=None, **kwargs):
         """
         Forward pass: Combine unimodal prediction with TGTSF residual.
         
         Args:
             x: Input time series [B, seq_len, C]
-            news: News embeddings [B, l, news_num, text_dim]
+            news: Text embeddings aligned to PREDICTION window (y_hetero from dataloader)
+                  - For t_about: Forecasts ABOUT prediction window (USE THIS)
+                  - For t_known: Text PUBLISHED during prediction window (LOOKAHEAD - don't use!)
             channel_description: Channel descriptions [B, 1, C, d_model]
+            historical_events: Text embeddings aligned to INPUT window (x_hetero from dataloader)
+                              - Always safe to use (describes past, known at prediction time)
             **kwargs: Additional arguments (ignored)
             
         Returns:
             final_pred: Final prediction [B, pred_len, C]
         """
+        # Select text input based on timestamp_semantics
+        if self.timestamp_semantics == 't_about':
+            if news is None:
+                raise ValueError(
+                    "timestamp_semantics='t_about' requires 'news' (y_hetero) to be provided."
+                )
+            text_input = news
+        elif self.timestamp_semantics == 't_known':
+            if historical_events is None:
+                raise ValueError(
+                    "timestamp_semantics='t_known' requires 'historical_events' (x_hetero) to be provided."
+                )
+            text_input = historical_events
+        else:
+            raise ValueError(f"Invalid timestamp_semantics: {self.timestamp_semantics}")
+        
         # Ensure input is on the same device as the unimodal model
         # This prevents device mismatch errors when model is on GPU but input is on CPU
         unimodal_device = next(self.unimodal_wrapper.model.parameters()).device
@@ -278,7 +330,7 @@ class Model(nn.Module):
         # (RevIN check kept in lynx for TGTSF's internal use, wrapper handles unimodal normalization)
         disable_revin = (self.unimodal_wrapper.norm_scheme != 'revin')
         residual_pred_norm = self._tgtsf_forward(
-            x_norm, news, channel_description, disable_revin=disable_revin
+            x_norm, text_input, channel_description, disable_revin=disable_revin
         )
         
         # Step 4: Combine predictions in normalized space
@@ -292,29 +344,36 @@ class Model(nn.Module):
     def move_to_device(self, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, 
                       hetero_x_time, hetero_y_time, hetero_general, hetero_channel, device):
         """
-        Move data to device (same as TGTSF for compatibility).
+        Move data to device.
         
         Args:
-            seq_x: Input sequences
-            seq_y: Target sequences
+            seq_x: Input time series [B, seq_len, C]
+            seq_y: Target time series [B, pred_len, C]
             x_time: Input timestamps
             y_time: Target timestamps
-            x_hetero: Input heterogeneous features
-            y_hetero: Target heterogeneous features
-            hetero_x_time: Heterogeneous input timestamps
-            hetero_y_time: Heterogeneous target timestamps
-            hetero_general: General heterogeneous features
+            x_hetero: Historical text embeddings (maps to historical_events in forward)
+            y_hetero: Prediction window text embeddings (maps to news in forward)
+            hetero_x_time: Historical text timestamps
+            hetero_y_time: Prediction text timestamps
+            hetero_general: General dataset description
             hetero_channel: Channel descriptions
             device: Target device
             
         Returns:
-            tuple: All inputs moved to device
+            tuple: All inputs with relevant tensors moved to device
         """
-        # Move data to device
+        # Move time series data
         seq_x = seq_x.float().to(device)
         seq_y = seq_y.float().to(device)
         hetero_channel = hetero_channel.float().to(device)
-        y_hetero = y_hetero.float().to(device)
+        
+        # Move text based on timestamp_semantics
+        # - t_about: We use y_hetero (news) - forecasts ABOUT prediction window
+        # - t_known: We use x_hetero (historical_events) - avoids lookahead bias
+        if self.timestamp_semantics == 't_about':
+            y_hetero = y_hetero.float().to(device)
+        elif self.timestamp_semantics == 't_known':
+            x_hetero = x_hetero.float().to(device)
         
         # Move unimodal model to device
         self.unimodal_wrapper.model = self.unimodal_wrapper.model.to(device)

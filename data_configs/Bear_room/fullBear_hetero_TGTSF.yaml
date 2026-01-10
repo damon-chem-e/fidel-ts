@@ -53,3 +53,7 @@ hetero_info:
   matching: backward
   input_format: embedding
   static_path: static_info_embeddings.pkl
+  # Timestamp semantics: t_about means timestamps represent WHAT TIME the text DESCRIBES
+  # (e.g., weather forecast FOR Wednesday), not when it was published.
+  # Assumption: forecasts were available before their target time.
+  timestamp_semantics: t_about

@@ -20,3 +20,5 @@ hetero_info:
   matching: backward
   input_format: embedding
   static_path: static_info_embeddings_short_new.pkl
+  # Timestamp semantics: t_about means timestamps represent WHAT TIME the text DESCRIBES
+  timestamp_semantics: t_about

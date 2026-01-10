@@ -59,6 +59,29 @@ def model_init(model_name, configs, all_args, is_LLM=False, is_FM=False):
             configs['sampling_rate'] = data_configs.sampling_rate
         except: pass
         
+        # Extract timestamp_semantics from data config and propagate to model
+        # This is critical for TGTSF-family models to select the correct text source:
+        # - t_about: Use news (y_hetero) - Fidel-TS datasets
+        # - t_known: Use historical_events (x_hetero) - Time-MMD/TTC datasets
+        # 
+        # timestamp_semantics can be in:
+        # 1. data_config.hetero_info.timestamp_semantics (Fidel-TS with hetero_info block)
+        # 2. data_config.timestamp_semantics (Time-MMD/TTC at top level)
+        timestamp_semantics = None
+        try:
+            # Try hetero_info first (Fidel-TS pattern)
+            if hasattr(data_configs, 'hetero_info') and data_configs.hetero_info is not None:
+                timestamp_semantics = data_configs.hetero_info.get('timestamp_semantics', None)
+        except: pass
+        if timestamp_semantics is None:
+            try:
+                # Try top-level (Time-MMD/TTC pattern)
+                timestamp_semantics = data_configs.timestamp_semantics
+            except: pass
+        if timestamp_semantics is not None:
+            configs['timestamp_semantics'] = timestamp_semantics
+            print(f"[ info ] model_init: Propagated timestamp_semantics={timestamp_semantics} from data config to model")
+        
         module = importlib.import_module(f'models.{model_name}')
         model_class = getattr(module, 'Model')
         

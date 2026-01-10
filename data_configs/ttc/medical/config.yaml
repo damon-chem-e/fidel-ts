@@ -1,3 +1,7 @@
+# Timestamp semantics: t_known means timestamps represent WHEN the text WAS PUBLISHED
+# For TGTSF models, this means using historical_events (x_hetero) to avoid lookahead bias.
+timestamp_semantics: t_known
+
 root_path: ./data/ttc/medical
 data_path: null  # Not used, will use formatter with {i} placeholder
 spliter: ratio

@@ -1,3 +1,9 @@
+# Timestamp semantics: t_known means timestamps represent WHEN the text WAS PUBLISHED
+# (i.e., publication time, not what time the text describes)
+# For TGTSF models, this means using historical_events (x_hetero) instead of news (y_hetero)
+# to avoid lookahead bias.
+timestamp_semantics: t_known
+
 root_path: ./data/time_mmd/Traffic
 data_path: US_VMT_Month.csv
 spliter: ratio
