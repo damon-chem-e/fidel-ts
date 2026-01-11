@@ -1,5 +1,5 @@
 # Experiment Suite: Time-MMD Test Suite
-# Description: Test run for models that don't require pretrained checkpoints (TGTSF, lynx_film_raw) on Time-MMD dataset
+# Description: Test run for models that don't require pretrained checkpoints (TGTSF, lynx_film_raw, iTransformer) on Time-MMD dataset
 # Note: lynx and lynx_film are excluded because they require pretrained checkpoints trained on larger fidel-ts datasets,
 #       which are incompatible with the smaller Time-MMD datasets (dataset size too small for required input_len=360)
 # This suite verifies that models work correctly with the Time-MMD dataset format
@@ -7,8 +7,8 @@
 
 suite:
   name: "time_mmd_test"
-  description: "Test suite: Verify TGTSF and lynx_film_raw work with Time-MMD dataset (models that don't require pretrained checkpoints)"
-  tags: ["time_mmd", "multimodal", "pytorch", "test", "tgtsf", "lynx_film_raw"]
+  description: "Test suite: Verify TGTSF, lynx_film_raw, and iTransformer work with Time-MMD dataset (models that don't require pretrained checkpoints)"
+  tags: ["time_mmd", "multimodal", "pytorch", "test", "tgtsf", "lynx_film_raw", "itransformer"]
   
   # Execution settings
   execution:
@@ -111,3 +111,45 @@ suite:
         # Model config override: Set input_text_dim to match BERT output (768)
         model_config_overrides:
           input_text_dim: 768  # BERT output dimension (models will project to text_dim: 256)
+
+    # Test 3: iTransformer model (unimodal)
+    - name: "itransformer_time_mmd_traffic"
+      description: "iTransformer (unimodal) on Time-MMD Traffic dataset (many epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+          config_path: "model_configs/general/iTransformer.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          experiment_output: "./output"
+          epochs: 20  # 20 epochs for testing if we get same performance as original papers
+          batch_size: 8  # Small batch size for testing
+          learning_rate: 5e-4
+          patience: 3
+          loss: mse
+          lradj: type3
+          scale: true
+          disable_buffer: false
+          preload_hetero: false
+          prefetch_factor: 2
+          noise: 0.0
+          input_len: 24
+          output_len: 6
+          num_workers: 0
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: false  # Disable wandb for quick test runs
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/time_mmd_test"
+        # Base data path override
+        base_data_path: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/data/
+        # Note: iTransformer is unimodal and does not use text data from time_mmd datasets
