@@ -193,6 +193,52 @@ class Experiment(Exp_Basic):
 
         return output, gt, sample_ids
 
+    def _compute_original_scale_loss(self, output, gt, criterion, dataset):
+        """
+        Compute loss on original (un-normalized) scale by inverse transforming predictions and ground truth.
+        
+        Args:
+            output: Model predictions in normalized scale [B, pred_len, features]
+            gt: Ground truth in normalized scale [B, pred_len, features]
+            criterion: Loss function
+            dataset: Dataset object with scaler attribute
+            
+        Returns:
+            float: Loss on original scale, or None if scaling is disabled or scaler unavailable
+        """
+        if not hasattr(dataset, 'scale') or not dataset.scale:
+            return None
+        if not hasattr(dataset, 'scaler') or dataset.scaler is None:
+            return None
+        
+        try:
+            # Convert to numpy for inverse transform
+            output_np = output.detach().cpu().numpy()
+            gt_np = gt.detach().cpu().numpy()
+            
+            # Inverse transform: reshape to 2D for scaler, transform, then reshape back
+            original_shape = output_np.shape
+            output_flat = output_np.reshape(-1, original_shape[-1])
+            gt_flat = gt_np.reshape(-1, original_shape[-1])
+            
+            # Inverse transform
+            output_original = dataset.scaler.inverse_transform(output_flat)
+            gt_original = dataset.scaler.inverse_transform(gt_flat)
+            
+            # Reshape back to original shape
+            output_original = output_original.reshape(original_shape)
+            gt_original = gt_original.reshape(original_shape)
+            
+            # Convert back to tensors and compute loss
+            output_original_tensor = torch.from_numpy(output_original).to(output.device)
+            gt_original_tensor = torch.from_numpy(gt_original).to(output.device)
+            
+            loss_original = criterion(output_original_tensor, gt_original_tensor)
+            return loss_original.item()
+        except Exception as e:
+            # If inverse transform fails, return None
+            return None
+
     def _prepare_temporal_marks(self, x_time_features, y_time_features, batch_size):
         """
         Prepare temporal marks (x_mark_enc, x_mark_dec) for models that require them.

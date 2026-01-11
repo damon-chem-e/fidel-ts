@@ -42,7 +42,9 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise):
         if indexes is not None and i not in indexes:
             continue
         with torch.no_grad():
-            batch_x, batch_y, _, _, x_hetero, y_hetero, _, _, _, hetero_channel = iter_data
+            # Unpack batch: sample_id, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, 
+            # hetero_x_time, hetero_y_time, hetero_general, hetero_channel, x_time_features, y_time_features
+            sample_ids, batch_x, batch_y, _, _, x_hetero, y_hetero, _, _, _, hetero_channel, _, _ = iter_data
 
             batch_x = torch.tensor(batch_x).to(device)
             batch_y = torch.tensor(batch_y).to(device)
