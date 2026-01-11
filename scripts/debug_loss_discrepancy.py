@@ -7,7 +7,22 @@ This script checks for:
 2. Normalization issues (scaler statistics)
 3. Shape mismatches in loss computation
 4. Actual loss values and scales
+
+Usage:
+    # Run from project root
+    python scripts/debug_loss_discrepancy.py
+    
+    # Or run as module
+    python -m scripts.debug_loss_discrepancy
 """
+
+import sys
+from pathlib import Path
+
+# Add project root to path so imports work
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 import numpy as np
 import torch
@@ -183,13 +198,26 @@ def main():
     print("FIDEL-TS iTransformer Loss Discrepancy Diagnostic")
     print("=" * 80)
     
-    # Load configs
-    data_config_path = "data_configs/time_mmd/Traffic/config.yaml"
-    data_config = load_config(data_config_path)
+    # Load configs (use absolute path from project root)
+    data_config_path = project_root / "data_configs/time_mmd/Traffic/config.yaml"
+    if not data_config_path.exists():
+        print(f"ERROR: Config file not found at {data_config_path}")
+        print(f"Please run from project root or ensure config file exists")
+        return
+    data_config = load_config(str(data_config_path))
     
     # Create args object
+    # Use absolute path for data_path
+    # Note: If your data is in a different location (e.g., base_data_path override),
+    # you can modify this path or set it via environment variable
+    data_path = project_root / "data"
+    # Check if custom data path is provided via environment variable
+    import os
+    if 'FIDEL_TS_DATA_PATH' in os.environ:
+        data_path = Path(os.environ['FIDEL_TS_DATA_PATH'])
+    
     args = dotdict({
-        'data_path': './data',
+        'data_path': str(data_path),
         'data': 'time_mmd_traffic',
         'features': 'S',  # Single target
         'target': 'OT',
