@@ -10,6 +10,7 @@ import os
 import json
 import glob
 import yaml
+from pathlib import Path
 from tqdm import tqdm
 from models import model_init
 from data_provider.data_factory import Data_Provider
@@ -88,37 +89,285 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise):
 
 def find_checkpoint(eval_config):
     """
-    Find checkpoint path based on evaluation configuration.
+    Find checkpoint path based on evaluation configuration (legacy format only).
+    
+    This function is kept for backward compatibility with old evaluation configs
+    that use pattern matching instead of experiment directory structure.
     
     Args:
-        eval_config: Evaluation configuration with model, data, version, input_len, output_len, checkpoint_base
+        eval_config: Evaluation configuration with checkpoint_base, model, data, input_len, output_len
     
     Returns:
         Path to checkpoint directory
     """
-    ckpt_pattern = f'_{eval_config.model}_{eval_config.data}_{eval_config.output_len}_{eval_config.input_len}'
+    from evaluation.checkpoint_finder import find_checkpoint_legacy
+    import warnings
+    warnings.warn(
+        "Using legacy checkpoint finding with pattern matching. "
+        "Consider migrating to experiment directory structure with resume_experiment_id.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return find_checkpoint_legacy(eval_config)
+
+
+def _determine_experiment_dir(eval_config):
+    """
+    Determine experiment directory from evaluation config.
     
-    if eval_config.version == 'latest':
-        ckpt_paths = [os.path.join(eval_config.checkpoint_base, d) for d in os.listdir(eval_config.checkpoint_base) if ckpt_pattern in d]
-        if not ckpt_paths:
-            raise FileNotFoundError(f"No checkpoint found with pattern: *{ckpt_pattern}")
-        ckpt_paths.sort()
-        ckpt_path = ckpt_paths[-1]
-    elif eval_config.version == 'oldest':
-        ckpt_paths = [os.path.join(eval_config.checkpoint_base, d) for d in os.listdir(eval_config.checkpoint_base) if ckpt_pattern in d]
-        if not ckpt_paths:
-            raise FileNotFoundError(f"No checkpoint found with pattern: *{ckpt_pattern}")
-        ckpt_paths.sort()
-        ckpt_path = ckpt_paths[0]
+    Args:
+        eval_config: Evaluation configuration
+        
+    Returns:
+        Path: Path to experiment directory
+    """
+    from pathlib import Path
+    
+    if hasattr(eval_config, 'experiment_dir'):
+        return Path(eval_config.experiment_dir)
+    elif (Path(eval_config.checkpoint_base) / "checkpoints").exists():
+        return Path(eval_config.checkpoint_base)
     else:
-        pattern = os.path.join(eval_config.checkpoint_base, eval_config.version + ckpt_pattern)
-        ckpt_paths = glob.glob(pattern)
-        if not ckpt_paths:
-            raise FileNotFoundError(f"No checkpoint found for pattern: {pattern}")
-        ckpt_paths.sort()
-        ckpt_path = ckpt_paths[-1]
+        # Legacy format: use old find_checkpoint logic
+        ckpt_path = find_checkpoint(eval_config)
+        experiment_dir = Path(ckpt_path)
+        print(f"[Info] Using checkpoint path (legacy): {ckpt_path}")
+        return experiment_dir
+
+
+def _load_checkpoint_config(experiment_dir, eval_config, config):
+    """
+    Load and prepare checkpoint configuration from experiment directory.
     
-    return ckpt_path
+    Args:
+        experiment_dir: Path to experiment directory
+        eval_config: Evaluation configuration
+        config: Original config (may contain data_config override)
+        
+    Returns:
+        dotdict: Prepared checkpoint configuration
+    """
+    from pathlib import Path
+    from evaluation.config_builder import load_checkpoint_config
+    
+    # Load checkpoint config
+    checkpoint_config_dict = load_checkpoint_config(experiment_dir)
+    
+    # Convert to dotdict (new format: experiment_config.yaml)
+    model_config_path = experiment_dir / "configs" / "model_config.yaml"
+    data_config_path = experiment_dir / "configs" / "data_config.yaml"
+    
+    checkpoint_config = dotdict()
+    checkpoint_config.model = checkpoint_config_dict.get('model', {}).get('name', 'unknown')
+    checkpoint_config.data = checkpoint_config_dict.get('data', {}).get('name', 'unknown')
+    training_config = checkpoint_config_dict.get('training', {})
+    checkpoint_config.input_len = training_config.get('input_len')
+    checkpoint_config.output_len = training_config.get('output_len')
+    checkpoint_config.batch_size = training_config.get('batch_size', 128)
+    
+    # Load model config
+    if model_config_path.exists():
+        with open(model_config_path, 'r', encoding='utf-8') as f:
+            checkpoint_config.model_config = dotdict(yaml.safe_load(f))
+    else:
+        # Fallback: try to load from original path
+        model_cfg_path = checkpoint_config_dict.get('model', {}).get('config_path')
+        if model_cfg_path:
+            with open(model_cfg_path, 'r', encoding='utf-8') as f:
+                checkpoint_config.model_config = dotdict(yaml.safe_load(f))
+        else:
+            raise FileNotFoundError(f"Model config not found: {model_config_path}")
+    
+    # Load data config
+    if data_config_path.exists():
+        with open(data_config_path, 'r', encoding='utf-8') as f:
+            checkpoint_config.data_config = dotdict(yaml.safe_load(f))
+    else:
+        # Fallback: try to load from original path
+        data_cfg_path = checkpoint_config_dict.get('data', {}).get('config_path')
+        if data_cfg_path:
+            with open(data_cfg_path, 'r', encoding='utf-8') as f:
+                checkpoint_config.data_config = dotdict(yaml.safe_load(f))
+        else:
+            raise FileNotFoundError(f"Data config not found: {data_config_path}")
+    
+    # Use provided data_config override if available
+    if hasattr(config, 'data_config') and config.data_config:
+        checkpoint_config.data_config = dotdict(yaml.safe_load(open(config.data_config, 'r')))
+    
+    # Set evaluation-specific config values
+    checkpoint_config.gpu = eval_config.device
+    checkpoint_config.num_workers = 0
+    checkpoint_config.task = eval_config.task
+    checkpoint_config.batch_size = 1 if eval_config.filtered_samples is not None else eval_config.batch_size
+    
+    return checkpoint_config
+
+
+def _load_model_and_checkpoint(experiment_dir, eval_config, checkpoint_config):
+    """
+    Load model and checkpoint from experiment directory.
+    
+    Args:
+        experiment_dir: Path to experiment directory
+        eval_config: Evaluation configuration
+        checkpoint_config: Checkpoint configuration
+        
+    Returns:
+        tuple: (model, device)
+    """
+    from pathlib import Path
+    from evaluation.checkpoint_finder import find_checkpoint_from_experiment_dir
+    
+    # Determine device
+    if torch.cuda.is_available():
+        device = torch.device(f"cuda:{eval_config.device}")
+    else:
+        device = torch.device("cpu")
+        print("[Warning] CUDA is not available, use CPU instead.")
+    print(f"[Info] Running on device: {device}")
+    
+    # Initialize model
+    model = model_init(checkpoint_config.model, checkpoint_config.model_config, checkpoint_config).to(device)
+    
+    # Find checkpoint file
+    if hasattr(eval_config, 'experiment_dir') or (Path(eval_config.checkpoint_base) / "checkpoints").exists():
+        # New format: use experiment directory structure
+        ckpt_file_path = find_checkpoint_from_experiment_dir(experiment_dir, version=eval_config.version)
+    else:
+        # Legacy format: look in checkpoint directory
+        ckpt_file = glob.glob(os.path.join(str(experiment_dir), 'checkpoint*'))
+        if not ckpt_file:
+            raise FileNotFoundError(f"No checkpoint file (e.g., 'checkpoint.pth') found in {experiment_dir}")
+        ckpt_file_path = Path(ckpt_file[0])
+    
+    # Load checkpoint
+    print(f"[Info] Loading model from: {ckpt_file_path}")
+    checkpoint = torch.load(str(ckpt_file_path), map_location=device)
+    
+    # Extract state dict
+    if str(ckpt_file_path).endswith('.ckpt') and isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+        state_dict = {key.replace("model.", ""): value for key, value in checkpoint['state_dict'].items()}
+    elif isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        state_dict = checkpoint['model_state_dict']
+    else:
+        state_dict = checkpoint
+    
+    # Load state dict into model
+    model.load_state_dict(state_dict)
+    model.eval()
+    print(f'[Info] Successfully loaded model: {checkpoint_config.model}')
+    
+    return model, device
+
+
+def _run_evaluation_loop(fullloader, model, checkpoint_config, device, eval_config):
+    """
+    Run evaluation loop over all datasets.
+    
+    Args:
+        fullloader: Dictionary of dataset loaders
+        model: Trained model
+        checkpoint_config: Checkpoint configuration
+        device: PyTorch device
+        eval_config: Evaluation configuration
+        
+    Returns:
+        tuple: (all_mse, all_mae, all_sample_num) - aggregated results
+    """
+    # Initialize result containers
+    if eval_config.channel_wise:
+        all_mae = {}
+        all_mse = {}
+        all_sample_num = {}
+    else:
+        all_mae = 0.0
+        all_mse = 0.0
+        all_sample_num = 0
+    
+    # Load filtered samples if provided
+    filtered_samples = None
+    if eval_config.filtered_samples is not None:
+        filtered_samples = json.load(open(eval_config.filtered_samples))
+        print(f"[Info] Using filtered samples from: {eval_config.filtered_samples}")
+    
+    # Evaluate each dataset
+    for name, loader in fullloader.items():
+        print(f"\n[Info] Testing on dataset: {name}")
+        
+        # Get indexes for this dataset
+        if filtered_samples is not None:
+            indexes = filtered_samples.get(name, [])
+            print(f"[Info] Using {len(indexes)} filtered samples for testing.")
+            print(f"[Info] Sample indexes: {indexes}")
+        else:
+            indexes = None
+            print("[Info] Using all samples for testing.")
+        
+        # Run evaluation
+        result = evaluate_full_dataset(loader, model, checkpoint_config, device, indexes, eval_config.channel_wise)
+        
+        # Process results
+        if eval_config.channel_wise:
+            channel_mse, channel_mae, channel_counts = result
+            if channel_mse is None or sum(channel_counts) == 0:
+                print(f"-> No valid samples found in '{name}'")
+            else:
+                all_mse[name] = channel_mse
+                all_mae[name] = channel_mae
+                all_sample_num[name] = channel_counts
+                avg_ch_mse = [m / count if count > 0 else 0 for m, count in zip(channel_mse, channel_counts)]
+                avg_ch_mae = [m / count if count > 0 else 0 for m, count in zip(channel_mae, channel_counts)]
+                print(f"-> Results for '{name}': Channel-wise MSE = {avg_ch_mse}, Channel-wise MAE = {avg_ch_mae}")
+                print(f"-> Results for '{name}': Overall Channel MSE = {sum(avg_ch_mse) / len(avg_ch_mse):.7f}, Overall Channel MAE = {sum(avg_ch_mae) / len(avg_ch_mae):.7f}")
+        else:
+            total_mse, total_mae, num_samples = result
+            if num_samples > 0:
+                avg_mse = total_mse / num_samples
+                avg_mae = total_mae / num_samples
+                print(f"-> Results for '{name}': MSE = {avg_mse:.7f}, MAE = {avg_mae:.7f}")
+                all_mse += total_mse
+                all_mae += total_mae
+                all_sample_num += num_samples
+            else:
+                print(f"-> No valid samples found in '{name}'")
+    
+    return all_mse, all_mae, all_sample_num
+
+
+def _print_summary(all_mse, all_mae, all_sample_num, eval_config):
+    """
+    Print evaluation summary.
+    
+    Args:
+        all_mse: Aggregated MSE results
+        all_mae: Aggregated MAE results
+        all_sample_num: Aggregated sample counts
+        eval_config: Evaluation configuration
+    """
+    print("\n" + "="*50)
+    print(" " * 15 + "Overall Test Summary")
+    
+    if eval_config.channel_wise:
+        if not all_mse:
+            print("-> No results to summarize.")
+        else:
+            sum_mse = [sum(m) for m in zip(*all_mse.values())]
+            sum_mae = [sum(m) for m in zip(*all_mae.values())]
+            sum_counts = [sum(c) for c in zip(*all_sample_num.values())]
+            overall_mse_list = [m / c if c > 0 else 0 for m, c in zip(sum_mse, sum_counts)]
+            overall_mae_list = [m / c if c > 0 else 0 for m, c in zip(sum_mae, sum_counts)]
+            print(f"-> Overall Results (All Subsets): Channel-wise MSE = {overall_mse_list}, Channel-wise MAE = {overall_mae_list}")
+            overall_mse = sum(overall_mse_list) / len(overall_mse_list) if overall_mse_list else 0
+            overall_mae = sum(overall_mae_list) / len(overall_mae_list) if overall_mae_list else 0
+            print(f"-> Overall Results (All Subsets): MSE = {overall_mse:.7f}, MAE = {overall_mae:.7f}")
+    else:
+        if all_sample_num > 0:
+            print(f"-> Overall Results (All Subsets): MSE = {all_mse / all_sample_num:.7f}, MAE = {all_mae / all_sample_num:.7f}")
+        else:
+            print("-> No samples were processed.")
+    
+    print("="*50)
 
 
 def evaluate(config):
@@ -141,135 +390,25 @@ def evaluate(config):
     """
     eval_config = config.evaluation
     
-    # Find checkpoint
-    ckpt_path = find_checkpoint(eval_config)
-    print(f"[Info] Using checkpoint path: {ckpt_path}")
-
-    # Load configuration from checkpoint folder
-    config_path = os.path.join(ckpt_path, 'args.json')
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Configuration file 'args.json' not found in {ckpt_path}")
+    # Determine experiment directory
+    experiment_dir = _determine_experiment_dir(eval_config)
+    print(f"[Info] Loading config from experiment directory: {experiment_dir}")
     
-    checkpoint_config = dotdict(json.load(open(config_path)))
-    checkpoint_config.model_config = dotdict(checkpoint_config.model_config)
+    # Load checkpoint configuration
+    checkpoint_config = _load_checkpoint_config(experiment_dir, eval_config, config)
     
-    # Use provided data_config override if available, otherwise use checkpoint's data_config
-    if hasattr(config, 'data_config') and config.data_config:
-        checkpoint_config.data_config = dotdict(yaml.safe_load(open(config.data_config, 'r')))
-    else:
-        checkpoint_config.data_config = dotdict(checkpoint_config.data_config)
+    # Load model and checkpoint
+    model, device = _load_model_and_checkpoint(experiment_dir, eval_config, checkpoint_config)
     
-    checkpoint_config.gpu = eval_config.device
-    checkpoint_config.num_workers = 0
-    checkpoint_config.task = eval_config.task
-    checkpoint_config.batch_size = 1 if eval_config.filtered_samples is not None else eval_config.batch_size
-    
-    if torch.cuda.is_available():
-        device = torch.device(f"cuda:{eval_config.device}")
-    else:
-        device = torch.device("cpu")
-        print("[Warning] CUDA is not available, use CPU instead.")
-    print(f"[Info] Running on device: {device}")
-
-    # Initialize and load model
-    model = model_init(checkpoint_config.model, checkpoint_config.model_config, checkpoint_config).to(device)
-    
-    ckpt_file = glob.glob(os.path.join(ckpt_path, 'checkpoint*'))
-    if not ckpt_file:
-        raise FileNotFoundError(f"No checkpoint file (e.g., 'checkpoint.pth') found in {ckpt_path}")
-    
-    ckpt_file_path = ckpt_file[0]
-    print(f"[Info] Loading model from: {ckpt_file_path}")
-    checkpoint = torch.load(ckpt_file_path, map_location=device)
-
-    if ckpt_file_path.endswith('.ckpt') and 'state_dict' in checkpoint:
-        state_dict = {key.replace("model.", ""): value for key, value in checkpoint['state_dict'].items()}
-    else:
-        state_dict = checkpoint
-
-    model.load_state_dict(state_dict)
-    model.eval()
-    print(f'[Info] Successfully loaded model: {checkpoint_config.model}')
-
     # Load data
     data_provider = Data_Provider(checkpoint_config)
     fullloader = data_provider.get_test("loader")
-
-    # Run evaluation
-    if eval_config.channel_wise:
-        all_mae = {}
-        all_mse = {}
-        all_sample_num = {}
-    else:
-        all_mae = 0.0
-        all_mse = 0.0
-        all_sample_num = 0
-
-    if eval_config.filtered_samples is not None:
-        filtered_samples = json.load(open(eval_config.filtered_samples))
-        print(f"[Info] Using filtered samples from: {eval_config.filtered_samples}")
     
-    for name, loader in fullloader.items():
-        print(f"\n[Info] Testing on dataset: {name}")
-
-        if eval_config.filtered_samples is not None:
-            indexes = filtered_samples.get(name, [])  # Use .get for safety
-            print(f"[Info] Using {len(indexes)} filtered samples for testing.")
-            print(f"[Info] Sample indexes: {indexes}")
-        else:
-            indexes = None
-            print("[Info] Using all samples for testing.")
-        
-        result = evaluate_full_dataset(loader, model, checkpoint_config, device, indexes, eval_config.channel_wise)
-
-        if eval_config.channel_wise:
-            channel_mse, channel_mae, channel_counts = result
-            if channel_mse is None or sum(channel_counts) == 0:
-                print(f"-> No valid samples found in '{name}'")
-            else:
-                all_mse[name] = channel_mse
-                all_mae[name] = channel_mae
-                all_sample_num[name] = channel_counts
-                avg_ch_mse = [m / count if count > 0 else 0 for m, count in zip(channel_mse, channel_counts)]
-                avg_ch_mae = [m / count if count > 0 else 0 for m, count in zip(channel_mae, channel_counts)]
-                print(f"-> Results for '{name}': Channel-wise MSE = {avg_ch_mse}, Channel-wise MAE = {avg_ch_mae}")
-                print(f"-> Results for '{name}': Overall Channel MSE = {sum(avg_ch_mse) / len(avg_ch_mse):.7f}, Overall Channel MAE = {sum(avg_ch_mae) / len(avg_ch_mae):.7f}")
-        else:
-            total_mse, total_mae, num_samples = result
-            if num_samples > 0:
-                avg_mse = total_mse / num_samples
-                avg_mae = total_mae / num_samples
-                print(f"-> Results for '{name}': MSE = {avg_mse:.7f}, MAE = {avg_mae:.7f}")
-
-                all_mse += total_mse
-                all_mae += total_mae
-                all_sample_num += num_samples
-            else:
-                print(f"-> No valid samples found in '{name}'")
-
-    print("\n" + "="*50)
-    print(" " * 15 + "Overall Test Summary")
-
-    if eval_config.channel_wise:
-        # Check if there are any results to summarize
-        if not all_mse:
-            print("-> No results to summarize.")
-        else:
-            sum_mse = [sum(m) for m in zip(*all_mse.values())]
-            sum_mae = [sum(m) for m in zip(*all_mae.values())]
-            sum_counts = [sum(c) for c in zip(*all_sample_num.values())]
-            overall_mse_list = [m / c if c > 0 else 0 for m, c in zip(sum_mse, sum_counts)]
-            overall_mae_list = [m / c if c > 0 else 0 for m, c in zip(sum_mae, sum_counts)]
-            print(f"-> Overall Results (All Subsets): Channel-wise MSE = {overall_mse_list}, Channel-wise MAE = {overall_mae_list}")
-            overall_mse = sum(overall_mse_list) / len(overall_mse_list) if overall_mse_list else 0
-            overall_mae = sum(overall_mae_list) / len(overall_mae_list) if overall_mae_list else 0
-            print(f"-> Overall Results (All Subsets): MSE = {overall_mse:.7f}, MAE = {overall_mae:.7f}")
-
-    else:
-        if all_sample_num > 0:
-            print(f"-> Overall Results (All Subsets): MSE = {all_mse / all_sample_num:.7f}, MAE = {all_mae / all_sample_num:.7f}")
-        else:
-            print("-> No samples were processed.")
+    # Run evaluation loop
+    all_mse, all_mae, all_sample_num = _run_evaluation_loop(
+        fullloader, model, checkpoint_config, device, eval_config
+    )
     
-    print("="*50)
+    # Print summary
+    _print_summary(all_mse, all_mae, all_sample_num, eval_config)
 
