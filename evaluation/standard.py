@@ -42,12 +42,32 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
     total_mse_denorm, total_mae_denorm = 0.0, 0.0
     channel_mse_denorm, channel_mae_denorm = None, None
     
-    # Check if scaler is available for denormalization
+    # Check if scaler is available and fitted for denormalization
     has_scaler = False
     scaler = None
-    if dataset is not None and hasattr(dataset, 'scaler') and dataset.scaler is not None:
-        has_scaler = True
-        scaler = dataset.scaler
+    
+    # Try to get dataset from loader if not provided
+    if dataset is None and hasattr(loader, 'dataset'):
+        dataset = loader.dataset
+    
+    if dataset is not None:
+        # Handle case where dataset is a dictionary (multiple entities)
+        if isinstance(dataset, dict):
+            # Try to get first dataset from dict
+            dataset = next(iter(dataset.values())) if dataset else None
+        
+        if dataset is not None and hasattr(dataset, 'scaler') and dataset.scaler is not None:
+            # Check if scaler has been fitted (has mean_ attribute)
+            try:
+                if hasattr(dataset.scaler, 'mean_') and dataset.scaler.mean_ is not None:
+                    has_scaler = True
+                    scaler = dataset.scaler
+                else:
+                    # Scaler exists but not fitted
+                    pass  # Will skip denormalized metrics
+            except Exception:
+                # Scaler exists but error accessing it
+                pass  # Will skip denormalized metrics
 
     for i, iter_data in tqdm(enumerate(loader), total=len(loader), desc="Running tests"):
         if indexes is not None and i not in indexes:
@@ -92,14 +112,19 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
                     
                     # Denormalized metrics
                     if has_scaler:
-                        pred_denorm = scaler.inverse_transform(prediction[:, :, k].cpu().numpy().reshape(-1, 1))
-                        target_denorm = scaler.inverse_transform(batch_y[:, :, k].cpu().numpy().reshape(-1, 1))
-                        pred_denorm_tensor = torch.tensor(pred_denorm.flatten(), device=device).reshape(prediction[:, :, k].shape)
-                        target_denorm_tensor = torch.tensor(target_denorm.flatten(), device=device).reshape(batch_y[:, :, k].shape)
-                        mse_loss_denorm = torch.nn.MSELoss()(pred_denorm_tensor, target_denorm_tensor)
-                        mae_loss_denorm = torch.nn.L1Loss()(pred_denorm_tensor, target_denorm_tensor)
-                        channel_mse_denorm[k] += mse_loss_denorm.item() * batch_y.size(0)
-                        channel_mae_denorm[k] += mae_loss_denorm.item() * batch_y.size(0)
+                        try:
+                            pred_denorm = scaler.inverse_transform(prediction[:, :, k].cpu().numpy().reshape(-1, 1))
+                            target_denorm = scaler.inverse_transform(batch_y[:, :, k].cpu().numpy().reshape(-1, 1))
+                            pred_denorm_tensor = torch.tensor(pred_denorm.flatten(), device=device).reshape(prediction[:, :, k].shape)
+                            target_denorm_tensor = torch.tensor(target_denorm.flatten(), device=device).reshape(batch_y[:, :, k].shape)
+                            mse_loss_denorm = torch.nn.MSELoss()(pred_denorm_tensor, target_denorm_tensor)
+                            mae_loss_denorm = torch.nn.L1Loss()(pred_denorm_tensor, target_denorm_tensor)
+                            channel_mse_denorm[k] += mse_loss_denorm.item() * batch_y.size(0)
+                            channel_mae_denorm[k] += mae_loss_denorm.item() * batch_y.size(0)
+                        except Exception:
+                            # Scaler not fitted or error during inverse transform
+                            has_scaler = False  # Disable for remaining batches
+                            pass
                     
                     channel_counts[k] += batch_y.size(0)
             else:
@@ -111,22 +136,27 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
                 
                 # Denormalized metrics
                 if has_scaler:
-                    # Reshape for scaler: (batch, seq, features) -> (batch*seq, features)
-                    batch_size, seq_len, num_features = prediction.shape
-                    pred_flat = prediction.cpu().numpy().reshape(-1, num_features)
-                    target_flat = batch_y.cpu().numpy().reshape(-1, num_features)
-                    
-                    # Denormalize - scaler expects (n_samples, n_features)
-                    pred_denorm = scaler.inverse_transform(pred_flat)
-                    target_denorm = scaler.inverse_transform(target_flat)
-                    
-                    # Convert back to tensors and compute metrics
-                    pred_denorm_tensor = torch.tensor(pred_denorm, device=device, dtype=torch.float32).reshape(batch_size, seq_len, num_features)
-                    target_denorm_tensor = torch.tensor(target_denorm, device=device, dtype=torch.float32).reshape(batch_size, seq_len, num_features)
-                    mse_loss_denorm = torch.nn.MSELoss()(pred_denorm_tensor, target_denorm_tensor)
-                    mae_loss_denorm = torch.nn.L1Loss()(pred_denorm_tensor, target_denorm_tensor)
-                    total_mse_denorm += mse_loss_denorm.item() * batch_y.size(0)
-                    total_mae_denorm += mae_loss_denorm.item() * batch_y.size(0)
+                    try:
+                        # Reshape for scaler: (batch, seq, features) -> (batch*seq, features)
+                        batch_size, seq_len, num_features = prediction.shape
+                        pred_flat = prediction.cpu().numpy().reshape(-1, num_features)
+                        target_flat = batch_y.cpu().numpy().reshape(-1, num_features)
+                        
+                        # Denormalize - scaler expects (n_samples, n_features)
+                        pred_denorm = scaler.inverse_transform(pred_flat)
+                        target_denorm = scaler.inverse_transform(target_flat)
+                        
+                        # Convert back to tensors and compute metrics
+                        pred_denorm_tensor = torch.tensor(pred_denorm, device=device, dtype=torch.float32).reshape(batch_size, seq_len, num_features)
+                        target_denorm_tensor = torch.tensor(target_denorm, device=device, dtype=torch.float32).reshape(batch_size, seq_len, num_features)
+                        mse_loss_denorm = torch.nn.MSELoss()(pred_denorm_tensor, target_denorm_tensor)
+                        mae_loss_denorm = torch.nn.L1Loss()(pred_denorm_tensor, target_denorm_tensor)
+                        total_mse_denorm += mse_loss_denorm.item() * batch_y.size(0)
+                        total_mae_denorm += mae_loss_denorm.item() * batch_y.size(0)
+                    except Exception:
+                        # Scaler not fitted or error during inverse transform
+                        has_scaler = False  # Disable for remaining batches
+                        pass
                 
                 num_samples += batch_y.size(0)
 
@@ -351,9 +381,11 @@ def _run_evaluation_loop(loaders_dict, datasets_dict, model, checkpoint_config, 
             for entity_name, entity_loader in loader.items():
                 print(f"\n[Info] Testing on {split_name} dataset - entity: {entity_name}")
                 
-                # Get dataset for this entity if available
+                # Get dataset for this entity - prefer from loader, fallback to provided dataset
                 entity_dataset = None
-                if isinstance(dataset, dict) and entity_name in dataset:
+                if hasattr(entity_loader, 'dataset'):
+                    entity_dataset = entity_loader.dataset
+                elif isinstance(dataset, dict) and entity_name in dataset:
                     entity_dataset = dataset[entity_name]
                 elif not isinstance(dataset, dict):
                     entity_dataset = dataset
@@ -402,6 +434,10 @@ def _run_evaluation_loop(loaders_dict, datasets_dict, model, checkpoint_config, 
         else:
             # Single loader (single entity or already aggregated)
             print(f"\n[Info] Testing on {split_name} dataset")
+            
+            # Try to get dataset from loader if not provided
+            if dataset is None and hasattr(loader, 'dataset'):
+                dataset = loader.dataset
             
             # Get indexes for this dataset
             if filtered_samples is not None:
