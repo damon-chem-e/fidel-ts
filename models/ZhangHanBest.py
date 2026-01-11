@@ -129,6 +129,30 @@ class Model(nn.Module):
         # Track if TS model uses normalization internally
         self.ts_uses_revin = getattr(configs, 'revin', True)  # PatchTST default
         self.ts_uses_norm = getattr(configs, 'use_norm', False)  # iTransformer style
+        
+        # 7. Timestamp semantics (for Fidel-TS vs Time-MMD datasets)
+        # Determines which heterogeneous data source to use:
+        # - t_about: Use y_hetero (news) - forecasts ABOUT prediction window (Fidel-TS)
+        # - t_known: Use x_hetero (historical_events) - text from input window (Time-MMD)
+        # - None: Use hetero_general (aggregate dataset description) - legacy behavior
+        self.timestamp_semantics = getattr(configs, 'timestamp_semantics', None)
+        
+        if self.timestamp_semantics is not None:
+            # If set, validate it's correct
+            if self.timestamp_semantics not in ('t_about', 't_known'):
+                raise ValueError(
+                    f"Invalid timestamp_semantics: '{self.timestamp_semantics}'. "
+                    f"Must be 't_about' or 't_known'."
+                )
+            print(f'[ info ] ZhangHanBest: timestamp_semantics = {self.timestamp_semantics}')
+            if self.timestamp_semantics == 't_about':
+                print(f'         -> Using news (y_hetero) - forecasts ABOUT prediction window')
+            else:
+                print(f'         -> Using historical_events (x_hetero) - avoiding lookahead bias')
+        else:
+            # Legacy mode: use hetero_general
+            print(f'[ info ] ZhangHanBest: Using legacy mode (hetero_general aggregate text)')
+            print(f'         -> Set timestamp_semantics in config to use per-timestep text')
     
     def _create_unimodal_encoder(self, configs):
         """Create and configure unimodal time series encoder."""
@@ -148,12 +172,18 @@ class Model(nn.Module):
         else:
             raise ValueError(f"Unsupported unimodal_model_type: {self.unimodal_model_type}")
     
-    def forward(self, x, **kwargs):
+    def forward(self, x, news=None, historical_events=None, **kwargs):
         """
         Forward pass.
         
         Args:
             x: Time series input [B, seq_len, C]
+            news: Text embeddings aligned to PREDICTION window (y_hetero from dataloader)
+                  Shape: [B, pred_len, num_items, text_dim]
+                  Used when timestamp_semantics='t_about'
+            historical_events: Text embeddings aligned to INPUT window (x_hetero from dataloader)
+                              Shape: [B, seq_len, num_items, text_dim]
+                              Used when timestamp_semantics='t_known'
             **kwargs: May include text inputs:
                 - dataset_description: Aggregate text embeddings [B, 1, text_dim] or [B, text_dim]
                 - hetero_general: Alternative name for aggregate text (legacy)
@@ -170,7 +200,8 @@ class Model(nn.Module):
             ts_repr = self.ts_proj(ts_repr)  # Project to [B, d_model]
         
         # 2. Get text representation from pre-computed embeddings
-        text_repr = self._get_text_embeddings(kwargs)  # [B, text_dim]
+        # Pass news and historical_events explicitly for timestamp_semantics support
+        text_repr = self._get_text_embeddings(news, historical_events, kwargs)  # [B, text_dim]
         
         # 3. Project text to TS representation space (residual projection)
         text_repr_proj = self.residual_proj(text_repr)  # [B, d_model]
@@ -194,29 +225,55 @@ class Model(nn.Module):
         
         return predictions
     
-    def _get_text_embeddings(self, kwargs):
+    def _get_text_embeddings(self, news, historical_events, kwargs):
         """
-        Extract pre-computed text embeddings from kwargs.
+        Extract pre-computed text embeddings from appropriate source based on timestamp_semantics.
         
-        Uses new embeddings system:
-        - Time-MMD/TTC: Aggregate text from hetero_general or dataset_description
-        - Fidel-TS: Dynamic aggregate text (ignore static channel descriptions)
+        Three modes:
+        1. timestamp_semantics='t_about': Use news (y_hetero) - Fidel-TS datasets
+        2. timestamp_semantics='t_known': Use historical_events (x_hetero) - Time-MMD datasets
+        3. timestamp_semantics=None: Use hetero_general (legacy) - aggregate dataset description
+        
+        Args:
+            news: y_hetero - text aligned to prediction window [B, pred_len, num_items, text_dim]
+            historical_events: x_hetero - text aligned to input window [B, seq_len, num_items, text_dim]
+            kwargs: Additional arguments including dataset_description/hetero_general
         
         Returns:
             text_repr: [B, text_dim] - pre-computed text embeddings (aggregated per sample)
         """
-        # Priority order: dataset_description (standard name) > hetero_general (legacy name)
         text_repr = None
-        if 'dataset_description' in kwargs and kwargs['dataset_description'] is not None:
-            text_repr = kwargs['dataset_description']
-        elif 'hetero_general' in kwargs and kwargs['hetero_general'] is not None:
-            text_repr = kwargs['hetero_general']
+        
+        # Select text source based on timestamp_semantics
+        if self.timestamp_semantics == 't_about':
+            # Use news (y_hetero) - forecasts ABOUT prediction window
+            if news is None:
+                raise ValueError(
+                    "timestamp_semantics='t_about' requires 'news' (y_hetero) to be provided. "
+                    "Ensure task='TGTSF' and y_hetero is configured in data config."
+                )
+            text_repr = news
+        elif self.timestamp_semantics == 't_known':
+            # Use historical_events (x_hetero) - text from input window
+            if historical_events is None:
+                raise ValueError(
+                    "timestamp_semantics='t_known' requires 'historical_events' (x_hetero) to be provided. "
+                    "Ensure x_hetero is configured in data config."
+                )
+            text_repr = historical_events
         else:
-            raise ValueError(
-                "Text embeddings not found in kwargs. "
-                "Expected 'dataset_description' or 'hetero_general' with pre-computed embeddings. "
-                "Ensure embeddings are computed by TextEmbedder in data loader."
-            )
+            # Legacy mode: Use hetero_general (aggregate dataset description)
+            # Priority order: dataset_description (standard name) > hetero_general (legacy name)
+            if 'dataset_description' in kwargs and kwargs['dataset_description'] is not None:
+                text_repr = kwargs['dataset_description']
+            elif 'hetero_general' in kwargs and kwargs['hetero_general'] is not None:
+                text_repr = kwargs['hetero_general']
+            else:
+                raise ValueError(
+                    "Text embeddings not found in kwargs. "
+                    "Expected 'dataset_description' or 'hetero_general' with pre-computed embeddings. "
+                    "Ensure embeddings are computed by TextEmbedder in data loader."
+                )
         
         # Convert to tensor if numpy array
         if isinstance(text_repr, np.ndarray):
@@ -299,4 +356,44 @@ class Model(nn.Module):
         """
         fused = fusion_weight * text_repr + (1 - fusion_weight) * ts_repr
         return fused
+    
+    def move_to_device(self, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero,
+                      hetero_x_time, hetero_y_time, hetero_general, hetero_channel, device):
+        """
+        Move data to device.
+        
+        Args:
+            seq_x: Input time series [B, seq_len, C]
+            seq_y: Target time series [B, pred_len, C]
+            x_time: Input timestamps
+            y_time: Target timestamps
+            x_hetero: Historical text embeddings (maps to historical_events in forward)
+                      Text aligned to INPUT window - always safe to use
+            y_hetero: Prediction window text embeddings (maps to news in forward)
+                      Text aligned to PREDICTION window
+                      - For t_about: Forecasts ABOUT prediction window (safe with lead time assumption)
+                      - For t_known: Text PUBLISHED during prediction window (LOOKAHEAD - don't use!)
+            hetero_x_time: Historical text timestamps
+            hetero_y_time: Prediction text timestamps
+            hetero_general: General dataset description
+            hetero_channel: Channel descriptions
+            device: Target device
+            
+        Returns:
+            tuple: All inputs with relevant tensors moved to device
+        """
+        # Move time series data
+        seq_x = seq_x.float().to(device)
+        seq_y = seq_y.float().to(device)
+        
+        # Move text based on timestamp_semantics
+        if self.timestamp_semantics == 't_about':
+            # Use y_hetero (news) - forecasts ABOUT prediction window
+            y_hetero = y_hetero.float().to(device)
+        elif self.timestamp_semantics == 't_known':
+            # Use x_hetero (historical_events) - avoids lookahead bias
+            x_hetero = x_hetero.float().to(device)
+        # else: legacy mode, no per-timestep text to move
+        
+        return seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel
 

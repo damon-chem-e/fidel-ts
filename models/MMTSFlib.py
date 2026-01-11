@@ -149,6 +149,21 @@ class Model(nn.Module):
             prompt_weight_value = getattr(configs, 'prompt_weight', 0.01)
             self.register_buffer('prompt_weight_raw', torch.tensor(prompt_weight_value))
         
+        # Timestamp semantics (for Fidel-TS vs Time-MMD datasets)
+        # Determines which heterogeneous data source to use:
+        # - t_about: Use y_hetero (news) - forecasts ABOUT prediction window (Fidel-TS)
+        # - t_known: Use x_hetero (historical_events) - text from input window (Time-MMD)
+        # - None: Use x_hetero (historical_events) - default/legacy behavior
+        self.timestamp_semantics = getattr(configs, 'timestamp_semantics', None)
+        
+        if self.timestamp_semantics is not None:
+            # If set, validate it's correct
+            if self.timestamp_semantics not in ('t_about', 't_known'):
+                raise ValueError(
+                    f"Invalid timestamp_semantics: '{self.timestamp_semantics}'. "
+                    f"Must be 't_about' or 't_known'."
+                )
+        
         print(f"[ info ] MMTSFlib initialized with:")
         print(f"         - Unimodal model: {self.unimodal_model_type}")
         print(f"         - Text dim: {self.text_dim}")
@@ -158,6 +173,16 @@ class Model(nn.Module):
             print(f"         - Prompt weight initial: {getattr(configs, 'prompt_weight_initial', 0.01)}")
         else:
             print(f"         - Prompt weight: {getattr(configs, 'prompt_weight', 0.01)}")
+        
+        # Log timestamp semantics
+        if self.timestamp_semantics is not None:
+            print(f"         - Timestamp semantics: {self.timestamp_semantics}")
+            if self.timestamp_semantics == 't_about':
+                print(f"           -> Using news (y_hetero) - forecasts ABOUT prediction window")
+            else:
+                print(f"           -> Using historical_events (x_hetero) - avoiding lookahead bias")
+        else:
+            print(f"         - Timestamp semantics: None (using x_hetero by default)")
     
     def _create_unimodal_model(self, configs):
         """
@@ -200,7 +225,7 @@ class Model(nn.Module):
         
         return UnimodalModel(configs)
     
-    def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, news=None, historical_events=None, **kwargs) -> torch.Tensor:
         """
         Forward pass with prediction-level late fusion.
         
@@ -214,8 +239,13 @@ class Model(nn.Module):
         
         Args:
             x: Time series input [B, seq_len, enc_in]
-            **kwargs: Must include text embeddings via:
-                - 'historical_events': [B, L, text_dim] or [B, text_dim] - LLM embeddings (per-sample, from LLMEmbeddingProvider)
+            news: Text embeddings aligned to PREDICTION window (y_hetero from dataloader)
+                  Shape: [B, pred_len, num_items, text_dim]
+                  Used when timestamp_semantics='t_about'
+            historical_events: Text embeddings aligned to INPUT window (x_hetero from dataloader)
+                              Shape: [B, seq_len, num_items, text_dim] or [B, L, text_dim] or [B, text_dim]
+                              Used when timestamp_semantics='t_known' or None (default)
+            **kwargs: Additional arguments:
                 - 'prior_y' (optional): [B, pred_len, 1] historical prior
                 - 'x_mark_enc', 'x_mark_dec' (optional): for encoder-decoder models
         
@@ -232,8 +262,8 @@ class Model(nn.Module):
         # 2. Text Processing Pipeline
         # =====================================================================
         
-        # Get text embeddings from kwargs
-        text_emb = self._get_text_embeddings(kwargs)  # [B, L, text_dim] or [B, text_dim]
+        # Get text embeddings from appropriate source based on timestamp_semantics
+        text_emb = self._get_text_embeddings(news, historical_events, kwargs)  # [B, L, text_dim] or [B, text_dim]
         
         # Ensure 3D for token-level processing
         if text_emb.dim() == 2:
@@ -329,28 +359,48 @@ class Model(nn.Module):
         
         return preds
     
-    def _get_text_embeddings(self, kwargs: dict) -> torch.Tensor:
+    def _get_text_embeddings(self, news, historical_events, kwargs: dict) -> torch.Tensor:
         """
-        Extract pre-computed text embeddings from kwargs.
+        Extract pre-computed text embeddings from appropriate source based on timestamp_semantics.
         
-        LLM embeddings from LLMEmbeddingProvider come via historical_events
-        (which maps to x_hetero, per-sample embeddings).
+        Three modes:
+        1. timestamp_semantics='t_about': Use news (y_hetero) - Fidel-TS datasets
+        2. timestamp_semantics='t_known': Use historical_events (x_hetero) - Time-MMD datasets
+        3. timestamp_semantics=None: Use historical_events (x_hetero) - default/legacy behavior
         
         Args:
-            kwargs: Forward pass keyword arguments
+            news: y_hetero - text aligned to prediction window [B, pred_len, num_items, text_dim]
+            historical_events: x_hetero - text aligned to input window [B, seq_len, num_items, text_dim]
+            kwargs: Forward pass keyword arguments (for legacy compatibility)
             
         Returns:
             text_emb: [B, L, text_dim] or [B, text_dim] tensor
         """
-        # LLM embeddings come via historical_events (from llm_embedding_provider → x_hetero)
-        if 'historical_events' not in kwargs or kwargs['historical_events'] is None:
-            raise ValueError(
-                "Text embeddings not found in kwargs. "
-                "Expected 'historical_events' with pre-computed LLM embeddings. "
-                "Ensure llm_embedding section is configured in your experiment config."
-            )
+        text_emb = None
         
-        text_emb = kwargs['historical_events']
+        # Select text source based on timestamp_semantics
+        if self.timestamp_semantics == 't_about':
+            # Use news (y_hetero) - forecasts ABOUT prediction window
+            if news is None:
+                raise ValueError(
+                    "timestamp_semantics='t_about' requires 'news' (y_hetero) to be provided. "
+                    "Ensure task='TGTSF' and y_hetero is configured in data config."
+                )
+            text_emb = news
+        elif self.timestamp_semantics == 't_known' or self.timestamp_semantics is None:
+            # Use historical_events (x_hetero) - text from input window (default behavior)
+            if historical_events is None:
+                # Fall back to kwargs for legacy compatibility
+                if 'historical_events' in kwargs and kwargs['historical_events'] is not None:
+                    text_emb = kwargs['historical_events']
+                else:
+                    raise ValueError(
+                        "Text embeddings not found. "
+                        "Expected 'historical_events' (x_hetero) with pre-computed LLM embeddings. "
+                        "Ensure llm_embedding section is configured in your experiment config."
+                    )
+            else:
+                text_emb = historical_events
         
         # Convert numpy array to tensor if needed
         if isinstance(text_emb, np.ndarray):
@@ -392,3 +442,42 @@ class Model(nn.Module):
     def count_frozen_params(self) -> int:
         """Count number of frozen parameters."""
         return sum(p.numel() for p in self.parameters() if not p.requires_grad)
+    
+    def move_to_device(self, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero,
+                      hetero_x_time, hetero_y_time, hetero_general, hetero_channel, device):
+        """
+        Move data to device.
+        
+        Args:
+            seq_x: Input time series [B, seq_len, C]
+            seq_y: Target time series [B, pred_len, C]
+            x_time: Input timestamps
+            y_time: Target timestamps
+            x_hetero: Historical text embeddings (maps to historical_events in forward)
+                      Text aligned to INPUT window - always safe to use
+            y_hetero: Prediction window text embeddings (maps to news in forward)
+                      Text aligned to PREDICTION window
+                      - For t_about: Forecasts ABOUT prediction window (safe with lead time assumption)
+                      - For t_known: Text PUBLISHED during prediction window (LOOKAHEAD - don't use!)
+            hetero_x_time: Historical text timestamps
+            hetero_y_time: Prediction text timestamps
+            hetero_general: General dataset description
+            hetero_channel: Channel descriptions
+            device: Target device
+            
+        Returns:
+            tuple: All inputs with relevant tensors moved to device
+        """
+        # Move time series data
+        seq_x = seq_x.float().to(device)
+        seq_y = seq_y.float().to(device)
+        
+        # Move text based on timestamp_semantics
+        if self.timestamp_semantics == 't_about':
+            # Use y_hetero (news) - forecasts ABOUT prediction window
+            y_hetero = y_hetero.float().to(device)
+        elif self.timestamp_semantics == 't_known' or self.timestamp_semantics is None:
+            # Use x_hetero (historical_events) - avoids lookahead bias (default)
+            x_hetero = x_hetero.float().to(device)
+        
+        return seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel
