@@ -168,6 +168,30 @@ These models work with time series data only and do not incorporate external tex
 
 These models combine time series data with text information (channel descriptions, news, events, etc.).
 
+### Important: Dataset-Specific Text Information
+
+The source and nature of text information varies significantly between dataset types:
+
+**Fidel-TS Datasets (Bear_room, NYC, Jena, etc.):**
+- `channel_description` (hetero_channel): **Real per-sensor/per-channel descriptions**
+  - Example: `"Room 104 temperature sensor"`, `"NYC intersection 42nd & Broadway traffic counter"`
+  - These are rich, meaningful metadata stored in `static_info['channel_info']`
+- `historical_events` (x_hetero) / `news` (y_hetero): **Dynamic time-aligned text**
+  - Weather forecasts, event schedules, contextual information
+  - Both text sources contain distinct, valuable information
+
+**Time-MMD/TTC Datasets:**
+- `channel_description` (hetero_channel): **Generic concatenated strings**
+  - Single channel: Just the `channel_info` string (e.g., `"Weather variables"` or `""`)
+  - Multi-channel: Generic string + column name (e.g., `"Weather variables: temperature"`)
+  - ⚠️ **These are NOT rich descriptive metadata** - just basic labels
+- `historical_events` (x_hetero) / `news` (y_hetero): **THE ACTUAL MEANINGFUL TEXT DATA**
+  - Text from CSV columns (Final_Search_*, Final_Output, or 'text')
+  - Weather descriptions, news articles, contextual information
+  - **This is where the rich textual information resides for these datasets**
+
+**Key Implication:** For Time-MMD/TTC datasets, models that use both `channel_description` and `historical_events`/`news` are primarily benefiting from the latter. The `channel_description` provides minimal semantic value compared to Fidel-TS datasets.
+
 ### TGTSF (Text-Guided Time Series Forecasting)
 
 **Architecture:**
@@ -189,7 +213,7 @@ These models combine time series data with text information (channel description
 **Text/Prompt Construction:**
 - **Uses external text information** (does not construct prompts from time series)
 - Text inputs come from the dataset's heterogeneous data:
-  - **Channel descriptions**: Static text describing each variable/sensor (e.g., "Temperature sensor in Room 101")
+  - **Channel descriptions**: Static text describing each variable/sensor
   - **News/Events**: Time-aligned text items (e.g., weather forecasts, news articles, event schedules)
 - Text is embedded **offline** using models like BERT, GPT-2, or other encoders configured in the embedder
 - Model receives precomputed embeddings: `[B, num_timesteps, num_text_items, embedding_dim]`
@@ -197,6 +221,17 @@ These models combine time series data with text information (channel description
   1. Cross-attention between text items and channel descriptions (fuses context)
   2. Self-attention among text items (captures relationships)
   3. Output: per-channel, per-timestep text representations
+
+**Dataset-Specific Text Sources:**
+- **Fidel-TS datasets (Bear_room, NYC, etc.)**:
+  - `channel_description`: Real per-sensor descriptions (e.g., "Room 104 temperature sensor")
+  - `historical_events` or `news`: Dynamic time-aligned text (weather reports, events)
+  - Both contain rich, meaningful information
+- **Time-MMD/TTC datasets**:
+  - `channel_description`: Generic string + column name (e.g., "Weather variables: temperature")
+    - ⚠️ **Not actual descriptive metadata** - just concatenated strings
+  - `historical_events` or `news`: **The actual meaningful text data** from CSV text columns (weather descriptions, news, events)
+    - This is where the rich text information resides for these datasets
 
 **Key Features:**
 - Flexible text input via timestamp semantics
@@ -229,6 +264,17 @@ These models combine time series data with text information (channel description
 - Precomputed embeddings from offline encoders (BERT, GPT-2, etc.)
 - TGTSF branch processes text via cross-attention with channel descriptions + self-attention
 - Learnable projection layer if embedding dimension differs from model dimension
+
+**Dataset-Specific Text Sources:**
+- **Fidel-TS datasets (Bear_room, NYC, etc.)**:
+  - `channel_description`: Real per-sensor descriptions (e.g., "Room 104 temperature sensor")
+  - `historical_events` or `news`: Dynamic time-aligned text (weather reports, events)
+  - Both contain rich, meaningful information
+- **Time-MMD/TTC datasets**:
+  - `channel_description`: Generic string + column name (e.g., "Weather variables: temperature")
+    - ⚠️ **Not actual descriptive metadata** - just concatenated strings
+  - `historical_events` or `news`: **The actual meaningful text data** from CSV text columns (weather descriptions, news, events)
+    - This is where the rich text information resides for these datasets
 
 **Key Features:**
 - Residual learning reduces training difficulty
@@ -267,6 +313,17 @@ These models combine time series data with text information (channel description
   - Unlike TGTSF's cross-attention mixer, FiLM provides channel-wise multiplicative and additive modulation
   - Allows text to dynamically influence feature extraction per channel and timestep
 
+**Dataset-Specific Text Sources:**
+- **Fidel-TS datasets (Bear_room, NYC, etc.)**:
+  - `channel_description`: Real per-sensor descriptions (e.g., "Room 104 temperature sensor")
+  - `historical_events` or `news`: Dynamic time-aligned text (weather reports, events)
+  - Both contain rich, meaningful information
+- **Time-MMD/TTC datasets**:
+  - `channel_description`: Generic string + column name (e.g., "Weather variables: temperature")
+    - ⚠️ **Not actual descriptive metadata** - just concatenated strings
+  - `historical_events` or `news`: **The actual meaningful text data** from CSV text columns (weather descriptions, news, events)
+    - This is where the rich text information resides for these datasets
+
 **Key Features:**
 - More sophisticated text integration than LYNX (FiLM modulation vs cross-attention)
 - Preserves temporal sequence information (no pooling over time)
@@ -298,6 +355,17 @@ These models combine time series data with text information (channel description
 - Precomputed embeddings from offline encoders
 - Text encoder processes embeddings → FiLM modulation parameters
 
+**Dataset-Specific Text Sources:**
+- **Fidel-TS datasets (Bear_room, NYC, etc.)**:
+  - `channel_description`: Real per-sensor descriptions (e.g., "Room 104 temperature sensor")
+  - `historical_events` or `news`: Dynamic time-aligned text (weather reports, events)
+  - Both contain rich, meaningful information
+- **Time-MMD/TTC datasets**:
+  - `channel_description`: Generic string + column name (e.g., "Weather variables: temperature")
+    - ⚠️ **Not actual descriptive metadata** - just concatenated strings
+  - `historical_events` or `news`: **The actual meaningful text data** from CSV text columns (weather descriptions, news, events)
+    - This is where the rich text information resides for these datasets
+
 **Key Features:**
 - Simpler than LYNX-FiLM (no baseline model needed)
 - Direct learning vs residual learning
@@ -328,15 +396,26 @@ These models combine time series data with text information (channel description
 - Cross-attention aligns time series features with semantic LLM representations
 
 **Text/Prompt Construction:**
-- **Uses external text information** - specifically channel descriptions
-- **Prompting approach**: Channel descriptions are fed to an LLM (e.g., GPT-2) to get semantic embeddings
-  - Example prompt: "Temperature sensor located in Building A, Room 101, measuring ambient temperature in Celsius"
-  - LLM processes these descriptions → embeddings capture semantic meaning
+- **Uses `historical_events` parameter** (not channel descriptions as parameter name might suggest)
+- Text source depends on configuration:
+  - **LLM Embedding Provider mode**: Per-sample LLM embeddings computed from dataset text/descriptions
+  - **Standard mode**: Time-aligned historical text embeddings from x_hetero
 - Embeddings computed **offline** (once per dataset) and cached
-- Model receives: `[B, d_llm, num_channels]` embeddings
-- **Not constructing prompts from time series** - only using metadata text
+- Model receives: `[B, d_llm, num_channels]` embeddings via `historical_events` parameter
+- **Not constructing prompts from time series** - uses precomputed text embeddings
 - Cross-modal alignment: Time series features (queries) attend to LLM embeddings (keys/values)
-  - Allows semantic channel information to guide forecasting
+  - Allows semantic text information to guide forecasting
+
+**Dataset-Specific Text Sources:**
+- **Fidel-TS datasets**:
+  - With LLM Embedding Provider: Per-sample embeddings from channel descriptions via LLM
+    - Example: "Temperature sensor located in Building A, Room 101, measuring ambient temperature in Celsius"
+  - Without LLM Embedding Provider: Dynamic time-aligned text from historical events
+- **Time-MMD/TTC datasets**:
+  - **The text comes from `historical_events` (x_hetero)**: Embeddings of actual historical text from CSV text columns
+    - Weather descriptions, news articles, contextual information
+    - This is the **meaningful text data** for these datasets
+  - ⚠️ **Not using channel descriptions** - those are just generic strings for these datasets
 
 **Key Features:**
 - RevIN normalization
@@ -378,6 +457,10 @@ These models combine time series data with text information (channel description
 - **Not constructing prompts from time series** - uses external text
 - GPT-2 processes the combined sequence autoregressively
 - Only prompt projection and output layers are trainable
+
+**Dataset-Specific Text Sources:**
+- **Fidel-TS datasets**: Historical events/context from x_hetero (weather reports, events)
+- **Time-MMD/TTC datasets**: Uses `historical_events` (x_hetero) which contains **the actual meaningful text data** from CSV text columns (weather descriptions, news, contextual information)
 
 **Key Features:**
 - Leverages pretrained LLM representations
@@ -472,6 +555,17 @@ These models combine time series data with text information (channel description
 - When `use_language=False`: Pure time series model (no text)
 - **Not constructing prompts from time series** - uses precomputed text embeddings if available
 
+**Dataset-Specific Text Sources:**
+- **Fidel-TS datasets (Bear_room, NYC, etc.)**:
+  - `channel_description`: Real per-sensor descriptions (e.g., "Room 104 temperature sensor")
+  - `historical_events`: Dynamic time-aligned text (weather reports, events)
+  - Both contain rich, meaningful information
+- **Time-MMD/TTC datasets**:
+  - `channel_description`: Generic string + column name (e.g., "Weather variables: temperature")
+    - ⚠️ **Not actual descriptive metadata** - just concatenated strings
+  - `historical_events`: **The actual meaningful text data** from CSV text columns (weather descriptions, news, events)
+    - This is where the rich text information resides for these datasets
+
 **Key Features:**
 - RetNet for O(N) complexity (vs Transformer's O(N²))
 - Two-stage training (pretrain + finetune)
@@ -510,6 +604,10 @@ These models combine time series data with text information (channel description
   - Or dynamic aggregate text (dataset_description)
 - Precomputed embeddings: `[B, text_dim]` (typically 768D from BERT/GPT-2)
 - **Not constructing prompts from time series** - uses external metadata
+
+**Dataset-Specific Text Sources:**
+- **Fidel-TS datasets**: Dataset-level descriptions (general_info)
+- **Time-MMD/TTC datasets**: Aggregated embeddings from general_info (typically generic dataset description)
 
 **Supported Unimodal Models (Plugins):**
 1. **PatchTST** - Patch-based Transformer
@@ -561,6 +659,10 @@ These models combine time series data with text information (channel description
 - Precomputed via LLMEmbeddingProvider: `[B, L, text_dim]` or `[B, text_dim]`
 - Supports various pooling strategies for aggregation
 - **Not constructing prompts from time series** - uses precomputed LLM embeddings
+
+**Dataset-Specific Text Sources:**
+- **Fidel-TS datasets**: Can use general descriptions or dynamic text embeddings
+- **Time-MMD/TTC datasets**: Uses `historical_events` which contains **the actual meaningful text data** from CSV text columns (weather descriptions, news, events)
 
 **Supported Unimodal Models (Plugins):**
 1. **PatchTST** - Patch-based Transformer
