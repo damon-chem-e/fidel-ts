@@ -26,8 +26,10 @@ if str(project_root) not in sys.path:
 
 import numpy as np
 import torch
+from functools import partial
 from data_provider.data_loader import Universal_Dataset
 from data_provider.time_mmd_dataset import TimeMMD_Dataset
+from data_provider.data_helper import ratio_spliter
 import yaml
 from utils.tools import dotdict
 
@@ -234,16 +236,21 @@ def main():
     
     # Create dataset
     print("\nLoading dataset...")
+    
+    # Create spliter with split_info from config
+    split_info = args.data_config.get('split_info', [7, 1, 2])
+    spliter = partial(ratio_spliter, split=split_info, seq_len=args.seq_len)
+    
     dataset = TimeMMD_Dataset(
         root_path=args.data_path,
         data_path=args.data_config.data_path,
         flag='val',  # Check validation set
-        size=[args.input_len, 0, args.output_len],
-        features=args.features,
+        seq_len=args.seq_len,
+        pred_len=args.pred_len,
+        spliter=spliter,
         target=args.target,
         scale=args.scale,
-        timeenc=0,
-        freq=args.freq,
+        timestamp_col=args.data_config.get('timestamp_col', 'date'),
         data_config=args.data_config
     )
     
