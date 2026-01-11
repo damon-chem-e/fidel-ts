@@ -56,6 +56,12 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
             # Try to get first dataset from dict
             dataset = next(iter(dataset.values())) if dataset else None
         
+        # Handle ConcatDataset - extract first underlying dataset to access scaler
+        if hasattr(dataset, 'datasets') and isinstance(dataset.datasets, (list, tuple)):
+            # This is a ConcatDataset, get the first underlying dataset
+            if len(dataset.datasets) > 0:
+                dataset = dataset.datasets[0]
+        
         if dataset is not None and hasattr(dataset, 'scaler') and dataset.scaler is not None:
             # Check if scaler has been fitted (has mean_ attribute)
             try:
@@ -240,9 +246,21 @@ def _load_checkpoint_config(experiment_dir, eval_config, config):
     checkpoint_config.model = checkpoint_config_dict.get('model', {}).get('name', 'unknown')
     checkpoint_config.data = checkpoint_config_dict.get('data', {}).get('name', 'unknown')
     training_config = checkpoint_config_dict.get('training', {})
+    
+    # Core training parameters
     checkpoint_config.input_len = training_config.get('input_len')
     checkpoint_config.output_len = training_config.get('output_len')
     checkpoint_config.batch_size = training_config.get('batch_size', 128)
+    
+    # CRITICAL: Load scale parameter - without this, data won't be normalized during evaluation,
+    # causing massive MSE discrepancy (model trained on normalized data, evaluated on raw data)
+    checkpoint_config.scale = training_config.get('scale', True)
+    
+    # Additional training parameters needed by Data_Provider
+    checkpoint_config.preload_hetero = training_config.get('preload_hetero', False)
+    checkpoint_config.noise = training_config.get('noise', 0.0)
+    checkpoint_config.disable_buffer = training_config.get('disable_buffer', False)
+    checkpoint_config.prefetch_factor = training_config.get('prefetch_factor', 2)
     
     # Load model config
     if model_config_path.exists():
@@ -276,6 +294,7 @@ def _load_checkpoint_config(experiment_dir, eval_config, config):
     
     # Set evaluation-specific config values
     checkpoint_config.gpu = eval_config.device
+    checkpoint_config.use_gpu = torch.cuda.is_available()  # Use GPU if available
     checkpoint_config.num_workers = 0
     checkpoint_config.task = eval_config.task
     checkpoint_config.batch_size = 1 if eval_config.filtered_samples is not None else eval_config.batch_size
