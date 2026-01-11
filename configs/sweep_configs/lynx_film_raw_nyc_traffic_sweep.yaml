@@ -1,0 +1,38 @@
+# WandB Sweep Configuration: lynx_film_raw NYC Traffic Sweep
+# Description: Architecture and training hyperparameter sweep on NYC traffic dataset
+# Purpose: Sweep e_layers, d_model, n_heads, batch_size, and learning rate on fidel-ts NYC traffic
+# Usage: wandb sweep configs/sweep_configs/lynx_film_raw_nyc_traffic_sweep.yaml --project fidel-ts
+# NOTE: Optimizes on val_loss with truncate_train_for_purge to avoid lookahead bias.
+# See docs/train_val_test_purge_period_issue.md for details.
+
+program: scripts/wandb_sweep_wrapper.py
+method: random  # Use random for exploration across large parameter space
+metric:
+  name: val_loss
+  goal: minimize
+
+# Base suite config to sweep over
+_config_path: "configs/experiment_suites/lynx_film_raw_nyc_traffic_sweep.yaml"
+
+# Hyperparameters to sweep
+parameters:
+  # Model Architecture Parameters (via model_config_overrides)
+  # These override values in model_configs/general/lynx_film_raw.yaml
+  
+  model_config_overrides.e_layers:  # Depth: number of transformer layers
+    values: [2, 3, 4, 5]
+  
+  model_config_overrides.d_model:  # Width: model dimension
+    values: [256, 384, 512, 768, 1024]
+  
+  model_config_overrides.n_heads:  # Number of attention heads
+    values: [4, 8, 16]
+  
+  # Training Hyperparameters
+  training.learning_rate:
+    distribution: log_uniform_values  # Use _values variant for actual value range
+    min: 1e-4  # Broader range for larger dataset
+    max: 1e-3
+  
+  training.batch_size:
+    values: [32, 64, 128, 256, 512, 768]  # Larger batch sizes for fidel-ts (orders of magnitude larger than time_mmd)

@@ -1,11 +1,12 @@
 # Experiment Suite: ZhangHanBest Model Test
-# Description: Test ZhangHanBest with all supported unimodal encoders (PatchTST, DLinear, Sundial, TimeMoE) for 1 epoch each
+# Description: Test ZhangHanBest with ALL 8 supported unimodal encoders for 1 epoch each
+# Supported Models: PatchTST, DLinear, iTransformer, FITS, FEDformer, Informer, Sundial, TimeMoE
 # Usage: python -m cli.suite run configs/experiment_suites/zhanghanbest_test.yaml
 # Purpose: Verify that ZhangHanBest works correctly with each unimodal encoder type
 
 suite:
   name: "zhanghanbest_test"
-  description: "Test ZhangHanBest model with all supported unimodal encoders (PatchTST, DLinear, Sundial, TimeMoE) - 1 epoch each"
+  description: "Test ZhangHanBest model with ALL 8 supported unimodal encoders - 1 epoch each"
   tags: ["zhanghanbest", "multimodal", "pytorch", "test", "tgtsf"]
   
   # Execution settings
@@ -223,6 +224,180 @@ suite:
         training:
           input_len: 24
           output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_test"
+        wandb:
+          enabled: false
+    
+    # ZhangHanBest with iTransformer encoder on Time-MMD Traffic dataset
+    - name: "zhanghanbest_itransformer_time_mmd"
+      description: "ZhangHanBest with iTransformer encoder on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "iTransformer"
+          seq_len: 24
+          pred_len: 6
+          d_model: 512
+          d_ff: 2048
+          n_heads: 8
+          e_layers: 2
+          dropout: 0.1
+          activation: 'gelu'
+          use_norm: true  # iTransformer uses Non-stationary Transformer normalization
+          input_text_dim: 768
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_test"
+        wandb:
+          enabled: false
+    
+    # ZhangHanBest with FITS encoder on Time-MMD Traffic dataset
+    - name: "zhanghanbest_fits_time_mmd"
+      description: "ZhangHanBest with FITS encoder on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "FITS"
+          seq_len: 24
+          pred_len: 6
+          d_model: 512  # ZhangHanBest will add projection layer (FITS uses dominance_freq*2)
+          individual: false
+          H_order: 1
+          base_T: 24
+          input_text_dim: 768
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_test"
+        wandb:
+          enabled: false
+    
+    # ZhangHanBest with FEDformer encoder on Time-MMD Traffic dataset
+    - name: "zhanghanbest_fedformer_time_mmd"
+      description: "ZhangHanBest with FEDformer encoder on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "FEDformer"
+          seq_len: 24
+          label_len: 12  # Encoder-decoder model requires label_len
+          pred_len: 6
+          d_model: 512
+          d_ff: 2048
+          n_heads: 8
+          e_layers: 2
+          d_layers: 1
+          dropout: 0.05
+          activation: 'gelu'
+          version: 'Fourier'
+          mode_select: 'random'
+          modes: 32
+          moving_avg: 25
+          embed: 'timeF'
+          freq: 'h'
+          input_text_dim: 768
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_test"
+        wandb:
+          enabled: false
+    
+    # ZhangHanBest with Informer encoder on Time-MMD Traffic dataset
+    - name: "zhanghanbest_informer_time_mmd"
+      description: "ZhangHanBest with Informer encoder on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "Informer"
+          seq_len: 24
+          label_len: 12  # Encoder-decoder model requires label_len
+          pred_len: 6
+          d_model: 512
+          d_ff: 2048
+          n_heads: 8
+          e_layers: 2
+          d_layers: 1
+          dropout: 0.05
+          activation: 'gelu'
+          attn: 'prob'  # ProbSparse attention
+          distil: true  # Self-attention distilling
+          factor: 5
+          embed: 'timeF'
+          freq: 'h'
+          input_text_dim: 768
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24
+          output_len: 6
           batch_size: 256
           learning_rate: 1e-3
           patience: 10
