@@ -446,13 +446,21 @@ def _run_evaluation_loop(loaders_dict, datasets_dict, model, checkpoint_config, 
                     'mae_norm': avg_mae_norm,
                     'mse_denorm': avg_mse_denorm,
                     'mae_denorm': avg_mae_denorm,
-                    'num_samples': total_samples
+                    'num_samples': total_samples,
+                    'is_concat': False  # Per-entity evaluation, denormalized metrics are valid
                 }
             else:
                 results[split_name] = None
         else:
-            # Single loader (single entity or already aggregated)
+            # Single loader (single entity or ConcatDataset)
             print(f"\n[Info] Testing on {split_name} dataset")
+            
+            # Check if this is a ConcatDataset (multiple entities concatenated)
+            is_concat_dataset = False
+            if hasattr(loader, 'dataset'):
+                loader_dataset = loader.dataset
+                if hasattr(loader_dataset, 'datasets') and isinstance(loader_dataset.datasets, (list, tuple)):
+                    is_concat_dataset = len(loader_dataset.datasets) > 1
             
             # Try to get dataset from loader if not provided
             if dataset is None and hasattr(loader, 'dataset'):
@@ -491,7 +499,8 @@ def _run_evaluation_loop(loaders_dict, datasets_dict, model, checkpoint_config, 
                     'mae_norm': sum(avg_ch_mae_norm) / len(avg_ch_mae_norm),
                     'mse_denorm': sum(avg_ch_mse_denorm) / len(avg_ch_mse_denorm),
                     'mae_denorm': sum(avg_ch_mae_denorm) / len(avg_ch_mae_denorm),
-                    'num_samples': sum(channel_counts)
+                    'num_samples': sum(channel_counts),
+                    'is_concat': is_concat_dataset
                 }
         else:
             total_mse_norm, total_mae_norm, total_mse_denorm, total_mae_denorm, num_samples = result
@@ -512,7 +521,8 @@ def _run_evaluation_loop(loaders_dict, datasets_dict, model, checkpoint_config, 
                     'mae_norm': avg_mae_norm,
                     'mse_denorm': avg_mse_denorm,
                     'mae_denorm': avg_mae_denorm,
-                    'num_samples': num_samples
+                    'num_samples': num_samples,
+                    'is_concat': is_concat_dataset
                 }
             else:
                 print(f"-> No valid samples found in '{split_name}'")
@@ -533,20 +543,45 @@ def _print_summary(results, eval_config):
     print(" " * 15 + "Evaluation Summary")
     print("="*50)
     
+    # Track if any split has concat dataset with denormalized metrics
+    concat_splits_with_denorm = []
+    
     for split_name in ['train', 'val', 'test']:
         if split_name not in results or results[split_name] is None:
             continue
         
         result = results[split_name]
+        is_concat = result.get('is_concat', False)
+        
         print(f"\n{split_name.upper()} Set:")
         print(f"  Normalized   - MSE: {result['mse_norm']:.7f}, MAE: {result['mae_norm']:.7f}")
         if result['mse_denorm'] is not None:
             print(f"  Denormalized - MSE: {result['mse_denorm']:.7f}, MAE: {result['mae_denorm']:.7f}")
+            # Track concat splits that show denormalized metrics
+            if is_concat:
+                concat_splits_with_denorm.append(split_name.upper())
         else:
             print(f"  Denormalized - N/A (scaler not available)")
         print(f"  Samples: {result['num_samples']}")
     
     print("="*50)
+    
+    # Print warning if any concat dataset showed denormalized metrics
+    if concat_splits_with_denorm:
+        print("\n" + "!"*50)
+        print("  WARNING: Denormalized metrics may be inaccurate")
+        print("!"*50)
+        print(f"\nThe following splits use ConcatDataset (multiple entities "
+              f"concatenated): {', '.join(concat_splits_with_denorm)}")
+        print("\nWhy this matters:")
+        print("  - Each entity has its own scaler (mean/std) fitted on its data")
+        print("  - ConcatDataset loses track of which sample came from which entity")
+        print("  - Denormalized metrics use only the first entity's scaler")
+        print("  - This gives INCORRECT results for samples from other entities")
+        print("\nNormalized metrics are consistent with training but mix")
+        print("different real-world scales across entities.")
+        print("\nSee: docs/planning/robust_evaluation_metrics_plan.md")
+        print("="*50)
 
 
 def evaluate(config):
