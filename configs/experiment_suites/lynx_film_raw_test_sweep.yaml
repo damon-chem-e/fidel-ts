@@ -42,7 +42,7 @@ suite:
           patience: 2
           epochs: 5  # 5 epochs for testing
           track_per_sample: false
-          evaluate_test_during_training: false
+          evaluate_test_during_training: true  # Enable to log test_loss per-epoch for sweep optimization
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw_test_sweep"
