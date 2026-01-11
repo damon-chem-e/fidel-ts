@@ -36,6 +36,7 @@ suite:
           epochs: 1
           track_per_sample: false  # Disable per-sample tracking for initial training
           evaluate_test_during_training: false  # Only evaluate test at final epoch
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           enabled: false  # Disable wandb for test runs
         # Model config override: Set input_text_dim to match BERT output (768) and enc_in for multivariate data
@@ -67,6 +68,7 @@ suite:
           epochs: 1
           track_per_sample: false  # Disable per-sample tracking for initial training
           evaluate_test_during_training: false  # Only evaluate test at final epoch
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           enabled: false  # Disable wandb for test runs
         # Model config override: Set input_text_dim to match BERT output (768) and enc_in for multivariate data
@@ -101,6 +103,7 @@ suite:
           epochs: 1
           track_per_sample: false  # Disable per-sample tracking for initial training
           evaluate_test_during_training: false  # Only evaluate test at final epoch
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           enabled: false  # Disable wandb for test runs
         # Model config override: Set input_text_dim to match BERT output (768) and enc_in for multivariate data
@@ -135,6 +138,7 @@ suite:
           epochs: 1
           track_per_sample: false  # Disable per-sample tracking for initial training
           evaluate_test_during_training: false  # Only evaluate test at final epoch
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           enabled: false  # Disable wandb for test runs
         # Model config override: Set input_text_dim to match BERT output (768) and enc_in for multivariate data
