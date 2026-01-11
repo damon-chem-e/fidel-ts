@@ -7,6 +7,7 @@ their CSV format (with embedded text columns) to fidel-ts's expected data format
 
 import os
 import re
+import logging
 import numpy as np
 import pandas as pd
 import joblib
@@ -17,6 +18,9 @@ from .data_loader import Universal_Dataset
 from .data_helper import ratio_spliter, data_buffer
 from embedder import TextEmbedder
 from utils.missing_value_handler import handle_missing_values
+
+# Set up logger for dataset operations
+logger = logging.getLogger(__name__)
 
 
 class TimeMMD_HeteroGetter:
@@ -562,7 +566,7 @@ class TimeMMD_Dataset(Universal_Dataset):
                  missing_value_strategy='none', required_indicators=None,
                  aggregation_method='cls', use_old_pkl=False,
                  generate_time_features=False, time_feature_freq='h',
-                 llm_embedding_provider=None):
+                 llm_embedding_provider=None, truncate_train_for_purge=False):
         """
         Initialize TimeMMD_Dataset.
         
@@ -623,6 +627,7 @@ class TimeMMD_Dataset(Universal_Dataset):
             generate_time_features=generate_time_features,
             time_feature_freq=time_feature_freq,
             llm_embedding_provider=llm_embedding_provider,  # Pass LLM provider to parent
+            truncate_train_for_purge=truncate_train_for_purge,  # Pass purge truncation option
         )
         
         # Setup text getter after data is loaded (after parent.__init__ which loads data)
@@ -857,6 +862,20 @@ class TimeMMD_Dataset(Universal_Dataset):
             if self.data.ndim == 1:
                 self.data = self.data.reshape(-1, 1)
         
+        # Truncate training data by pred_len to remove lookahead bias (if enabled)
+        # This ensures training predictions don't overlap with validation data.
+        # NOTE: train_data (used for scaler fitting) remains full - only self.data is truncated.
+        # See docs/train_val_test_purge_period_issue.md for details.
+        if self.set_type == 'train' and self.truncate_train_for_purge:
+            if len(self.data) > self.pred_len:
+                original_len = len(self.data)
+                self.data = self.data[:-self.pred_len]
+                self.timestamp = self.timestamp[:-self.pred_len]
+                logger.info(f"Truncated training data by {self.pred_len} points to remove lookahead bias. "
+                           f"Original: {original_len}, New: {len(self.data)}")
+            else:
+                logger.warning(f"Cannot truncate training data: length ({len(self.data)}) <= pred_len ({self.pred_len})")
+
         # Normalize if requested
         if self.scale:
             self.scaler.fit(train_data)

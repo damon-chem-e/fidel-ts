@@ -67,6 +67,7 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     args.lradj = config.training.lradj
     args.track_per_sample = config.training.track_per_sample
     args.evaluate_test_during_training = config.training.evaluate_test_during_training
+    args.truncate_train_for_purge = config.training.truncate_train_for_purge
     
     # Apply model-specific training configs (e.g., LeRet two-stage training)
     # This abstracts away model-specific config handling

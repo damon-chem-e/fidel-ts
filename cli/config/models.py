@@ -84,6 +84,17 @@ class TrainingConfig(BaseModel):
     # Evaluation during training
     evaluate_test_during_training: bool = Field(default=False, description="Whether to evaluate on test set during training epochs (default: False to hold out test)")
     
+    # Purge period truncation to remove lookahead bias
+    truncate_train_for_purge: bool = Field(
+        default=False,
+        description=(
+            "If True, truncate training data by pred_len to remove lookahead bias. "
+            "This ensures training predictions don't overlap with validation data, "
+            "making validation loss reliable for hyperparameter tuning. "
+            "See docs/train_val_test_purge_period_issue.md for details."
+        )
+    )
+    
     # LeRet-specific two-stage training configuration
     leret: Optional[LeRetTrainingConfig] = Field(
         default=None,

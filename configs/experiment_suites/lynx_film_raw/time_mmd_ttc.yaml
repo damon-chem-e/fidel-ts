@@ -46,6 +46,7 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           tags: ["lynx_film_raw", "time_mmd_agriculture"]
         experiment:
@@ -76,6 +77,7 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           tags: ["lynx_film_raw", "time_mmd_climate"]
         experiment:
@@ -106,6 +108,7 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           tags: ["lynx_film_raw", "time_mmd_economy"]
         experiment:
@@ -136,6 +139,7 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           tags: ["lynx_film_raw", "time_mmd_energy"]
         experiment:
@@ -166,6 +170,7 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           tags: ["lynx_film_raw", "time_mmd_environment"]
         experiment:
@@ -196,6 +201,7 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           tags: ["lynx_film_raw", "time_mmd_health"]
         experiment:
@@ -226,6 +232,7 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           tags: ["lynx_film_raw", "time_mmd_socialgood"]
         experiment:
@@ -256,6 +263,7 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           tags: ["lynx_film_raw", "time_mmd_traffic"]
         experiment:
@@ -287,6 +295,7 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           tags: ["lynx_film_raw", "ttc_weather"]
         experiment:
@@ -314,6 +323,7 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           tags: ["lynx_film_raw", "ttc_medical"]
         experiment:

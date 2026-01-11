@@ -76,7 +76,7 @@ class Universal_Dataset(Dataset):
                  timezone=None, downsample=None, entity_id=None, 
                  missing_value_strategy='none', required_indicators=None,
                  generate_time_features=False, time_feature_freq='h',
-                 llm_embedding_provider=None):
+                 llm_embedding_provider=None, truncate_train_for_purge=False):
         # size [seq_len, label_len, pred_len]
         # info
         self.seq_len = seq_len
@@ -114,6 +114,9 @@ class Universal_Dataset(Dataset):
         # LLM Embedding Provider (for TimeCMA-style models)
         # When provided, LLM embeddings are used as hetero_channel
         self.llm_embedding_provider = llm_embedding_provider
+        
+        # Purge period truncation to remove lookahead bias (see docs/train_val_test_purge_period_issue.md)
+        self.truncate_train_for_purge = truncate_train_for_purge
 
         self.__read_data__()
         self.preload_hetero = preload_hetero
@@ -237,6 +240,20 @@ class Universal_Dataset(Dataset):
             self.target_columns = [self.target] if isinstance(self.target, str) else self.target
             self.data = self.data[self.target].values.astype(np.float32).copy()
             train_data = train_data[self.target].values.astype(np.float32).copy()
+
+        # Truncate training data by pred_len to remove lookahead bias (if enabled)
+        # This ensures training predictions don't overlap with validation data.
+        # NOTE: train_data (used for scaler fitting) remains full - only self.data is truncated.
+        # See docs/train_val_test_purge_period_issue.md for details.
+        if self.set_type == 'train' and self.truncate_train_for_purge:
+            if len(self.data) > self.pred_len:
+                original_len = len(self.data)
+                self.data = self.data[:-self.pred_len]
+                self.timestamp = self.timestamp[:-self.pred_len]
+                logger.info(f"Truncated training data by {self.pred_len} points to remove lookahead bias in val split. "
+                           f"Original: {original_len}, New: {len(self.data)}")
+            else:
+                logger.warning(f"Cannot truncate training data: length ({len(self.data)}) <= pred_len ({self.pred_len})")
 
         if self.scale:
             self.scaler.fit(train_data)

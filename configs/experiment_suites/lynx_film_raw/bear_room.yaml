@@ -39,6 +39,7 @@ suite:
           epochs: 50
           track_per_sample: false
           evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
         wandb:
           tags: ["lynx_film_raw", "bear_room"]
         experiment:

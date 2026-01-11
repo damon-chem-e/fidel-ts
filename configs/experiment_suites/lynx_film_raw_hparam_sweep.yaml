@@ -39,6 +39,7 @@ suite:
           epochs: 7  # Reduced for sweep efficiency
           track_per_sample: false
           evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable for sweep optimization
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw_hparam_sweep"

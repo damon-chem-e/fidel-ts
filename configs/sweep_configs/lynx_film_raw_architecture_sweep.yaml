@@ -2,11 +2,13 @@
 # Description: Sweeps over model architecture (depth, width) and training hyperparameters (LR, batch size)
 # Method: Bayesian optimization for efficient search
 # Usage: wandb sweep configs/sweep_configs/lynx_film_raw_architecture_sweep.yaml --project fidel-ts
+# NOTE: Optimizes on val_loss with truncate_train_for_purge enabled, making val_loss reliable for HPO.
+# See docs/train_val_test_purge_period_issue.md for details.
 
 program: scripts/wandb_sweep_wrapper.py
 method: bayes  # Bayesian optimization for efficient hyperparameter search
 metric:
-  name: val_loss
+  name: val_loss  # Reliable with truncate_train_for_purge enabled in experiment suite
   goal: minimize
 
 # Early stopping to save compute

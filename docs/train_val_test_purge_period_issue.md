@@ -219,6 +219,56 @@ Validation loss may still be useful for:
 
 However, **never rely solely on validation loss** for final model selection or performance claims.
 
+## Solution: Training Data Truncation (Recommended)
+
+### The `truncate_train_for_purge` Option
+
+fidel-ts now provides a configuration option `truncate_train_for_purge` that **removes the last `pred_len` samples from training data**, eliminating lookahead bias and making validation loss reliable.
+
+### How It Works
+
+When `truncate_train_for_purge: true`:
+- Training data is truncated by `pred_len` samples: `train_data[:-pred_len]`
+- The last training sample now predicts `[train_split - pred_len, train_split)`, which ends **before** validation begins
+- Scaler fitting still uses the **full training data** (correct for normalization)
+- Validation loss is now reliable for hyperparameter tuning and early stopping
+
+### Usage
+
+```yaml
+# In experiment suite or sweep config
+training:
+  truncate_train_for_purge: true  # Enable purge truncation
+  evaluate_test_during_training: false  # No longer needed - val_loss is now reliable!
+```
+
+```yaml
+# In wandb sweep config
+metric:
+  name: val_loss  # Can now safely optimize on val_loss
+  goal: minimize
+```
+
+### Behavior Summary
+
+| Setting | Training Data | Scaler Fitting | Val Loss | Use Case |
+|---------|--------------|----------------|----------|----------|
+| `false` (default) | Full `[0, train_split)` | Full | Biased (lookahead) | Backward compatibility |
+| `true` | Truncated `[0, train_split - pred_len)` | Full | Reliable | HPO, early stopping |
+
+### When to Use
+
+- **Hyperparameter sweeps**: Use `truncate_train_for_purge: true` to optimize on reliable validation loss
+- **Early stopping**: With truncation enabled, validation loss is a proper proxy for generalization
+- **Model selection**: Can now safely compare models by validation loss
+- **Small datasets**: Especially important for Time-MMD where validation periods are short
+
+### Trade-offs
+
+- **Slightly less training data**: Training loses `pred_len` samples (e.g., 24 samples for `pred_len=24`)
+- **Different from published baselines**: Results may differ from papers that don't use truncation
+- **Backward compatibility**: Default `false` preserves existing behavior for reproducibility
+
 ## Implementation Notes
 
 ### Current Code Behavior
