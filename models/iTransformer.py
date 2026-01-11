@@ -69,6 +69,35 @@ class Model(nn.Module):
         return dec_out
 
 
-    def forward(self, x, **kwargs):
+    def forward(self, x, return_representations=False, **kwargs):
+        """
+        Forward pass.
+        
+        Args:
+            x: Input time series [B, seq_len, C]
+            return_representations: If True, return aggregated representations [B, d_model]
+            **kwargs: Additional arguments
+            
+        Returns:
+            If return_representations=False: predictions [B, pred_len, C]
+            If return_representations=True: aggregated representation [B, d_model]
+        """
+        if return_representations:
+            # Extract representations after encoder
+            if self.use_norm:
+                means = x.mean(1, keepdim=True).detach()
+                x = x - means
+                stdev = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5)
+                x /= stdev
+            
+            _, _, N = x.shape  # B L N
+            enc_out = self.enc_embedding(x, None)  # [B, N, d_model]
+            enc_out, attns = self.encoder(enc_out, attn_mask=None)  # [B, N, d_model]
+            
+            # Aggregate over channels: [B, N, d_model] -> [B, d_model]
+            repr = enc_out.mean(dim=1)  # Mean pooling over channel dimension
+            return repr
+        
+        # Standard prediction path
         dec_out = self.forecast(x)
         return dec_out[:, -self.pred_len:, :]  # [B, L, D]

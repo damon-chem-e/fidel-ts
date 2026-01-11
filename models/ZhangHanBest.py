@@ -47,15 +47,15 @@ class Model(nn.Module):
         self.ts_encoder = self._create_unimodal_encoder(configs)
         
         # Get representation dimension from TS encoder
-        # For PatchTST: d_model from config
-    # For DLinear: pred_len (need to handle projection)
+        # For PatchTST/iTransformer/FEDformer/Informer: d_model from config
+        # For DLinear: pred_len (need to handle projection)
+        # For FITS: dominance_freq * 2 (real + imaginary)
         # For Sundial/TimeMoE: hidden_size from model config (need to handle projection)
         self.ts_rep_dim = getattr(configs, 'd_model', 512)  # Default from config
         
-        # Handle DLinear special case: representation dim is pred_len, not d_model
+        # Handle model-specific dimension cases
         if self.unimodal_model_type == 'DLinear':
-            # DLinear returns [B, pred_len] after linear projections, so we need to project to d_model
-            # Or set d_model=pred_len in config
+            # DLinear returns [B, pred_len] after linear projections
             d_model_from_config = getattr(configs, 'd_model', None)
             if d_model_from_config is None or d_model_from_config != self.pred_len:
                 # Add projection layer to match d_model
@@ -64,6 +64,22 @@ class Model(nn.Module):
             else:
                 self.ts_proj = None
                 self.ts_rep_dim = self.pred_len
+        elif self.unimodal_model_type == 'FITS':
+            # FITS returns [B, dominance_freq * 2] (real + imaginary frequency components)
+            # Need to project to d_model
+            H_order = getattr(configs, 'H_order', 1)
+            base_T = getattr(configs, 'base_T', 24)
+            dominance_freq = int(self.seq_len // base_T + 1) * H_order + 10
+            fits_repr_dim = dominance_freq * 2  # Real + imaginary
+            
+            d_model_from_config = getattr(configs, 'd_model', None)
+            if d_model_from_config is None or d_model_from_config != fits_repr_dim:
+                # Add projection layer to match d_model
+                self.ts_proj = nn.Linear(fits_repr_dim, self.ts_rep_dim)
+                print(f'[ info ] ZhangHanBest: Added projection layer for FITS: {fits_repr_dim} -> {self.ts_rep_dim}')
+            else:
+                self.ts_proj = None
+                self.ts_rep_dim = fits_repr_dim
         elif self.unimodal_model_type in ['Sundial', 'TimeMoE']:
             # Sundial and TimeMoE return [B, hidden_size] from their internal representations
             # Get actual hidden_size from the encoder model
@@ -80,6 +96,7 @@ class Model(nn.Module):
                 self.ts_proj = None
                 self.ts_rep_dim = encoder_hidden_size
         else:
+            # PatchTST, iTransformer, FEDformer, Informer all use d_model directly
             self.ts_proj = None
         
         # 2. Text input dimension (from pre-computed embeddings)
@@ -163,6 +180,18 @@ class Model(nn.Module):
         elif self.unimodal_model_type == 'DLinear':
             from models.DLinear import Model as DLinearModel
             return DLinearModel(configs)
+        elif self.unimodal_model_type == 'iTransformer':
+            from models.iTransformer import Model as iTransformerModel
+            return iTransformerModel(configs)
+        elif self.unimodal_model_type == 'FITS':
+            from models.FITS import Model as FITSModel
+            return FITSModel(configs)
+        elif self.unimodal_model_type == 'FEDformer':
+            from models.FEDformer import Model as FEDformerModel
+            return FEDformerModel(configs)
+        elif self.unimodal_model_type == 'Informer':
+            from models.Informer import Model as InformerModel
+            return InformerModel(configs)
         elif self.unimodal_model_type == 'Sundial':
             from models.Sundial import Model as SundialModel
             return SundialModel(configs)
@@ -332,12 +361,24 @@ class Model(nn.Module):
             # predictions_orig = predictions_norm * std + mean
             predictions = predictions * x_std + x_mean
         elif self.unimodal_model_type in ['iTransformer', 'Sundial', 'TimeMoE'] and self.ts_uses_norm:
-            # iTransformer-style normalization
+            # iTransformer-style normalization (use_norm)
             means = x.mean(1, keepdim=True)  # [B, 1, C]
             stdev = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5)  # [B, 1, C]
             
             # Denormalize
             predictions = predictions * stdev + means
+        elif self.unimodal_model_type == 'FITS':
+            # FITS uses RevIN normalization (RIN)
+            # Same as PatchTST RevIN
+            x_mean = torch.mean(x, dim=1, keepdim=True)  # [B, 1, C]
+            x_var = torch.var(x, dim=1, keepdim=True) + 1e-5  # [B, 1, C]
+            x_std = torch.sqrt(x_var)  # [B, 1, C]
+            
+            predictions = predictions * x_std + x_mean
+        elif self.unimodal_model_type in ['FEDformer', 'Informer']:
+            # These models don't use normalization by default (handled by DataEmbedding)
+            # No denormalization needed
+            pass
         # For DLinear: no normalization, so no denormalization needed
         
         return predictions

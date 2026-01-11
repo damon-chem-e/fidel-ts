@@ -612,13 +612,18 @@ The source and nature of text information varies significantly between dataset t
 **Supported Unimodal Models (Plugins):**
 1. **PatchTST** - Patch-based Transformer
 2. **DLinear** - Decomposition-Linear (with automatic projection layer)
-3. **Sundial** - Foundation model (with automatic projection layer)
-4. **TimeMoE** - Mixture-of-Experts foundation model (with automatic projection layer)
+3. **iTransformer** - Inverted Transformer
+4. **FITS** - Frequency Interpolation (with automatic projection layer)
+5. **FEDformer** - Frequency Enhanced Decomposed Transformer
+6. **Informer** - Efficient Transformer with ProbSparse attention
+7. **Sundial** - Foundation model (with automatic projection layer)
+8. **TimeMoE** - Mixture-of-Experts foundation model (with automatic projection layer)
 
 **Plugin Configuration:**
 - Set `unimodal_model_type` in config (default: 'PatchTST')
 - Model automatically handles dimension mismatches with projection layers
 - TS encoder must support `return_representations=True` for extracting features
+- All supported models have been updated to support representation extraction
 
 **Key Features:**
 - Flexible plugin architecture - easy to add new unimodal models
@@ -671,7 +676,6 @@ The source and nature of text information varies significantly between dataset t
 4. **FEDformer** - Frequency Enhanced Decomposed Transformer
 5. **Informer** - Efficient Transformer with ProbSparse attention
 6. **FITS** - Frequency Interpolation Time Series
-7. **Autoformer** - Decomposition Transformer (encoder-decoder)
 
 **Plugin Configuration:**
 - Set `unimodal_model_type` in config (default: 'iTransformer')
@@ -696,9 +700,9 @@ The source and nature of text information varies significantly between dataset t
 | **Fusion Level** | Representation-level | Prediction-level |
 | **Text Integration** | Residual projection | MLP projection |
 | **Fusion Method** | Weighted addition of features | Weighted addition of predictions |
-| **Supported Models** | 4 (PatchTST, DLinear, Sundial, TimeMoE) | 7 (PatchTST, DLinear, iTransformer, FEDformer, Informer, FITS, Autoformer) |
+| **Supported Models** | 8 (PatchTST, DLinear, iTransformer, FITS, FEDformer, Informer, Sundial, TimeMoE) | 6 (PatchTST, DLinear, iTransformer, FEDformer, Informer, FITS) |
 | **Foundation Models** | ✅ Yes (Sundial, TimeMoE) | ❌ No |
-| **Encoder-Decoder** | ❌ No | ✅ Yes (Informer, FEDformer, Autoformer) |
+| **Encoder-Decoder** | ✅ Yes (FEDformer, Informer) | ✅ Yes (Informer, FEDformer) |
 | **Interface Required** | `return_representations=True` | Standard `forward()` |
 | **Complexity** | Higher (representation fusion) | Lower (prediction fusion) |
 | **Best For** | Deep feature integration | Simple ensemble |

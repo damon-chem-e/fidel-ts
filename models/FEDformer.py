@@ -307,7 +307,8 @@ class Model(nn.Module):
         )
 
     def forward(self, x=None, x_enc=None, x_mark_enc=None, x_dec=None, x_mark_dec=None,
-                enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None, **kwargs):
+                enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None, 
+                return_representations=False, **kwargs):
         """
         Forward pass for FEDformer.
         
@@ -324,10 +325,12 @@ class Model(nn.Module):
             enc_self_mask: Optional encoder self-attention mask
             dec_self_mask: Optional decoder self-attention mask
             dec_enc_mask: Optional decoder cross-attention mask
+            return_representations: If True, return aggregated encoder representations [B, d_model]
             **kwargs: Additional arguments (ignored for compatibility)
             
         Returns:
-            predictions: [B, pred_len, c_out]
+            If return_representations=False: predictions [B, pred_len, c_out]
+            If return_representations=True: aggregated representation [B, d_model]
         """
         # Handle framework interface: convert x to FEDformer format
         if x is not None:
@@ -335,9 +338,9 @@ class Model(nn.Module):
             x_enc = x
             # Temporal marks should be provided as direct keyword arguments (x_mark_enc, x_mark_dec)
             # If not provided, raise an error
-            if x_mark_enc is None or x_mark_dec is None:
+            if x_mark_enc is None:
                 raise ValueError(
-                    "FEDformer requires temporal marks (x_mark_enc, x_mark_dec) when using framework interface. "
+                    "FEDformer requires temporal marks (x_mark_enc) when using framework interface. "
                     "These should be provided via the dataloader with generate_time_features=True."
                 )
         
@@ -348,6 +351,18 @@ class Model(nn.Module):
         # Temporal marks are required for FEDformer (either passed directly or via kwargs)
         if x_mark_enc is None:
             raise ValueError("x_mark_enc (encoder temporal marks) is required for FEDformer")
+        
+        # Encoder
+        enc_out = self.enc_embedding(x_enc, x_mark_enc)
+        enc_out, attns = self.encoder(enc_out, attn_mask=enc_self_mask)
+        
+        # Return representations if requested
+        if return_representations:
+            # Aggregate encoder output: [B, seq_len, d_model] -> [B, d_model]
+            repr = enc_out.mean(dim=1)  # Mean pooling over sequence dimension
+            return repr
+        
+        # Validate decoder temporal marks for prediction path
         if x_mark_dec is None:
             raise ValueError("x_mark_dec (decoder temporal marks) is required for FEDformer")
         
@@ -362,10 +377,6 @@ class Model(nn.Module):
         
         # Seasonal: last label_len of seasonal + zeros for prediction horizon
         seasonal_init = F.pad(seasonal_init[:, -self.label_len:, :], (0, 0, 0, self.pred_len))
-        
-        # Encoder
-        enc_out = self.enc_embedding(x_enc, x_mark_enc)
-        enc_out, attns = self.encoder(enc_out, attn_mask=enc_self_mask)
         
         # Decoder
         dec_out = self.dec_embedding(seasonal_init, x_mark_dec)

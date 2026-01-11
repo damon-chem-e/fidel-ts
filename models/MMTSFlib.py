@@ -78,7 +78,7 @@ class Model(nn.Module):
     # Supported unimodal models that can be wrapped
     SUPPORTED_MODELS = {
         'PatchTST', 'DLinear', 'iTransformer', 'FEDformer', 
-        'Informer', 'FITS', 'Autoformer'
+        'Informer', 'FITS'
     }
     
     def __init__(self, configs):
@@ -218,8 +218,6 @@ class Model(nn.Module):
             from models.Informer import Model as UnimodalModel
         elif model_type == 'FITS':
             from models.FITS import Model as UnimodalModel
-        elif model_type == 'Autoformer':
-            from models.Autoformer import Model as UnimodalModel
         else:
             raise ValueError(f"Model {model_type} import not implemented")
         
@@ -331,7 +329,7 @@ class Model(nn.Module):
             ts_preds: [B, pred_len, enc_in] predictions
         """
         # Check if model needs encoder-decoder interface
-        if self.unimodal_model_type in ['Informer', 'FEDformer', 'Autoformer']:
+        if self.unimodal_model_type in ['Informer', 'FEDformer']:
             # Encoder-decoder models need decoder input and time marks
             x_mark_enc = kwargs.get('x_mark_enc', None)
             x_mark_dec = kwargs.get('x_mark_dec', None)

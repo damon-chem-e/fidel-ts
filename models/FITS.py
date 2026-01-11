@@ -27,7 +27,20 @@ class Model(nn.Module):
         else:
             self.freq_upsampler = nn.Linear(self.dominance_freq, int(self.dominance_freq * self.length_ratio)).to(torch.cfloat) # complex layer for frequency upsampling
     
-    def forward(self, x, **kwargs):
+    def forward(self, x, return_representations=False, **kwargs):
+        """
+        Forward pass.
+        
+        Args:
+            x: Input time series [B, seq_len, C]
+            return_representations: If True, return aggregated frequency representations
+            **kwargs: Additional arguments
+            
+        Returns:
+            If return_representations=False: predictions [B, seq_len+pred_len, C]
+            If return_representations=True: aggregated representation [B, dominance_freq*2]
+                (real and imaginary parts of frequency components, averaged over channels)
+        """
         # RIN
         x_mean = torch.mean(x, dim=1, keepdim=True)
         x = x - x_mean
@@ -38,6 +51,25 @@ class Model(nn.Module):
         low_specx = torch.fft.rfft(x, dim=1)
         low_specx[:,self.dominance_freq:]=0 # LPF
         low_specx = low_specx[:,0:self.dominance_freq,:] # LPF
+        
+        if return_representations:
+            # Extract frequency representations after upsampling
+            if self.individual:
+                low_specxy_ = torch.zeros([low_specx.size(0),int(self.dominance_freq*self.length_ratio),low_specx.size(2)],dtype=low_specx.dtype).to(low_specx.device)
+                for i in range(self.channels):
+                    low_specxy_[:,:,i]=self.freq_upsampler[i](low_specx[:,:,i].permute(0,1)).permute(0,1)
+            else:
+                low_specxy_ = self.freq_upsampler(low_specx.permute(0,2,1)).permute(0,2,1)
+            
+            # Aggregate frequency representations: [B, freq, C] -> [B, freq*2]
+            # Take first dominance_freq components, convert to real representation
+            freq_repr = low_specxy_[:, :self.dominance_freq, :]  # [B, dominance_freq, C]
+            # Stack real and imaginary parts, then mean over channels
+            freq_repr_real = torch.cat([freq_repr.real, freq_repr.imag], dim=1)  # [B, dominance_freq*2, C]
+            repr = freq_repr_real.mean(dim=-1)  # [B, dominance_freq*2]
+            return repr
+        
+        # Standard prediction path
         # print(low_specx.permute(0,2,1))
         if self.individual:
             low_specxy_ = torch.zeros([low_specx.size(0),int(self.dominance_freq*self.length_ratio),low_specx.size(2)],dtype=low_specx.dtype).to(low_specx.device)
