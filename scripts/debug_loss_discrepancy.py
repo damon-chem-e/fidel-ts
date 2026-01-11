@@ -193,30 +193,35 @@ def main():
         return
     data_config = load_config(str(data_config_path))
     
-    # Create args object
-    # Use absolute path for data_path
-    # Note: If your data is in a different location (e.g., base_data_path override),
-    # you can modify this path or set it via environment variable
-    data_path = project_root / "data"
-    # Check if custom data path is provided via environment variable
+    # Extract paths from config
+    # root_path is relative to project root, data_path is relative to root_path
+    root_path_from_config = data_config.get('root_path', './data')
+    data_path_from_config = data_config.get('data_path', 'US_VMT_Month.csv')
+    
+    # Resolve root_path - handle both relative and absolute paths
+    if root_path_from_config.startswith('./'):
+        root_path = project_root / root_path_from_config[2:]  # Remove './'
+    elif root_path_from_config.startswith('/'):
+        root_path = Path(root_path_from_config)  # Absolute path
+    else:
+        root_path = project_root / root_path_from_config  # Relative to project root
+    
+    # Check if custom data path is provided via environment variable (overrides config)
     import os
     if 'FIDEL_TS_DATA_PATH' in os.environ:
-        data_path = Path(os.environ['FIDEL_TS_DATA_PATH'])
+        root_path = Path(os.environ['FIDEL_TS_DATA_PATH'])
+        print(f"Using custom data path from environment: {root_path}")
     
+    print(f"Using root_path: {root_path}")
+    print(f"Using data_path: {data_path_from_config}")
+    print(f"Full data file path: {root_path / data_path_from_config}")
+    
+    # Create args object (for compatibility, not all fields needed)
     args = dotdict({
-        'data_path': str(data_path),
-        'data': 'time_mmd_traffic',
-        'features': 'S',  # Single target
-        'target': 'OT',
-        'scale': True,
-        'inverse': False,
-        'freq': 'h',
-        'embed': 'timeF',
         'input_len': 24,
         'output_len': 6,
         'seq_len': 24,
         'pred_len': 6,
-        'data_config': dotdict(data_config)
     })
     
     # Create dataset
@@ -234,16 +239,17 @@ def main():
     general_info = data_config.get('general_info', '')
     channel_info = data_config.get('channel_info', '')
     timestamp_col = data_config.get('timestamp_col', 'date')
+    target = data_config.get('target', 'OT')
     
     dataset = TimeMMD_Dataset(
-        root_path=args.data_path,
-        data_path=data_config['data_path'],
+        root_path=str(root_path),
+        data_path=data_path_from_config,
         flag='val',  # Check validation set
         seq_len=args.seq_len,
         pred_len=args.pred_len,
         spliter=spliter,
-        target=args.target,
-        scale=args.scale,
+        target=target,
+        scale=True,  # From config, but hardcoded for diagnostic
         timestamp_col=timestamp_col,
         text_column=text_column,
         use_closedllm=use_closedllm,

@@ -8,9 +8,10 @@ This module provides CLI commands for evaluating trained models:
 """
 
 import typer
+import yaml
 from pathlib import Path
 from typing import Optional
-from cli.config.loader import load_config_with_nested, load_config
+from cli.config.loader import load_config_with_nested, load_config, load_yaml_config
 from cli.config.models import ExperimentConfig
 from evaluation.config_builder import build_evaluation_config_from_experiment_config
 from utils.tools import dotdict
@@ -20,6 +21,33 @@ app = typer.Typer(
     help="Evaluate trained time series forecasting models",
     add_completion=False
 )
+
+
+def _load_experiment_config_from_directory(experiment_dir: Path) -> ExperimentConfig:
+    """
+    Load experiment config from saved config in experiment directory.
+    
+    This is the preferred method for suite experiments since the config
+    is already saved in the experiment directory during training.
+    
+    Args:
+        experiment_dir: Path to experiment directory
+        
+    Returns:
+        ExperimentConfig instance loaded from saved config
+        
+    Raises:
+        FileNotFoundError: If experiment config not found
+    """
+    config_path = experiment_dir / "configs" / "experiment_config.yaml"
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Experiment config not found: {config_path}\n"
+            f"  Experiment directory: {experiment_dir}\n"
+            f"  This experiment may not have been saved with the new format."
+        )
+    
+    return ExperimentConfig.from_yaml(config_path)
 
 
 @app.command()
@@ -191,12 +219,46 @@ def lightning(
             evaluate(config)
             return
         
-        # New format: use experiment config with resume_experiment_id
-        config = load_config(config_path)
+        # Check if this is a suite config or experiment config
+        config_dict = load_yaml_config(config_path)
         
-        # Get resume_experiment_id from CLI override or config
-        exp_id = resume_experiment_id or config.resume_experiment_id
-        suite_id = resume_suite_id or config.resume_suite_id
+        # If it's a suite config, we need resume_experiment_id to load config from experiment directory
+        if 'suite' in config_dict:
+            # This is a suite config - need resume_experiment_id to find the experiment directory
+            if not resume_experiment_id:
+                typer.echo(
+                    "Error: resume_experiment_id is required when using a suite config.\n"
+                    "  Provide it via CLI (--resume-id).",
+                    err=True
+                )
+                raise typer.Exit(code=1)
+            
+            suite_id = resume_suite_id or config_dict.get('suite', {}).get('name', 'unknown')
+            exp_id = resume_experiment_id
+            
+            # Determine experiment directory and load config from there
+            output_path = Path(output_dir).resolve()
+            if suite_id:
+                experiment_dir = output_path / suite_id / exp_id
+            else:
+                experiment_dir = output_path / exp_id
+            
+            if not experiment_dir.exists():
+                raise FileNotFoundError(
+                    f"Experiment directory not found: {experiment_dir}\n"
+                    f"  Experiment ID: {exp_id}\n"
+                    f"  Suite ID: {suite_id if suite_id else 'N/A (standalone)'}"
+                )
+            
+            # Load config from experiment directory (preferred - has actual training config)
+            config = _load_experiment_config_from_directory(experiment_dir)
+        else:
+            # This is a regular experiment config
+            config = load_config(config_path)
+            
+            # Get resume_experiment_id from CLI override or config
+            exp_id = resume_experiment_id or config.resume_experiment_id
+            suite_id = resume_suite_id or config.resume_suite_id
         
         # Validate that resume_experiment_id is provided
         if not exp_id:
