@@ -8,7 +8,6 @@ This module provides CLI commands for evaluating trained models:
 """
 
 import typer
-import yaml
 from pathlib import Path
 from typing import Optional
 from cli.config.loader import load_config_with_nested, load_config, load_yaml_config
@@ -50,6 +49,90 @@ def _load_experiment_config_from_directory(experiment_dir: Path) -> ExperimentCo
     return ExperimentConfig.from_yaml(config_path)
 
 
+def _load_and_resolve_config(
+    config_path: str,
+    resume_experiment_id: Optional[str],
+    resume_suite_id: Optional[str],
+    output_dir: str
+) -> tuple[ExperimentConfig, str, Optional[str]]:
+    """
+    Load and resolve experiment configuration.
+    
+    Handles both suite configs and regular experiment configs, including
+    backward compatibility for old evaluation config format.
+    
+    Args:
+        config_path: Path to config file (suite or experiment config)
+        resume_experiment_id: Experiment ID from CLI (optional)
+        resume_suite_id: Suite ID from CLI (optional)
+        output_dir: Base output directory
+        
+    Returns:
+        tuple: (config, exp_id, suite_id)
+            - config: ExperimentConfig instance
+            - exp_id: Experiment ID to use
+            - suite_id: Suite ID (None if standalone)
+            
+    Raises:
+        FileNotFoundError: If experiment directory or config not found
+        typer.Exit: If resume_experiment_id is required but not provided
+    """
+    # First, check if this is a suite config or experiment config
+    config_dict = load_yaml_config(config_path)
+    
+    # If it's a suite config, we need resume_experiment_id to load config from experiment directory
+    if 'suite' in config_dict:
+        # This is a suite config - need resume_experiment_id to find the experiment directory
+        if not resume_experiment_id:
+            typer.echo(
+                "Error: resume_experiment_id is required when using a suite config.\n"
+                "  Provide it via CLI (--resume-id).",
+                err=True
+            )
+            raise typer.Exit(code=1)
+        
+        suite_id = resume_suite_id or config_dict.get('suite', {}).get('name', 'unknown')
+        exp_id = resume_experiment_id
+        
+        # Determine experiment directory and load config from there
+        output_path = Path(output_dir).resolve()
+        if suite_id:
+            experiment_dir = output_path / suite_id / exp_id
+        else:
+            experiment_dir = output_path / exp_id
+        
+        if not experiment_dir.exists():
+            raise FileNotFoundError(
+                f"Experiment directory not found: {experiment_dir}\n"
+                f"  Experiment ID: {exp_id}\n"
+                f"  Suite ID: {suite_id if suite_id else 'N/A (standalone)'}"
+            )
+        
+        # Load config from experiment directory (preferred - has actual training config)
+        config = _load_experiment_config_from_directory(experiment_dir)
+        return config, exp_id, suite_id
+    
+    # This is a regular experiment config - check for backward compatibility first
+    config_hierarchy = load_config_with_nested(config_path)
+    nested_configs = config_hierarchy.get('nested', {})
+    
+    # If evaluation section exists as nested config (old format), use backward compatibility
+    if 'evaluation' in nested_configs or (hasattr(config_hierarchy['primary'], 'evaluation') and 
+                                          isinstance(config_hierarchy['primary'].evaluation, str)):
+        # Old format: use nested evaluation config (return config with None IDs for backward compat)
+        config = config_hierarchy['primary']
+        return config, None, None
+    
+    # New format: use experiment config with resume_experiment_id
+    config = load_config(config_path)
+    
+    # Get resume_experiment_id from CLI override or config
+    exp_id = resume_experiment_id or config.resume_experiment_id
+    suite_id = resume_suite_id or config.resume_suite_id
+    
+    return config, exp_id, suite_id
+
+
 @app.command()
 def standard(
     config_path: str = typer.Argument(..., help="Path to experiment configuration file (same as training)"),
@@ -82,16 +165,15 @@ def standard(
         python -m cli.test standard configs/experiments/dlinear_solar.yaml --version latest --device 1 --batch-size 64
     """
     try:
-        # Check for backward compatibility (old evaluation config format)
-        config_hierarchy = load_config_with_nested(config_path)
-        nested_configs = config_hierarchy.get('nested', {})
+        # Load and resolve config (handles suite configs, regular configs, and backward compatibility)
+        config, exp_id, suite_id = _load_and_resolve_config(
+            config_path, resume_experiment_id, resume_suite_id, output_dir
+        )
         
-        # If evaluation section exists as nested config (old format), use backward compatibility
-        if 'evaluation' in nested_configs or (hasattr(config_hierarchy['primary'], 'evaluation') and 
-                                              isinstance(config_hierarchy['primary'].evaluation, str)):
+        # Handle backward compatibility: old evaluation config format
+        if exp_id is None:
             # Old format: use nested evaluation config
             typer.echo("Warning: Using legacy evaluation config format. Consider migrating to resume_experiment_id.", err=True)
-            config = config_hierarchy['primary']
             
             if dry_run:
                 typer.echo(f"✓ Config validated: {config_path}")
@@ -103,13 +185,6 @@ def standard(
             typer.echo(f"Starting standard evaluation with config: {config_path}")
             evaluate(config)
             return
-        
-        # New format: use experiment config with resume_experiment_id
-        config = load_config(config_path)
-        
-        # Get resume_experiment_id from CLI override or config
-        exp_id = resume_experiment_id or config.resume_experiment_id
-        suite_id = resume_suite_id or config.resume_suite_id
         
         # Validate that resume_experiment_id is provided
         if not exp_id:
@@ -197,29 +272,7 @@ def lightning(
         python -m cli.test lightning configs/experiments/dlinear_solar.yaml --resume-id 20240101-abc123
     """
     try:
-        # Check for backward compatibility (old evaluation config format)
-        config_hierarchy = load_config_with_nested(config_path)
-        nested_configs = config_hierarchy.get('nested', {})
-        
-        # If evaluation section exists as nested config (old format), use backward compatibility
-        if 'evaluation' in nested_configs or (hasattr(config_hierarchy['primary'], 'evaluation') and 
-                                              isinstance(config_hierarchy['primary'].evaluation, str)):
-            # Old format: use nested evaluation config
-            typer.echo("Warning: Using legacy evaluation config format. Consider migrating to resume_experiment_id.", err=True)
-            config = config_hierarchy['primary']
-            
-            if dry_run:
-                typer.echo(f"✓ Config validated: {config_path}")
-                typer.echo(f"  Model: {config.model.name}")
-                typer.echo(f"  Data: {config.data.name}")
-                return
-            
-            from evaluation.lightning import evaluate
-            typer.echo(f"Starting Lightning evaluation with config: {config_path}")
-            evaluate(config)
-            return
-        
-        # Check if this is a suite config or experiment config
+        # First, check if this is a suite config or experiment config
         config_dict = load_yaml_config(config_path)
         
         # If it's a suite config, we need resume_experiment_id to load config from experiment directory
@@ -253,7 +306,29 @@ def lightning(
             # Load config from experiment directory (preferred - has actual training config)
             config = _load_experiment_config_from_directory(experiment_dir)
         else:
-            # This is a regular experiment config
+            # This is a regular experiment config - check for backward compatibility first
+            config_hierarchy = load_config_with_nested(config_path)
+            nested_configs = config_hierarchy.get('nested', {})
+            
+            # If evaluation section exists as nested config (old format), use backward compatibility
+            if 'evaluation' in nested_configs or (hasattr(config_hierarchy['primary'], 'evaluation') and 
+                                                  isinstance(config_hierarchy['primary'].evaluation, str)):
+                # Old format: use nested evaluation config
+                typer.echo("Warning: Using legacy evaluation config format. Consider migrating to resume_experiment_id.", err=True)
+                config = config_hierarchy['primary']
+                
+                if dry_run:
+                    typer.echo(f"✓ Config validated: {config_path}")
+                    typer.echo(f"  Model: {config.model.name}")
+                    typer.echo(f"  Data: {config.data.name}")
+                    return
+                
+                from evaluation.standard import evaluate
+                typer.echo(f"Starting standard evaluation with config: {config_path}")
+                evaluate(config)
+                return
+            
+            # New format: use experiment config with resume_experiment_id
             config = load_config(config_path)
             
             # Get resume_experiment_id from CLI override or config

@@ -235,7 +235,15 @@ def main():
     text_column = data_config.get('text_column', 'auto')
     use_closedllm = data_config.get('use_closedllm', False)
     text_len = data_config.get('text_len', 4)
-    output_format = data_config.get('timemmd_text_output', 'text')  # 'text' or 'embedding'
+    # Map timemmd_text_output to output_format
+    # Supported formats: 'json', 'dict', 'csv', 'embedding'
+    timemmd_output = data_config.get('timemmd_text_output', 'text')
+    if timemmd_output == 'text':
+        output_format = 'json'  # Default to json for text format
+    elif timemmd_output == 'embedding':
+        output_format = 'embedding'
+    else:
+        output_format = timemmd_output  # Use as-is if it's already a valid format
     general_info = data_config.get('general_info', '')
     channel_info = data_config.get('channel_info', '')
     timestamp_col = data_config.get('timestamp_col', 'date')
