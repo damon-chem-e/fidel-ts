@@ -7,7 +7,7 @@ split_info: # "7:1:2"
 timestamp_col: Time
 target: all
   # - "Current demand"
-id_info: id_info_except_battery.json
+id_info: id_info.json  # Changed from id_info_except_battery.json to match "all" id
 id:   
   - "all"  # Changed from "all_except_battery" to match static_info.json
 formatter: '{i}.parquet'
