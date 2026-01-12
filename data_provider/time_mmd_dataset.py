@@ -872,10 +872,16 @@ class TimeMMD_Dataset(Universal_Dataset):
                 original_len = len(self.data)
                 self.data = self.data[:-self.pred_len]
                 self.timestamp = self.timestamp[:-self.pred_len]
-                logger.info(f"Truncated training data by {self.pred_len} points to remove lookahead bias. "
-                           f"Original: {original_len}, New: {len(self.data)}")
+                # Use Rich console for formatted output that integrates with progress bars
+                self.console.print(
+                    f"[dim]Truncated training data by [cyan]{self.pred_len}[/cyan] points to remove lookahead bias "
+                    f"(Original: [cyan]{original_len}[/cyan], New: [cyan]{len(self.data)}[/cyan])[/dim]"
+                )
             else:
-                logger.warning(f"Cannot truncate training data: length ({len(self.data)}) <= pred_len ({self.pred_len})")
+                self.console.print(
+                    f"[yellow]Warning:[/yellow] Cannot truncate training data: "
+                    f"length ([cyan]{len(self.data)}[/cyan]) <= pred_len ([cyan]{self.pred_len}[/cyan])"
+                )
 
         # Normalize if requested
         if self.scale:
