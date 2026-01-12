@@ -130,7 +130,7 @@ def ratio_spliter(split=(7,1,2),seq_len=0, df=None):
 
     return train_data, val_data, test_data
 
-def timestamp_spliter(split = ['2020-01-01', '2020-02-01'], seq_len=0, df=None, timestamp_col='timestamp'):
+def timestamp_spliter(split = ['2020-01-01', '2020-02-01'], seq_len=0, df=None, timestamp_col='timestamp', quiet=False):
     """
     Splits time series data into train/validation/test sets based on timestamp boundaries.
     
@@ -145,6 +145,7 @@ def timestamp_spliter(split = ['2020-01-01', '2020-02-01'], seq_len=0, df=None, 
         seq_len (int): Not used in timestamp splitting (maintained for API compatibility)
         df (pd.DataFrame): Input DataFrame with timestamp column
         timestamp_col (str): Name of the timestamp column
+        quiet (bool): If True, suppress "Discarding the data" messages (default: False)
     
     Returns:
         tuple: (train_data, val_data, test_data) as pandas DataFrames
@@ -170,9 +171,11 @@ def timestamp_spliter(split = ['2020-01-01', '2020-02-01'], seq_len=0, df=None, 
     else:
         raise ValueError("Split should be a list of strings")
     if len(split) == 4:
-        print(f'[ info ] Discarding the data before {split[0]}')
+        if not quiet:
+            print(f'[ info ] Discarding the data before {split[0]}')
         df = df[df[timestamp_col] >= split[0]]
-        print(f'[ info ] Discarding the data after {split[3]}')
+        if not quiet:
+            print(f'[ info ] Discarding the data after {split[3]}')
         df = df[df[timestamp_col] <= split[3]]
         split = split[1:3]
     train_data = df[df[timestamp_col] < split[0]]

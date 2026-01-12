@@ -268,8 +268,11 @@ class Data_Provider(object):
             callable: Configured splitting function that takes a DataFrame and returns
                      (train_data, val_data, test_data) tuple
         """
+        # Check if we're in embedding generation mode (suppress verbose messages)
+        quiet = getattr(self.args, 'embedding_generation_mode', False)
+        
         if self.dataset_config.spliter == 'timestamp':
-            spliter = partial(timestamp_spliter, split=self.dataset_config.split_info, seq_len=self.args.input_len, timestamp_col=self.dataset_config.timestamp_col)
+            spliter = partial(timestamp_spliter, split=self.dataset_config.split_info, seq_len=self.args.input_len, timestamp_col=self.dataset_config.timestamp_col, quiet=quiet)
         elif self.dataset_config.spliter == 'ratio':
             spliter = partial(ratio_spliter, split=self.dataset_config.split_info, seq_len=self.args.input_len)
         else:

@@ -1105,6 +1105,7 @@ class LLMEmbedder:
             'preload_hetero': False,  # Don't preload hetero data for embedding generation
             'gpu': 0,
             'use_gpu': False,  # CPU is fine for data loading
+            'embedding_generation_mode': True,  # Flag to suppress verbose messages and optimize for embedding generation
         })
         
         try:
@@ -1121,30 +1122,87 @@ class LLMEmbedder:
             else:
                 raise ValueError(f"Unknown split: {split}")
             
-            # Collect all samples from all entities
-            all_values = []
-            all_timestamps = []
+            # Collect all samples from all entities using DataLoader for efficiency
+            # Pre-compute total samples for progress bar and memory estimation
+            entity_lengths = {eid: len(ds) for eid, ds in datasets.items()}
+            total_samples = sum(entity_lengths.values())
             
-            for entity_id, entity_dataset in datasets.items():
-                for i in range(len(entity_dataset)):
-                    sample = entity_dataset[i]
-                    # Sample format: (sample_id, seq_x, seq_y, x_time, y_time, 
-                    #                 x_hetero, y_hetero, hetero_x_time, hetero_y_time,
-                    #                 hetero_general, hetero_channel)
-                    seq_x = sample[1]  # [seq_len, channels]
-                    x_time = sample[3]  # [seq_len, time_features]
-                    
-                    all_values.append(seq_x)
-                    all_timestamps.append(x_time)
-            
-            if not all_values:
+            if total_samples == 0:
                 raise ValueError(
                     f"No samples found for {dataset}/{split}. "
                     f"This may occur if the split is too small (needs at least seq_len + pred_len samples)."
                 )
             
-            values = np.stack(all_values, axis=0)  # [N, seq_len, channels]
-            timestamps = np.stack(all_timestamps, axis=0) if all_timestamps else None
+            # Use DataLoader for efficient batch processing instead of sequential __getitem__ calls
+            from torch.utils.data import DataLoader
+            
+            all_values = []
+            all_timestamps = []
+            
+            # Add progress indication if console is available
+            if self.console is not None:
+                from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, MofNCompleteColumn
+                
+                progress_columns = (
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(bar_width=40),
+                    MofNCompleteColumn(),
+                    TextColumn("•"),
+                    TimeElapsedColumn(),
+                )
+                
+                with Progress(*progress_columns, console=self.console, transient=False) as progress:
+                    task = progress.add_task(
+                        f"Collecting samples from {len(datasets)} entities",
+                        total=total_samples
+                    )
+                    
+                    for entity_id, entity_dataset in datasets.items():
+                        # Use DataLoader for efficient batch processing
+                        loader = DataLoader(
+                            entity_dataset,
+                            batch_size=64,  # Process multiple samples at once
+                            num_workers=0,  # Avoid multiprocessing complexity
+                            shuffle=False,
+                            collate_fn=None  # Use default collate
+                        )
+                        
+                        for batch in loader:
+                            # batch is a tuple: (sample_id, seq_x, seq_y, x_time, y_time, ...)
+                            # batch[1] is seq_x: [batch_size, seq_len, channels] (tensor)
+                            # batch[3] is x_time: [batch_size, seq_len] (tensor of int64 timestamps)
+                            batch_seq_x = batch[1].numpy()  # Convert tensor to numpy: [batch_size, seq_len, channels]
+                            batch_x_time = batch[3].numpy()  # Convert tensor to numpy: [batch_size, seq_len]
+                            
+                            # Extend lists with batch data
+                            all_values.append(batch_seq_x)
+                            all_timestamps.append(batch_x_time)
+                            
+                            # Update progress
+                            progress.update(task, advance=len(batch_seq_x))
+            else:
+                # Fallback: no progress bar, but still use DataLoader
+                for entity_id, entity_dataset in datasets.items():
+                    loader = DataLoader(
+                        entity_dataset,
+                        batch_size=64,
+                        num_workers=0,
+                        shuffle=False,
+                        collate_fn=None
+                    )
+                    
+                    for batch in loader:
+                        # batch[1] is seq_x: [batch_size, seq_len, channels] (tensor)
+                        # batch[3] is x_time: [batch_size, seq_len] (tensor of int64 timestamps)
+                        batch_seq_x = batch[1].numpy()  # Convert tensor to numpy
+                        batch_x_time = batch[3].numpy()  # Convert tensor to numpy
+                        
+                        all_values.append(batch_seq_x)
+                        all_timestamps.append(batch_x_time)
+            
+            # Concatenate all batches into final arrays
+            values = np.concatenate(all_values, axis=0)  # [N, seq_len, channels]
+            timestamps = np.concatenate(all_timestamps, axis=0) if all_timestamps else None
             
             # Build metadata (freq already extracted above)
             metadata = {'freq': freq, 'dataset': dataset, 'split': split}
