@@ -397,18 +397,16 @@ def _run_lightning_pretrain(args, exp_manager, data_module, leret_config):
 
 def _ensure_enc_in_for_lightning(args, exp_manager, data_module):
     """Ensure enc_in is set for Lightning training by inferring from data_module."""
-    # Check if enc_in is already set
-    if hasattr(args, 'model_config_overrides') and args.model_config_overrides:
-        if 'enc_in' in args.model_config_overrides:
+    # Check if enc_in is already set in model_config
+    if hasattr(args, 'model_config') and hasattr(args.model_config, 'enc_in'):
+        if args.model_config.enc_in is not None:
             return  # enc_in already set
     
     # Try to get from data_config.input_channel (must be not None)
     if (hasattr(args, 'data_config') and 
         hasattr(args.data_config, 'input_channel') and 
         args.data_config.input_channel is not None):
-        if not hasattr(args, 'model_config_overrides'):
-            args.model_config_overrides = {}
-        args.model_config_overrides['enc_in'] = args.data_config.input_channel
+        args.model_config.enc_in = args.data_config.input_channel
         if exp_manager:
             exp_manager.logger.info(f"Inferred enc_in={args.data_config.input_channel} from data_config.input_channel")
         return
@@ -420,9 +418,7 @@ def _ensure_enc_in_for_lightning(args, exp_manager, data_module):
         for batch in train_loader:
             sample_ids, batch_x, batch_y, *_ = batch
             enc_in = batch_x.shape[-1]  # Last dimension is number of channels
-            if not hasattr(args, 'model_config_overrides'):
-                args.model_config_overrides = {}
-            args.model_config_overrides['enc_in'] = int(enc_in)
+            args.model_config.enc_in = int(enc_in)
             if exp_manager:
                 exp_manager.logger.info(f"Inferred enc_in={enc_in} from first training batch (shape: {batch_x.shape})")
             break
@@ -600,19 +596,17 @@ class LeRetPyTorchTrainer:
         return torch.device('cpu')
     
     def _ensure_enc_in_set(self):
-        """Ensure enc_in is set in model_config_overrides by inferring from data if needed."""
-        # Check if enc_in is already set
-        if hasattr(self.args, 'model_config_overrides') and self.args.model_config_overrides:
-            if 'enc_in' in self.args.model_config_overrides:
+        """Ensure enc_in is set in model_config by inferring from data if needed."""
+        # Check if enc_in is already set in model_config
+        if hasattr(self.args, 'model_config') and hasattr(self.args.model_config, 'enc_in'):
+            if self.args.model_config.enc_in is not None:
                 return  # enc_in already set
         
         # Try to get from data_config.input_channel (must be not None)
         if (hasattr(self.args, 'data_config') and 
             hasattr(self.args.data_config, 'input_channel') and 
             self.args.data_config.input_channel is not None):
-            if not hasattr(self.args, 'model_config_overrides'):
-                self.args.model_config_overrides = {}
-            self.args.model_config_overrides['enc_in'] = self.args.data_config.input_channel
+            self.args.model_config.enc_in = self.args.data_config.input_channel
             if self.exp_manager:
                 self.exp_manager.logger.info(f"Inferred enc_in={self.args.data_config.input_channel} from data_config.input_channel")
             return
@@ -624,9 +618,7 @@ class LeRetPyTorchTrainer:
             for batch in train_loader:
                 sample_ids, batch_x, batch_y, *_ = batch
                 enc_in = batch_x.shape[-1]  # Last dimension is number of channels
-                if not hasattr(self.args, 'model_config_overrides'):
-                    self.args.model_config_overrides = {}
-                self.args.model_config_overrides['enc_in'] = int(enc_in)
+                self.args.model_config.enc_in = int(enc_in)
                 if self.exp_manager:
                     self.exp_manager.logger.info(f"Inferred enc_in={enc_in} from first training batch (shape: {batch_x.shape})")
                 break
