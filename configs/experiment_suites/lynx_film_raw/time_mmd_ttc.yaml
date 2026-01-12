@@ -31,7 +31,7 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
-          d_model: 512
+          d_model: 1024
           e_layers: 2
           n_heads: 8
         data:
@@ -40,10 +40,10 @@ suite:
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 8
-          learning_rate: 0.00025
-          patience: 5
-          epochs: 50
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -64,7 +64,7 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
-          d_model: 512
+          d_model: 1024
           e_layers: 2
           n_heads: 8
         data:
@@ -73,10 +73,10 @@ suite:
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 8
-          learning_rate: 0.00025
-          patience: 5
-          epochs: 50
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -97,7 +97,7 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
-          d_model: 512
+          d_model: 1024
           e_layers: 2
           n_heads: 8
         data:
@@ -106,10 +106,10 @@ suite:
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 8
-          learning_rate: 0.00025
-          patience: 5
-          epochs: 50
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -130,7 +130,7 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
-          d_model: 512
+          d_model: 1024
           e_layers: 2
           n_heads: 8
         data:
@@ -139,10 +139,10 @@ suite:
         training:
           input_len: 24       # Context length from Table 4
           output_len: 12      # Prediction length from Table 4
-          batch_size: 8
-          learning_rate: 0.00025
-          patience: 5
-          epochs: 50
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -163,7 +163,7 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
-          d_model: 512
+          d_model: 1024
           e_layers: 2
           n_heads: 8
         data:
@@ -172,10 +172,10 @@ suite:
         training:
           input_len: 24       # Context length from Table 4
           output_len: 48      # Prediction length from Table 4
-          batch_size: 8
-          learning_rate: 0.00025
-          patience: 5
-          epochs: 50
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -196,7 +196,7 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
-          d_model: 512
+          d_model: 1024
           e_layers: 2
           n_heads: 8
         data:
@@ -205,10 +205,10 @@ suite:
         training:
           input_len: 24       # Context length from Table 4
           output_len: 12      # Prediction length from Table 4
-          batch_size: 8
-          learning_rate: 0.00025
-          patience: 5
-          epochs: 50
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -229,7 +229,7 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
-          d_model: 512
+          d_model: 1024
           e_layers: 2
           n_heads: 8
         data:
@@ -238,10 +238,10 @@ suite:
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 8
-          learning_rate: 0.00025
-          patience: 5
-          epochs: 50
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -262,7 +262,7 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
-          d_model: 512
+          d_model: 1024
           e_layers: 2
           n_heads: 8
         data:
@@ -271,10 +271,10 @@ suite:
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 8
-          learning_rate: 0.00025
-          patience: 5
-          epochs: 50
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -299,16 +299,19 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
         data:
           name: "ttc_weather"
           config_path: "data_configs/ttc/climate/config.yaml"
         training:
           input_len: 7        # Context length from Table 4
           output_len: 7       # Prediction length from Table 4
-          batch_size: 768
-          learning_rate: 8.66e-4
-          patience: 5
-          epochs: 50
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -329,16 +332,19 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
         data:
           name: "ttc_medical"
           config_path: "data_configs/ttc/medical/config.yaml"
         training:
           input_len: 7        # Context length from Table 4
           output_len: 7       # Prediction length from Table 4
-          batch_size: 768
-          learning_rate: 8.66e-4
-          patience: 5
-          epochs: 50
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
