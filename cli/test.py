@@ -83,15 +83,21 @@ def _load_and_resolve_config(
     # If it's a suite config, we need resume_experiment_id to load config from experiment directory
     if 'suite' in config_dict:
         # This is a suite config - need resume_experiment_id to find the experiment directory
+        # Get resume_suite_id from CLI or config file
+        suite_info = config_dict.get('suite', {})
+        suite_id = resume_suite_id or suite_info.get('resume_suite_id') or suite_info.get('name', 'unknown')
+        
+        # For resume_experiment_id, user must specify which experiment to test
+        # (suite configs have multiple experiments, so we need to know which one)
         if not resume_experiment_id:
             typer.echo(
                 "Error: resume_experiment_id is required when using a suite config.\n"
-                "  Provide it via CLI (--resume-id).",
+                "  Provide it via CLI (--resume-id).\n"
+                "  Note: Each experiment in the suite has its own resume_experiment_id in the config file.",
                 err=True
             )
             raise typer.Exit(code=1)
         
-        suite_id = resume_suite_id or config_dict.get('suite', {}).get('name', 'unknown')
         exp_id = resume_experiment_id
         
         # Determine experiment directory and load config from there
@@ -278,15 +284,21 @@ def lightning(
         # If it's a suite config, we need resume_experiment_id to load config from experiment directory
         if 'suite' in config_dict:
             # This is a suite config - need resume_experiment_id to find the experiment directory
+            # Get resume_suite_id from CLI or config file
+            suite_info = config_dict.get('suite', {})
+            suite_id = resume_suite_id or suite_info.get('resume_suite_id') or suite_info.get('name', 'unknown')
+            
+            # For resume_experiment_id, user must specify which experiment to test
+            # (suite configs have multiple experiments, so we need to know which one)
             if not resume_experiment_id:
                 typer.echo(
                     "Error: resume_experiment_id is required when using a suite config.\n"
-                    "  Provide it via CLI (--resume-id).",
+                    "  Provide it via CLI (--resume-id).\n"
+                    "  Note: Each experiment in the suite has its own resume_experiment_id in the config file.",
                     err=True
                 )
                 raise typer.Exit(code=1)
             
-            suite_id = resume_suite_id or config_dict.get('suite', {}).get('name', 'unknown')
             exp_id = resume_experiment_id
             
             # Determine experiment directory and load config from there
