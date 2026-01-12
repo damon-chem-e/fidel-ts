@@ -279,21 +279,9 @@ class SuiteExecutor:
             if exp.get('enabled', True)
         ]
         
-        # Validate resume configuration: if suite is resuming, all experiments must have resume_experiment_id
-        if self.suite_info.get('resume_suite_id'):
-            missing_resume_ids = []
-            for exp in experiments:
-                overrides = exp.get('overrides', {})
-                if 'resume_experiment_id' not in overrides:
-                    missing_resume_ids.append(exp.get('name', 'unknown'))
-            
-            if missing_resume_ids:
-                raise ValueError(
-                    f"Suite is resuming (resume_suite_id: {self.suite_info.get('resume_suite_id')}), "
-                    f"but the following experiments are missing 'resume_experiment_id' in their overrides: "
-                    f"{', '.join(missing_resume_ids)}. "
-                    f"When resuming a suite, all enabled experiments must specify their resume_experiment_id."
-                )
+        # Validate resume configuration: if suite is resuming, experiments with resume_experiment_id will resume,
+        # experiments without it will start fresh (useful for experiments that never ran)
+        # Note: resume_experiment_id is optional - missing it means the experiment will start fresh
         
         logger.info(f"Starting suite execution: {len(experiments)} experiments")
         
@@ -359,16 +347,19 @@ class SuiteExecutor:
             raise ValueError(f"Template path not specified for experiment '{exp_name}'")
         
         # If suite is resuming, inject resume_suite_id into experiment overrides
-        # and validate that resume_experiment_id is set for this experiment
+        # resume_experiment_id is optional - if missing, experiment will start fresh
         resume_experiment_id = None
         if self.suite_info.get('resume_suite_id'):
-            if 'resume_experiment_id' not in overrides:
-                raise ValueError(
-                    f"Suite is resuming (resume_suite_id: {self.suite_info.get('resume_suite_id')}), "
-                    f"but experiment '{exp_name}' does not have 'resume_experiment_id' set in its overrides. "
-                    f"When resuming a suite, all experiments must specify their resume_experiment_id."
-                )
-            resume_experiment_id = overrides.get('resume_experiment_id')
+            # Check both top-level and inside experiment block for resume_experiment_id
+            experiment_block = overrides.get('experiment', {})
+            # Get resume_experiment_id from either location (optional - None means start fresh)
+            resume_experiment_id = overrides.get('resume_experiment_id') or experiment_block.get('resume_experiment_id')
+            # Warn if resume_experiment_id is missing (experiment will start fresh)
+            if not resume_experiment_id:
+                logger.warning(f"Experiment '{exp_name}' is missing 'resume_experiment_id' - it will start fresh (new experiment ID will be generated)")
+            # Move resume_experiment_id to top level if it was in experiment block (for consistency)
+            if resume_experiment_id and 'resume_experiment_id' in experiment_block and 'resume_experiment_id' not in overrides:
+                overrides['resume_experiment_id'] = resume_experiment_id
             # Inject resume_suite_id from suite level into experiment overrides
             overrides['resume_suite_id'] = self.suite_info.get('resume_suite_id')
         
