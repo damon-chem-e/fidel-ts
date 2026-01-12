@@ -31,7 +31,7 @@ suite:
           name: "TimeCMA"
           config_path: "model_configs/general/TimeCMA.yaml"
         data:
-          name: "Bear_room"
+          name: "fidel_Bear_room:fullBear_hetero_TGTSF"
           config_path: "data_configs/Bear_room/fullBear_hetero_TGTSF.yaml"
         training:
           input_len: 288      # 1 day at 5-min intervals (288 = 24h * 12)

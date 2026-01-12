@@ -31,7 +31,7 @@ suite:
           name: "TimeCMA"
           config_path: "model_configs/general/TimeCMA.yaml"
         data:
-          name: "Canada_photovoltaics_plants"
+          name: "fidel_Canada_photovoltaics_plants:fullCPP_hetero_TGTSF"
           config_path: "data_configs/Canada_photovoltaics_plants/fullCPP_hetero_TGTSF.yaml"
         training:
           input_len: 360      # 15 days at hourly intervals (half month)
