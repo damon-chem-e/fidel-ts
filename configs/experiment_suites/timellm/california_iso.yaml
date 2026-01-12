@@ -17,6 +17,7 @@ suite:
   name: "timellm_california_iso"
   description: "Train Time-LLM model on California_ISO dataset with 15-day context, 1-week prediction (frozen GPT-2 backbone)"
   tags: ["timellm", "time-llm", "reprogramming", "llm", "frozen-backbone", "pytorch", "fidel-ts", "california_iso", "iclr2024"]
+  resume_suite_id: "timellm_california_iso_20260112_141144"
   
   # Execution settings
   execution:
@@ -80,3 +81,4 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/timellm/california_iso"
+          resume_experiment_id: "20260112-141144_a05ebe165526"
