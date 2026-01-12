@@ -291,7 +291,7 @@ suite:
           name: "TimeCMA"
           config_path: "model_configs/general/TimeCMA.yaml"
         data:
-          name: "time_mmd_health"
+          name: "time_mmd_public_health"
           config_path: "data_configs/time_mmd/Public_Health/config.yaml"
         training:
           input_len: 24       # Context length from Table 4
@@ -310,7 +310,7 @@ suite:
           devices: "0"
         wandb:
           enabled: true
-          tags: ["timecma", "time_mmd_health"]
+          tags: ["timecma", "time_mmd_public_health"]
         # LLM embedding configuration for TimeCMA
         llm_embedding:
           model_name: "gpt2"

@@ -151,7 +151,8 @@ class TimeCMATemplate(PromptTemplate):
         # Format values based on config
         value_format = self.config.get('value_format', 'integer')
         if value_format == 'integer':
-            values_str = ", ".join([str(int(v)) for v in channel_values])
+            # Handle NaN values when converting to integer
+            values_str = ", ".join([str(int(v)) if not np.isnan(v) else "N/A" for v in channel_values])
         elif value_format == 'float2':
             values_str = ", ".join([f"{v:.2f}" for v in channel_values])
         else:
@@ -263,7 +264,9 @@ class SimpleTemplate(PromptTemplate):
         
         value_format = self.config.get('value_format', 'float2')
         if value_format == 'integer':
-            values_str = ", ".join([str(int(v)) for v in channel_values])
+            # Handle NaN values when converting to integer
+            import numpy as np
+            values_str = ", ".join([str(int(v)) if not np.isnan(v) else "N/A" for v in channel_values])
         else:
             values_str = ", ".join([f"{v:.2f}" for v in channel_values])
         
@@ -326,7 +329,8 @@ class MMTSFlibTemplate(PromptTemplate):
         # Format values based on config
         value_format = self.config.get('value_format', 'float2')
         if value_format == 'integer':
-            values_str = ", ".join([str(int(v)) for v in channel_values])
+            # Handle NaN values when converting to integer
+            values_str = ", ".join([str(int(v)) if not np.isnan(v) else "N/A" for v in channel_values])
         elif value_format == 'float2':
             values_str = ", ".join([f"{v:.2f}" for v in channel_values])
         else:

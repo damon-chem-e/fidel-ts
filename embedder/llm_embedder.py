@@ -871,9 +871,21 @@ class LLMEmbedder:
         # ==========================================================================
         if dataset.startswith('time_mmd_'):
             domain = dataset.replace('time_mmd_', '')
-            # Handle case variants: traffic -> Traffic, public_health -> Public_Health
-            domain_parts = domain.split('_')
-            domain_capitalized = '_'.join(p.capitalize() for p in domain_parts)
+            
+            # Special case mappings for non-standard capitalization
+            domain_mapping = {
+                'socialgood': 'SocialGood',  # CamelCase, not Socialgood
+                'algriculture': 'Algriculture',  # Keep the typo as-is in filesystem
+            }
+            
+            # Check if we have a special mapping
+            if domain in domain_mapping:
+                domain_capitalized = domain_mapping[domain]
+            else:
+                # Handle case variants: traffic -> Traffic, public_health -> Public_Health
+                domain_parts = domain.split('_')
+                domain_capitalized = '_'.join(p.capitalize() for p in domain_parts)
+            
             config_path = Path(f'data_configs/time_mmd/{domain_capitalized}/config.yaml')
             
             if not config_path.exists():
