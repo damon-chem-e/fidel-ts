@@ -199,6 +199,9 @@ class FidelTSEmbeddingLoader:
         """
         Load embeddings from old .pkl files (explicitly requested).
         
+        Validates that static embeddings contain required keys (channel_info).
+        If validation fails, provides clear error with guidance.
+        
         Returns:
             tuple: (dynamic_embeddings, static_embeddings)
         """
@@ -233,6 +236,16 @@ class FidelTSEmbeddingLoader:
             print(f"[ warning ] Old static embeddings file not found: {static_path}")
             static_embeddings = None
         
+        # Validate static embeddings have required keys
+        # channel_info is required for Fidel-TS datasets with hetero_info
+        if static_embeddings is not None and 'channel_info' not in static_embeddings:
+            raise ValueError(
+                f"Old static embeddings file is missing 'channel_info' key: {static_path}. "
+                f"The old .pkl file may be corrupted or was created with a buggy version. "
+                f"Set use_old_embeddings=False to use the new cache system which will "
+                f"recompute embeddings from the text source (static_info.json)."
+            )
+        
         return dynamic_embeddings, static_embeddings
     
     def _find_cache_dir(self) -> Optional[Path]:
@@ -250,14 +263,38 @@ class FidelTSEmbeddingLoader:
         """
         Load embeddings from new cache directory.
         
+        Validates that static embeddings contain required keys (channel_info).
+        If validation fails and text source is available, triggers recomputation.
+        
         Args:
             cache_dir: Path to cache directory
         
         Returns:
             tuple: (dynamic_embeddings, static_embeddings)
+        
+        Raises:
+            ValueError: If cache is invalid and no text source available for recomputation
         """
         cached_data = EmbeddingCacheManager.load_fidel_ts_embeddings(cache_dir)
-        return cached_data['dynamic'], cached_data['static']
+        dynamic_embeddings = cached_data['dynamic']
+        static_embeddings = cached_data['static']
+        
+        # Validate static embeddings have required keys
+        # channel_info is required for Fidel-TS datasets with hetero_info
+        if static_embeddings is not None and 'channel_info' not in static_embeddings:
+            print(f'[ warning ] Cached static embeddings missing "channel_info" key. Cache may be outdated.')
+            print(f'[ info ] Attempting to recompute embeddings from text source...')
+            
+            # Try to recompute from text
+            if self._has_text_source():
+                return self._compute_and_cache()
+            else:
+                raise ValueError(
+                    f"Cached static embeddings are missing 'channel_info' and no text source is available "
+                    f"for recomputation. Delete the cache directory and ensure text source files exist: {cache_dir}"
+                )
+        
+        return dynamic_embeddings, static_embeddings
     
     def _has_text_source(self) -> bool:
         """Check if text source files are available for re-embedding."""
