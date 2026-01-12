@@ -402,8 +402,10 @@ def _ensure_enc_in_for_lightning(args, exp_manager, data_module):
         if 'enc_in' in args.model_config_overrides:
             return  # enc_in already set
     
-    # Try to get from data_config.input_channel
-    if hasattr(args, 'data_config') and hasattr(args.data_config, 'input_channel'):
+    # Try to get from data_config.input_channel (must be not None)
+    if (hasattr(args, 'data_config') and 
+        hasattr(args.data_config, 'input_channel') and 
+        args.data_config.input_channel is not None):
         if not hasattr(args, 'model_config_overrides'):
             args.model_config_overrides = {}
         args.model_config_overrides['enc_in'] = args.data_config.input_channel
@@ -597,8 +599,10 @@ class LeRetPyTorchTrainer:
             if 'enc_in' in self.args.model_config_overrides:
                 return  # enc_in already set
         
-        # Try to get from data_config.input_channel
-        if hasattr(self.args, 'data_config') and hasattr(self.args.data_config, 'input_channel'):
+        # Try to get from data_config.input_channel (must be not None)
+        if (hasattr(self.args, 'data_config') and 
+            hasattr(self.args.data_config, 'input_channel') and 
+            self.args.data_config.input_channel is not None):
             if not hasattr(self.args, 'model_config_overrides'):
                 self.args.model_config_overrides = {}
             self.args.model_config_overrides['enc_in'] = self.args.data_config.input_channel
