@@ -367,6 +367,7 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260112-175332_4661319d8c63"
     
     # Medical: context=7, prediction=7
     - name: "lynx_film_raw_ttc_medical"
@@ -387,6 +388,8 @@ suite:
           config_path: "data_configs/ttc/medical/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          filter_insufficient_entities: true  # Filter out entities without enough data for 7/7 input/output with 70/10/20 split
+          missing_value_strategy: forward_fill_indicators  # Forward fill missing values and create indicator variables
         training:
           input_len: 7        # Context length from Table 4
           output_len: 7       # Prediction length from Table 4
