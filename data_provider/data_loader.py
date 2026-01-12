@@ -533,7 +533,8 @@ class Heterogeneous_Dataset(Dataset):
                 f"Got output_format='{self.output_format}'. "
                 f"For text formats (json/dict/csv), use TimeMMD_Dataset with Time-MMD or TTC datasets instead."
             )
-        self.noise = noise
+        # Ensure noise is always a number (default to 0.0 if None is passed)
+        self.noise = noise if noise is not None else 0.0
 
     def __addnoise__(self, x):
         x = x * (1 - self.noise) + np.random.randn(*x.shape) * self.noise
