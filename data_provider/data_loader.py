@@ -15,6 +15,7 @@ from utils.missing_value_handler import handle_missing_values
 from embedder import FidelTSEmbeddingLoader, FidelTSPathResolver
 from typing import Optional, Dict, Any
 from utils.timefeatures import time_features
+from rich.console import Console
 
 warnings.filterwarnings('ignore')
 
@@ -76,7 +77,7 @@ class Universal_Dataset(Dataset):
                  timezone=None, downsample=None, entity_id=None, 
                  missing_value_strategy='none', required_indicators=None,
                  generate_time_features=False, time_feature_freq='h',
-                 llm_embedding_provider=None, truncate_train_for_purge=False):
+                 llm_embedding_provider=None, truncate_train_for_purge=False, console=None):
         # size [seq_len, label_len, pred_len]
         # info
         self.seq_len = seq_len
@@ -117,6 +118,9 @@ class Universal_Dataset(Dataset):
         
         # Purge period truncation to remove lookahead bias (see docs/train_val_test_purge_period_issue.md)
         self.truncate_train_for_purge = truncate_train_for_purge
+        
+        # Rich Console for formatted output (integrates with progress bars)
+        self.console = console if console is not None else Console()
 
         self.__read_data__()
         self.preload_hetero = preload_hetero
@@ -250,10 +254,16 @@ class Universal_Dataset(Dataset):
                 original_len = len(self.data)
                 self.data = self.data[:-self.pred_len]
                 self.timestamp = self.timestamp[:-self.pred_len]
-                logger.info(f"Truncated training data by {self.pred_len} points to remove lookahead bias in val split. "
-                           f"Original: {original_len}, New: {len(self.data)}")
+                # Use Rich console for formatted output that integrates with progress bars
+                self.console.print(
+                    f"[dim]Truncated training data by [cyan]{self.pred_len}[/cyan] points to remove lookahead bias "
+                    f"(Original: [cyan]{original_len}[/cyan], New: [cyan]{len(self.data)}[/cyan])[/dim]"
+                )
             else:
-                logger.warning(f"Cannot truncate training data: length ({len(self.data)}) <= pred_len ({self.pred_len})")
+                self.console.print(
+                    f"[yellow]Warning:[/yellow] Cannot truncate training data: "
+                    f"length ([cyan]{len(self.data)}[/cyan]) <= pred_len ([cyan]{self.pred_len}[/cyan])"
+                )
 
         if self.scale:
             self.scaler.fit(train_data)

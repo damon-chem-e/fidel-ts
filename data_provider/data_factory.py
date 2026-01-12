@@ -632,6 +632,7 @@ class Data_Provider(object):
             time_feature_freq=time_feature_freq,
             llm_embedding_provider=llm_embedding_provider,
             truncate_train_for_purge=getattr(self.args, 'truncate_train_for_purge', False),
+            console=self.console,
         )
     
     def get_train(self, return_type='loader'):
@@ -786,7 +787,8 @@ class Data_Provider(object):
                                                     entity_id=i, missing_value_strategy=missing_value_strategy, required_indicators=required_indicators,
                                                     generate_time_features=generate_time_features, time_feature_freq=time_feature_freq,
                                                     llm_embedding_provider=llm_embedding_provider,
-                                                    truncate_train_for_purge=getattr(self.args, 'truncate_train_for_purge', False))
+                                                    truncate_train_for_purge=getattr(self.args, 'truncate_train_for_purge', False),
+                                                    console=self.console)
                     datasets[i] = dataset
                     # Collect indicator columns for aggregated logging
                     if hasattr(dataset, 'missing_indicators') and dataset.missing_indicators:
@@ -826,7 +828,8 @@ class Data_Provider(object):
                                                 entity_id=i, missing_value_strategy=missing_value_strategy, required_indicators=required_indicators,
                                                 generate_time_features=generate_time_features, time_feature_freq=time_feature_freq,
                                                 llm_embedding_provider=llm_embedding_provider,
-                                                truncate_train_for_purge=getattr(self.args, 'truncate_train_for_purge', False))
+                                                truncate_train_for_purge=getattr(self.args, 'truncate_train_for_purge', False),
+                                                console=self.console)
                 datasets[i] = dataset
                 # Collect indicator columns for aggregated logging
                 if hasattr(dataset, 'missing_indicators') and dataset.missing_indicators:
