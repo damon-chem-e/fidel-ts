@@ -13,7 +13,7 @@ suite:
   # Execution settings
   execution:
     parallel: false
-    continue_on_error: true
+    continue_on_error: false
     log_dir: "./logs/suites/lynx_film_raw/time_mmd_ttc"
     
   # Experiments in this suite

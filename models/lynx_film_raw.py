@@ -35,6 +35,7 @@ For t_known:
 from torch import nn
 import torch
 import copy
+import numpy as np
 from layers.TGTSF_torch import text_encoder
 from layers.lynx_film_layers import iTransformerFilm
 
@@ -305,6 +306,68 @@ class Model(nn.Module):
         
         return final_pred
     
+    def _convert_hetero_channel_to_tensor(self, hetero_channel, device):
+        """
+        Convert hetero_channel to a tensor and move it to the specified device.
+        
+        Handles various input types that hetero_channel can be:
+        - List of numpy arrays, tensors, strings, or other types
+        - Numpy array
+        - String (creates placeholder tensor)
+        - Tensor (moves to device)
+        - Other types (attempts conversion, falls back to placeholder)
+        
+        Args:
+            hetero_channel: Channel descriptions in various formats
+            device: Target device for the tensor
+            
+        Returns:
+            torch.Tensor: hetero_channel as a float tensor on the specified device
+        """
+        # Handle list types
+        if isinstance(hetero_channel, list):
+            if len(hetero_channel) == 0:
+                # Empty list - create zero tensor as placeholder
+                return torch.zeros((1, 1), dtype=torch.float32).to(device)
+            elif isinstance(hetero_channel[0], str):
+                # List of strings - create zero tensor as placeholder (not used in embedding mode)
+                return torch.zeros((1, 1), dtype=torch.float32).to(device)
+            elif isinstance(hetero_channel[0], (np.ndarray, np.generic)):
+                # List of numpy arrays - stack them into a single tensor
+                return torch.from_numpy(np.stack(hetero_channel)).float().to(device)
+            elif isinstance(hetero_channel[0], torch.Tensor):
+                # List of tensors - stack them
+                return torch.stack(hetero_channel).float().to(device)
+            else:
+                # Try to convert list to tensor directly
+                try:
+                    return torch.tensor(hetero_channel, dtype=torch.float32).to(device)
+                except (TypeError, ValueError):
+                    # If conversion fails, use zero tensor as placeholder
+                    return torch.zeros((1, 1), dtype=torch.float32).to(device)
+        
+        # Handle numpy array
+        elif isinstance(hetero_channel, (np.ndarray, np.generic)):
+            return torch.from_numpy(np.asarray(hetero_channel)).float().to(device)
+        
+        # Handle string format
+        elif isinstance(hetero_channel, str):
+            # String format - create zero tensor as placeholder (not used in embedding mode)
+            return torch.zeros((1, 1), dtype=torch.float32).to(device)
+        
+        # Handle tensor
+        elif isinstance(hetero_channel, torch.Tensor):
+            # Already a tensor, just move to device
+            return hetero_channel.float().to(device)
+        
+        # Fallback: try to convert to tensor
+        else:
+            try:
+                return torch.tensor(hetero_channel, dtype=torch.float32).to(device)
+            except (TypeError, ValueError):
+                # If conversion fails, use zero tensor as placeholder
+                return torch.zeros((1, 1), dtype=torch.float32).to(device)
+    
     def move_to_device(self, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, 
                       hetero_x_time, hetero_y_time, hetero_general, hetero_channel, device):
         """
@@ -333,7 +396,9 @@ class Model(nn.Module):
         # Move time series data
         seq_x = seq_x.float().to(device)
         seq_y = seq_y.float().to(device)
-        hetero_channel = hetero_channel.float().to(device)
+        
+        # Convert hetero_channel to tensor and move to device
+        hetero_channel = self._convert_hetero_channel_to_tensor(hetero_channel, device)
         
         # Move text based on timestamp_semantics
         # - t_about: We use y_hetero (news) - forecasts ABOUT prediction window
