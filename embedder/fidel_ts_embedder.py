@@ -429,11 +429,23 @@ class FidelTSEmbeddingLoader:
                 keys_to_type['downtime_prompt'] = 'downtime_prompt'
         
         # Collect channel_info texts
+        # Handles both flat (channel_id -> string) and nested (channel_id -> {measurement_type: string}) structures
         if 'channel_info' in static_text:
             channel_info_text = static_text['channel_info']
             if isinstance(channel_info_text, dict):
                 for channel_id, channel_text in channel_info_text.items():
-                    if isinstance(channel_text, str) and channel_text.strip():
+                    # Handle nested dict structure (e.g., Bear_room has {measurement_type: description})
+                    # Flatten by concatenating all values with separator
+                    if isinstance(channel_text, dict):
+                        # Concatenate all measurement descriptions into a single string
+                        flattened_text = ' '.join(str(v) for v in channel_text.values() if v)
+                        if flattened_text.strip():
+                            static_texts_list.append(flattened_text)
+                            key = f'channel_info_{channel_id}'
+                            text_keys_list.append(key)
+                            keys_to_type[key] = 'channel_info'
+                    elif isinstance(channel_text, str) and channel_text.strip():
+                        # Simple string case (e.g., NYC)
                         static_texts_list.append(channel_text)
                         key = f'channel_info_{channel_id}'
                         text_keys_list.append(key)
