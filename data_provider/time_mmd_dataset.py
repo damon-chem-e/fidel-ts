@@ -566,7 +566,7 @@ class TimeMMD_Dataset(Universal_Dataset):
                  missing_value_strategy='none', required_indicators=None,
                  aggregation_method='cls', use_old_pkl=False,
                  generate_time_features=False, time_feature_freq='h',
-                 llm_embedding_provider=None, truncate_train_for_purge=False):
+                 llm_embedding_provider=None, truncate_train_for_purge=False, console=None):
         """
         Initialize TimeMMD_Dataset.
         
@@ -628,6 +628,7 @@ class TimeMMD_Dataset(Universal_Dataset):
             time_feature_freq=time_feature_freq,
             llm_embedding_provider=llm_embedding_provider,  # Pass LLM provider to parent
             truncate_train_for_purge=truncate_train_for_purge,  # Pass purge truncation option
+            console=console,  # Pass console for progress bars and logging
         )
         
         # Setup text getter after data is loaded (after parent.__init__ which loads data)
