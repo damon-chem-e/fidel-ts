@@ -296,6 +296,12 @@ def evaluate(config):
     else:
         state_dict = checkpoint
 
+    # Handle torch.compile checkpoints (state dict keys have "_orig_mod." prefix)
+    # Check if this is a compiled model checkpoint
+    if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
+        print("[Info] Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys")
+        state_dict = {key.replace('_orig_mod.', ''): value for key in state_dict.keys() for value in [state_dict[key]]}
+
     model.load_state_dict(state_dict)
     model.eval()
 

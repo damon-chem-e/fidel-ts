@@ -351,6 +351,12 @@ def _load_model_and_checkpoint(experiment_dir, eval_config, checkpoint_config):
     else:
         state_dict = checkpoint
     
+    # Handle torch.compile checkpoints (state dict keys have "_orig_mod." prefix)
+    # Check if this is a compiled model checkpoint
+    if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
+        print("[Info] Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys")
+        state_dict = {key.replace('_orig_mod.', ''): value for key in state_dict.keys() for value in [state_dict[key]]}
+    
     # Load state dict into model
     model.load_state_dict(state_dict)
     model.eval()
@@ -584,7 +590,7 @@ def _print_summary(results, eval_config):
             if is_concat:
                 concat_splits_with_denorm.append(split_name.upper())
         else:
-            print(f"  Denormalized - N/A (scaler not available)")
+            print("  Denormalized - N/A (scaler not available)")
         print(f"  Samples: {result['num_samples']}")
     
     print("="*50)

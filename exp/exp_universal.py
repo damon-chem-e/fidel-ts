@@ -646,12 +646,21 @@ class Experiment(Exp_Basic):
                 import torch
                 checkpoint = torch.load(checkpoint_path, map_location=self.device)
                 
-                # Load model state
+                # Extract model state dict
                 if 'model_state_dict' in checkpoint:
-                    self.model.load_state_dict(checkpoint['model_state_dict'])
+                    state_dict = checkpoint['model_state_dict']
                 else:
                     # Try loading directly (for Lightning checkpoints converted to PyTorch format)
-                    self.model.load_state_dict(checkpoint)
+                    state_dict = checkpoint
+                
+                # Handle torch.compile checkpoints (state dict keys have "_orig_mod." prefix)
+                # Check if this is a compiled model checkpoint
+                if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
+                    self.exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys")
+                    state_dict = {key.replace('_orig_mod.', ''): value for key in state_dict.keys() for value in [state_dict[key]]}
+                
+                # Load model state
+                self.model.load_state_dict(state_dict)
                 
                 # Load optimizer state if available
                 if 'optimizer_state_dict' in checkpoint and model_optim is not None:
@@ -742,7 +751,16 @@ class Experiment(Exp_Basic):
         """
         # Load best model from checkpoint
         best_model_path = os.path.join(path, 'checkpoint.pth')
-        self.model.load_state_dict(torch.load(best_model_path))
+        checkpoint = torch.load(best_model_path)
+        
+        # Handle torch.compile checkpoints (state dict keys have "_orig_mod." prefix)
+        # Check if this is a compiled model checkpoint
+        if isinstance(checkpoint, dict) and any(key.startswith('_orig_mod.') for key in checkpoint.keys()):
+            if self.exp_manager:
+                self.exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys")
+            checkpoint = {key.replace('_orig_mod.', ''): value for key in checkpoint.keys() for value in [checkpoint[key]]}
+        
+        self.model.load_state_dict(checkpoint)
         
         # Save checkpoint to ExperimentManager if available
         if self.exp_manager is not None:

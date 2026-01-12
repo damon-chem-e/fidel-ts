@@ -456,7 +456,14 @@ def _run_lightning_finetune(args, exp_manager, data_module, leret_config, pretra
     _ensure_enc_in_for_lightning(args, exp_manager, data_module)
     
     model = LeRetLightningModule(args, exp_manager, "finetune", leret_config)
-    model.load_state_dict(checkpoint['state_dict'], strict=False)
+    
+    # Extract state dict and handle torch.compile checkpoints
+    state_dict = checkpoint['state_dict']
+    if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
+        exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys")
+        state_dict = {key.replace('_orig_mod.', ''): value for key in state_dict.keys() for value in [state_dict[key]]}
+    
+    model.load_state_dict(state_dict, strict=False)
     
     checkpoint_dir = str(exp_manager.get_checkpoint_dir())
     checkpoint_cb = ModelCheckpoint(
@@ -898,11 +905,18 @@ class LeRetPyTorchTrainer:
         if ckpt_exp_id and ckpt_exp_id != self.exp_manager.experiment_id:
             raise ValueError(f"Experiment ID mismatch: {ckpt_exp_id} vs {self.exp_manager.experiment_id}")
         
-        # Load weights
+        # Extract state dict and handle torch.compile checkpoints
         if 'model_state_dict' in checkpoint:
-            self.model.load_state_dict(checkpoint['model_state_dict'])
+            state_dict = checkpoint['model_state_dict']
         else:
-            self.model.load_state_dict(checkpoint['state_dict'], strict=False)
+            state_dict = checkpoint['state_dict']
+        
+        if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
+            self.exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys")
+            state_dict = {key.replace('_orig_mod.', ''): value for key in state_dict.keys() for value in [state_dict[key]]}
+        
+        # Load weights
+        self.model.load_state_dict(state_dict, strict=False)
         
         self.exp_manager.logger.info(f"Loaded pretrain checkpoint: {pretrain_ckpt_path}")
         
@@ -950,7 +964,14 @@ class LeRetPyTorchTrainer:
         
         # Load best model for testing
         best_model_path = checkpoint_dir / 'checkpoint.pth'
-        self.model.load_state_dict(torch.load(best_model_path, map_location=self.device))
+        state_dict = torch.load(best_model_path, map_location=self.device)
+        
+        # Handle torch.compile checkpoints (state dict keys have "_orig_mod." prefix)
+        if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
+            self.exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys")
+            state_dict = {key.replace('_orig_mod.', ''): value for key in state_dict.keys() for value in [state_dict[key]]}
+        
+        self.model.load_state_dict(state_dict)
         
         # Final testing
         self.exp_manager.logger.info("Running final testing...")
