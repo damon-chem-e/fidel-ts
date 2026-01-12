@@ -123,7 +123,12 @@ class FidelTSPathResolver:
         # Paths
         old_embedding_path = root_path / old_embedding_file
         old_text_path = root_path.parent.parent / text_source_subdir / 'formal_report' / old_text_file
-        old_static_path = root_path / hetero_info['static_path']
+        
+        # For Bear_room, static files are at dataset root, not in hetero subdirectory
+        # root_path: ./data/Bear_room/hetero/weather/report_embedding/formal_report
+        # dataset_root: ./data/Bear_room (4 levels up)
+        dataset_root = root_path.parent.parent.parent.parent
+        old_static_path = dataset_root / hetero_info['static_path']
         
         # New cache base path
         # From: data/Bear_room/hetero/weather/report_embedding/formal_report
