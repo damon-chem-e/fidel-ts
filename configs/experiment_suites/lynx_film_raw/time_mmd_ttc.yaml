@@ -9,6 +9,7 @@ suite:
   name: "lynx_film_raw_time_mmd_ttc"
   description: "Train lynx_film_raw model on all Time MMD and TTC datasets"
   tags: ["lynx_film_raw", "multimodal", "pytorch", "time_mmd", "ttc", "film"]
+  resume_suite_id: "lynx_film_raw_time_mmd_ttc_20260112_165034"
   
   # Execution settings
   execution:
@@ -58,6 +59,7 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260112-165034_a80e67e1db27"
     
     # Climate: context=24, prediction=6
     - name: "lynx_film_raw_timemmd_climate"
@@ -95,6 +97,7 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260112-165246_2c91222ecb6f"
     
     # Economy: context=24, prediction=6
     - name: "lynx_film_raw_timemmd_economy"
@@ -132,6 +135,7 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260112-165323_33e0caa120db"
     
     # Energy: context=24, prediction=12
     - name: "lynx_film_raw_timemmd_energy"
@@ -169,6 +173,7 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260112-165426_d3b32dbd3b5f"
     
     # Environment: context=24, prediction=48
     - name: "lynx_film_raw_timemmd_environment"
@@ -206,6 +211,7 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260112-165600_7faa21e30710"
     
     # Health (Public_Health): context=24, prediction=12
     - name: "lynx_film_raw_timemmd_health"
@@ -243,6 +249,7 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260112-165905_e5e68cc97e77"
     
     # Socialgood: context=24, prediction=6
     - name: "lynx_film_raw_timemmd_socialgood"
@@ -280,6 +287,7 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260112-170109_a6c4cfb44081"
     
     # Traffic: context=24, prediction=6
     - name: "lynx_film_raw_timemmd_traffic"
@@ -317,6 +325,7 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260112-170220_6802e9c22160"
     
     # ===========================================
     # TTC Datasets (Kim et al., 2024)
@@ -351,13 +360,14 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "ttc_weather"]
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260112-170254_0ef2d9e8e8b5"
     
     # Medical: context=7, prediction=7
     - name: "lynx_film_raw_ttc_medical"
@@ -388,7 +398,7 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "ttc_medical"]

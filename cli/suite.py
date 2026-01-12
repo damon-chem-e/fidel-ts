@@ -24,7 +24,8 @@ def run(
     suite_config_path: str = typer.Argument(..., help="Path to experiment suite configuration file"),
     filter_experiments: Optional[str] = typer.Option(None, "--filter", "-f", help="Filter experiments by name pattern"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate config without running experiments"),
-    init_only: bool = typer.Option(False, "--init-only", help="Initialize experiment structures without running them")
+    init_only: bool = typer.Option(False, "--init-only", help="Initialize experiment structures without running them"),
+    force_rerun: bool = typer.Option(False, "--force-rerun", help="Re-run experiments even if they are already complete")
 ):
     """
     Run an experiment suite from a suite config file.
@@ -62,7 +63,7 @@ def run(
         else:
             console.print(f"[green]Running suite: {suite_name}[/green]")
             
-        executor = SuiteExecutor(suite_config, init_only=init_only)
+        executor = SuiteExecutor(suite_config, init_only=init_only, force_rerun=force_rerun)
         result = executor.execute()
         
         if init_only:

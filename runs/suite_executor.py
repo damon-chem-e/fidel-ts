@@ -101,6 +101,45 @@ def substitute_placeholders(config: Dict[str, Any], experiment_name: str,
     return substitute_value(config)
 
 
+def _check_experiment_complete(output_dir: Path, suite_name: str, resume_experiment_id: str, total_epochs: int) -> bool:
+    """
+    Check if an experiment is already complete by reading job_history.json.
+    
+    Args:
+        output_dir: Base output directory
+        suite_name: Suite directory name (with timestamp if resuming)
+        resume_experiment_id: Experiment ID to check
+        total_epochs: Total epochs for the experiment
+    
+    Returns:
+        True if experiment is complete, False otherwise
+    """
+    experiment_dir = output_dir / suite_name / resume_experiment_id
+    job_history_path = experiment_dir / "job_history.json"
+    
+    if not job_history_path.exists():
+        return False
+    
+    try:
+        with open(job_history_path, 'r', encoding='utf-8') as f:
+            job_history = json.load(f)
+        
+        # Check if training is complete
+        # Training is complete if last_epoch >= total_epochs
+        completed_jobs = [job for job in job_history.get("jobs", []) if job.get("status") in ["completed", "timeout"]]
+        if completed_jobs:
+            last_job = completed_jobs[-1]
+            last_epoch = last_job.get("end_epoch", job_history.get("current_epoch", 0))
+            total_epochs_from_history = job_history.get("total_epochs", total_epochs)
+            if last_epoch >= total_epochs_from_history:
+                return True
+        
+        return False
+    except (json.JSONDecodeError, IOError, KeyError):
+        # If we can't read/parse the file, assume not complete
+        return False
+
+
 class SuiteExecutor:
     """Execute experiment suites defined in YAML configs."""
     
@@ -110,7 +149,8 @@ class SuiteExecutor:
                  output_dir: Optional[str] = None, 
                  init_only: bool = False, 
                  return_ids: bool = False, 
-                 sweep: bool = False):
+                 sweep: bool = False,
+                 force_rerun: bool = False):
         """
         Initialize suite executor.
         
@@ -121,11 +161,13 @@ class SuiteExecutor:
             init_only: If True, only initialize experiment structures without running them
             return_ids: If True, track and return experiment IDs (useful for wandb sweeps)
             sweep: If True, running in wandb sweep context (pass to ExperimentManager)
+            force_rerun: If True, re-run experiments even if they are already complete
         """
         self.suite_config = suite_config
         self.init_only = init_only
         self.return_ids = return_ids
         self.sweep = sweep
+        self.force_rerun = force_rerun
         # Track experiment IDs when return_ids is enabled
         self.experiment_ids: Dict[str, str] = {}
         self.suite_info = suite_config.get('suite', {})
@@ -318,6 +360,7 @@ class SuiteExecutor:
         
         # If suite is resuming, inject resume_suite_id into experiment overrides
         # and validate that resume_experiment_id is set for this experiment
+        resume_experiment_id = None
         if self.suite_info.get('resume_suite_id'):
             if 'resume_experiment_id' not in overrides:
                 raise ValueError(
@@ -325,14 +368,31 @@ class SuiteExecutor:
                     f"but experiment '{exp_name}' does not have 'resume_experiment_id' set in its overrides. "
                     f"When resuming a suite, all experiments must specify their resume_experiment_id."
                 )
+            resume_experiment_id = overrides.get('resume_experiment_id')
             # Inject resume_suite_id from suite level into experiment overrides
             overrides['resume_suite_id'] = self.suite_info.get('resume_suite_id')
         
-        # Load template
+        # Load template (needed for both completion check and execution)
         template = load_template(template_path)
         
-        # Merge template with overrides
-        final_config = merge_configs(template, overrides)
+        # Merge template with overrides to get final config
+        merged_config = merge_configs(template, overrides)
+        
+        # Check if experiment is already complete (unless force_rerun is True)
+        if not self.force_rerun and resume_experiment_id:
+            total_epochs = merged_config.get('training', {}).get('epochs', 3)
+            is_complete = _check_experiment_complete(
+                self.output_dir,
+                self.suite_name,
+                resume_experiment_id,
+                total_epochs
+            )
+            if is_complete:
+                logger.info(f"Skipping experiment '{exp_name}': training already completed (epoch {total_epochs}/{total_epochs})")
+                return
+        
+        # Use merged_config as final_config (already merged)
+        final_config = merged_config
         
         # Extract values for placeholder substitution from merged config
         # This ensures we get the actual values after merging
