@@ -47,6 +47,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_agriculture"]
         experiment:
@@ -78,6 +80,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_climate"]
         experiment:
@@ -109,6 +113,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_economy"]
         experiment:
@@ -140,6 +146,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_energy"]
         experiment:
@@ -171,6 +179,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_environment"]
         experiment:
@@ -202,6 +212,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_health"]
         experiment:
@@ -233,6 +245,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_socialgood"]
         experiment:
@@ -264,6 +278,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_traffic"]
         experiment:
@@ -296,6 +312,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "ttc_weather"]
         experiment:
@@ -324,6 +342,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "ttc_medical"]
         experiment:

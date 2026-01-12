@@ -32,8 +32,8 @@ training:
 
 **Compile Modes:**
 - `default` - Balanced, easier to debug
-- `reduce-overhead` - Best for training (fewer recompilations) **[RECOMMENDED]**
-- `max-autotune` - Optimal for inference (longer compilation time)
+- `reduce-overhead` - **[RECOMMENDED]** Best for both training and evaluation (fewer recompilations)
+- `max-autotune` - Optimal for repeated inference only (long compilation time, rarely worth it)
 
 ### Evaluation with torch.compile
 
@@ -42,9 +42,11 @@ Add to your evaluation config YAML:
 ```yaml
 evaluation:
   torch_compile: true  # Enable compilation (default: false)
-  compile_mode: "max-autotune"  # Optional, use max-autotune for inference
+  compile_mode: "reduce-overhead"  # Optional (default: "reduce-overhead")
   # Other evaluation settings...
 ```
+
+**Note:** `reduce-overhead` is recommended for evaluation. While `max-autotune` can be faster, its long compilation time is rarely worth it for one-time evaluation runs.
 
 ### Example Configs
 
@@ -71,7 +73,7 @@ evaluation:
   model: "DLinear"
   data: "Solar"
   torch_compile: true  # Enable compilation
-  compile_mode: "max-autotune"  # Best for evaluation
+  compile_mode: "reduce-overhead"  # Recommended for evaluation
   # ... other settings
 ```
 

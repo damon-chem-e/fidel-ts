@@ -285,9 +285,9 @@ class FidelTSEmbeddingLoader:
             print(f'[ warning ] Cached static embeddings missing "channel_info" key. Cache may be outdated.')
             print(f'[ info ] Attempting to recompute embeddings from text source...')
             
-            # Try to recompute from text
+            # Try to recompute from text (force=True to overwrite invalid cache)
             if self._has_text_source():
-                return self._compute_and_cache()
+                return self._compute_and_cache(force=True)
             else:
                 raise ValueError(
                     f"Cached static embeddings are missing 'channel_info' and no text source is available "
@@ -304,9 +304,12 @@ class FidelTSEmbeddingLoader:
             return any(p.exists() for p in self.paths['old_text_paths'])
         return False
     
-    def _compute_and_cache(self) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+    def _compute_and_cache(self, force: bool = False) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
         """
         Compute embeddings from text files and save to cache.
+        
+        Args:
+            force: If True, overwrite existing cache directory
         
         Returns:
             tuple: (dynamic_embeddings, static_embeddings)
@@ -324,8 +327,8 @@ class FidelTSEmbeddingLoader:
         # Compute static embeddings (if static text available)
         static_embeddings = self._compute_static_embeddings()
         
-        # Save to cache
-        self._save_to_cache(dynamic_embeddings, static_embeddings)
+        # Save to cache (use force if explicitly requested or if self.force_reembed is set)
+        self._save_to_cache(dynamic_embeddings, static_embeddings, force=force or self.force_reembed)
         
         return dynamic_embeddings, static_embeddings
     
@@ -519,15 +522,23 @@ class FidelTSEmbeddingLoader:
         return static_embeddings
     
     def _save_to_cache(self, dynamic_embeddings: Dict[str, np.ndarray], 
-                       static_embeddings: Optional[Dict[str, np.ndarray]]):
-        """Save embeddings to cache directory."""
+                       static_embeddings: Optional[Dict[str, np.ndarray]],
+                       force: bool = False):
+        """
+        Save embeddings to cache directory.
+        
+        Args:
+            dynamic_embeddings: Dictionary mapping timestamps to embedding arrays
+            static_embeddings: Dictionary of static embeddings (or None)
+            force: If True, overwrite existing cache directory
+        """
         cache_base = self.paths['cache_base']
         
         # Get metadata
         metadata = self.embedder.create_metadata()
         
         # Create cache directory using static method
-        cache_dir = EmbeddingCacheManager.create_fidel_ts_cache_dir(cache_base, metadata, force=False)
+        cache_dir = EmbeddingCacheManager.create_fidel_ts_cache_dir(cache_base, metadata, force=force)
         
         # Save embeddings using static method
         EmbeddingCacheManager.save_fidel_ts_embeddings(

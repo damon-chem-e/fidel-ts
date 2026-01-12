@@ -52,6 +52,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
           # Time-LLM specific training config
           time_llm:
             llm_backbone: "gpt2"
@@ -103,6 +105,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
           time_llm:
             llm_backbone: "gpt2"
             quantization: null
@@ -153,6 +157,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
           time_llm:
             llm_backbone: "gpt2"
             quantization: null
@@ -203,6 +209,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
           time_llm:
             llm_backbone: "gpt2"
             quantization: null
@@ -253,6 +261,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
           time_llm:
             llm_backbone: "gpt2"
             quantization: null
@@ -303,6 +313,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
           time_llm:
             llm_backbone: "gpt2"
             quantization: null
@@ -353,6 +365,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
           time_llm:
             llm_backbone: "gpt2"
             quantization: null
@@ -403,6 +417,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
           time_llm:
             llm_backbone: "gpt2"
             quantization: null
@@ -457,6 +473,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
           time_llm:
             llm_backbone: "gpt2"
             quantization: null
@@ -507,6 +525,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
           time_llm:
             llm_backbone: "gpt2"
             quantization: null

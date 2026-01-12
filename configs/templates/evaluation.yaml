@@ -28,5 +28,5 @@ evaluation:
   
   # PyTorch Compile (PyTorch 2.0+ optimization) - optional
   # torch_compile: true  # Enable torch.compile for faster evaluation (default: false)
-  # compile_mode: "reduce-overhead"  # Compile mode: default, reduce-overhead, max-autotune (default: reduce-overhead)
+  # compile_mode: "reduce-overhead"  # Compile mode: default/reduce-overhead (recommended) or max-autotune (rarely worth it)
 

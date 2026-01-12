@@ -22,7 +22,7 @@ Add these two lines to your evaluation config:
 ```yaml
 evaluation:
   torch_compile: true
-  compile_mode: "max-autotune"
+  compile_mode: "reduce-overhead"
   # ... rest of your config unchanged
 ```
 
