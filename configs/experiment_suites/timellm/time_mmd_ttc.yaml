@@ -1,0 +1,536 @@
+# Experiment Suite: Time-LLM on Time MMD and TTC datasets
+# Description: Train Time-LLM model on all Time MMD (Liu et al., 2024b) and TTC (Kim et al., 2024) datasets
+# Usage: python -m cli.suite run configs/experiment_suites/timellm/time_mmd_ttc.yaml
+# Note: Input/output lens follow Table 4 from the original papers:
+#       - Time MMD datasets use 7:1:2 train/val/test ratio splits
+#       - TTC datasets use 7:1:2 train/val/test ratio splits
+#
+# IMPORTANT: Time-LLM loads the frozen LLM backbone ONLINE during training.
+# This is different from TimeCMA which uses pre-computed embeddings.
+# No embedding pre-generation is required!
+#
+# Reference:
+#   Jin et al., "Time-LLM: Time Series Forecasting by Reprogramming 
+#   Large Language Models" (ICLR 2024)
+
+suite:
+  name: "timellm_time_mmd_ttc"
+  description: "Train Time-LLM model on all Time MMD and TTC datasets (frozen GPT-2 backbone)"
+  tags: ["timellm", "time-llm", "reprogramming", "llm", "frozen-backbone", "pytorch", "time_mmd", "ttc", "iclr2024"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/timellm/time_mmd_ttc"
+    
+  # Experiments in this suite
+  experiments:
+    # ===========================================
+    # Time MMD Datasets (Liu et al., 2024b)
+    # ===========================================
+    
+    # Agriculture: context=24, prediction=6
+    - name: "timellm_gpt2_timemmd_agriculture"
+      description: "Time-LLM with frozen GPT-2 backbone on Time MMD Agriculture dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "time_mmd_algriculture"
+          config_path: "data_configs/time_mmd/Algriculture/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          # Time-LLM specific training config
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null  # No quantization for GPT-2 (small model)
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timellm", "time_mmd_agriculture"]
+        model_config_overrides:
+          enc_in: 1           # Number of input channels
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          seq_len: 24
+          pred_len: 6
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timellm/time_mmd_ttc"
+    
+    # Climate: context=24, prediction=6
+    - name: "timellm_gpt2_timemmd_climate"
+      description: "Time-LLM with frozen GPT-2 backbone on Time MMD Climate dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "time_mmd_climate"
+          config_path: "data_configs/time_mmd/Climate/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timellm", "time_mmd_climate"]
+        model_config_overrides:
+          enc_in: 1
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          seq_len: 24
+          pred_len: 6
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timellm/time_mmd_ttc"
+    
+    # Economy: context=24, prediction=6
+    - name: "timellm_gpt2_timemmd_economy"
+      description: "Time-LLM with frozen GPT-2 backbone on Time MMD Economy dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "time_mmd_economy"
+          config_path: "data_configs/time_mmd/Economy/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timellm", "time_mmd_economy"]
+        model_config_overrides:
+          enc_in: 1
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          seq_len: 24
+          pred_len: 6
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timellm/time_mmd_ttc"
+    
+    # Energy: context=24, prediction=12
+    - name: "timellm_gpt2_timemmd_energy"
+      description: "Time-LLM with frozen GPT-2 backbone on Time MMD Energy dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "time_mmd_energy"
+          config_path: "data_configs/time_mmd/Energy/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 12      # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timellm", "time_mmd_energy"]
+        model_config_overrides:
+          enc_in: 1
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          seq_len: 24
+          pred_len: 12
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timellm/time_mmd_ttc"
+    
+    # Environment: context=24, prediction=48
+    - name: "timellm_gpt2_timemmd_environment"
+      description: "Time-LLM with frozen GPT-2 backbone on Time MMD Environment dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "time_mmd_environment"
+          config_path: "data_configs/time_mmd/Environment/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 48      # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timellm", "time_mmd_environment"]
+        model_config_overrides:
+          enc_in: 1
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          seq_len: 24
+          pred_len: 48
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timellm/time_mmd_ttc"
+    
+    # Health (Public_Health): context=24, prediction=12
+    - name: "timellm_gpt2_timemmd_health"
+      description: "Time-LLM with frozen GPT-2 backbone on Time MMD Health dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "time_mmd_public_health"
+          config_path: "data_configs/time_mmd/Public_Health/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 12      # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timellm", "time_mmd_public_health"]
+        model_config_overrides:
+          enc_in: 1
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          seq_len: 24
+          pred_len: 12
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timellm/time_mmd_ttc"
+    
+    # Socialgood: context=24, prediction=6
+    - name: "timellm_gpt2_timemmd_socialgood"
+      description: "Time-LLM with frozen GPT-2 backbone on Time MMD SocialGood dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "time_mmd_socialgood"
+          config_path: "data_configs/time_mmd/SocialGood/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timellm", "time_mmd_socialgood"]
+        model_config_overrides:
+          enc_in: 1
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          seq_len: 24
+          pred_len: 6
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timellm/time_mmd_ttc"
+    
+    # Traffic: context=24, prediction=6
+    - name: "timellm_gpt2_timemmd_traffic"
+      description: "Time-LLM with frozen GPT-2 backbone on Time MMD Traffic dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timellm", "time_mmd_traffic"]
+        model_config_overrides:
+          enc_in: 1
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          seq_len: 24
+          pred_len: 6
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timellm/time_mmd_ttc"
+    
+    # ===========================================
+    # TTC Datasets (Kim et al., 2024)
+    # ===========================================
+    
+    # Weather (Climate): context=7, prediction=7
+    - name: "timellm_gpt2_ttc_weather"
+      description: "Time-LLM with frozen GPT-2 backbone on TTC Weather dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "ttc_climate"
+          config_path: "data_configs/ttc/climate/config.yaml"
+        training:
+          input_len: 7        # Context length from Table 4
+          output_len: 7       # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timellm", "ttc_climate"]
+        model_config_overrides:
+          enc_in: 4           # TTC Weather has 4 features (temp, precip, humidity, windspeed)
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          seq_len: 7
+          pred_len: 7
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timellm/time_mmd_ttc"
+    
+    # Medical: context=7, prediction=7
+    - name: "timellm_gpt2_ttc_medical"
+      description: "Time-LLM with frozen GPT-2 backbone on TTC Medical dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "ttc_medical"
+          config_path: "data_configs/ttc/medical/config.yaml"
+        training:
+          input_len: 7        # Context length from Table 4
+          output_len: 7       # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timellm", "ttc_medical"]
+        model_config_overrides:
+          enc_in: 1           # TTC Medical has 1 feature
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16
+          d_ff: 32
+          n_heads: 8
+          dropout: 0.1
+          seq_len: 7
+          pred_len: 7
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timellm/time_mmd_ttc"

@@ -1,0 +1,80 @@
+# Experiment Suite: Time-LLM on Bear_room
+# Description: Train Time-LLM model on Bear_room dataset
+# Usage: python -m cli.suite run configs/experiment_suites/timellm/bear_room.yaml
+# Note: Bear_room uses 5-min sampling (not downsampled per paper)
+#       Input: 288 samples = 1 day, Output: 144 samples = 12 hours (second smallest prediction)
+#       Split points: {Sep. 1, 2020, Oct. 1, 2020}
+#
+# IMPORTANT: Time-LLM loads the frozen LLM backbone ONLINE during training.
+# This is different from TimeCMA which uses pre-computed embeddings.
+# No embedding pre-generation is required!
+#
+# Reference:
+#   Jin et al., "Time-LLM: Time Series Forecasting by Reprogramming 
+#   Large Language Models" (ICLR 2024)
+
+suite:
+  name: "timellm_bear_room"
+  description: "Train Time-LLM model on Bear_room dataset with 1-day context, 12-hour prediction (frozen GPT-2 backbone)"
+  tags: ["timellm", "time-llm", "reprogramming", "llm", "frozen-backbone", "pytorch", "fidel-ts", "bear_room", "iclr2024"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/timellm/bear_room"
+    
+  # Experiments in this suite
+  experiments:
+    - name: "timellm_gpt2_bear_room"
+      description: "Time-LLM with frozen GPT-2 backbone on Bear_room with 1-day context, 12-hour prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeLLM"
+          config_path: "model_configs/general/TimeLLM.yaml"
+        data:
+          name: "fidel_Bear_room:fullBear_hetero_TGTSF"
+          config_path: "data_configs/Bear_room/fullBear_hetero_TGTSF.yaml"
+        training:
+          input_len: 288      # 1 day at 5-min intervals (288 = 24h * 12)
+          output_len: 144     # 12 hours at 5-min intervals (second smallest: {12, 144, 288, 576})
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          # Time-LLM specific training config
+          time_llm:
+            llm_backbone: "gpt2"
+            quantization: null  # No quantization for GPT-2 (small model)
+            prompt_domain: false
+            loss: "mse"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timellm", "bear_room"]
+        model_config_overrides:
+          # Bear_room channel configuration
+          enc_in: 1           # Number of input channels
+          # Time-LLM architecture parameters (original config)
+          llm_model: "gpt2"
+          patch_len: 16
+          stride: 8
+          d_model: 16         # Patch embedding dimension
+          d_ff: 32            # Feed-forward dimension
+          n_heads: 8          # Attention heads for reprogramming
+          dropout: 0.1
+          # Sequence configuration
+          seq_len: 288
+          pred_len: 144
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timellm/bear_room"
