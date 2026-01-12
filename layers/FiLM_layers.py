@@ -85,7 +85,7 @@ class FiLMGenerator(nn.Module):
         # Flatten text sequence: [B, C, L, D] -> [B, C, L*D]
         if x.dim() == 4:
             B, C, L, D = x.shape
-            x = x.view(B, C, L * D)
+            x = x.reshape(B, C, L * D)
             
         # Generate modulation parameters: [B, C, L*D] -> [B, C, output_dim * 4]
         params = self.net(x)
