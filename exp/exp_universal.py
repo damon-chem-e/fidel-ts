@@ -111,6 +111,9 @@ class Experiment(Exp_Basic):
         Initializes the model using the model factory based on configuration,
         then wraps it with DataParallel if multi-GPU training is enabled.
         
+        NOTE: torch.compile is applied in Exp_Basic after moving to device,
+        not here. For multi-GPU, compilation happens per-GPU worker automatically.
+        
         Returns:
             torch.nn.Module: Configured model (potentially wrapped with DataParallel)
         """

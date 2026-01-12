@@ -32,6 +32,10 @@ training:
   downsample: null
   checkpoints: "./checkpoints/"
   random_seed: 2021
+  
+  # PyTorch Compile (PyTorch 2.0+ optimization) - optional
+  # torch_compile: true  # Enable torch.compile for faster training (default: false)
+  # compile_mode: "reduce-overhead"  # Compile mode: default, reduce-overhead, max-autotune (default: reduce-overhead)
 
   # Tracking
   track_per_sample: true  # Whether to track per-sample metrics (Parquet) - enables per-sample and per-channel loss tracking

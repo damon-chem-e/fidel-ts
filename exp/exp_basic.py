@@ -67,6 +67,27 @@ class Exp_Basic(object):
         args.num_indicator_columns = num_indicator_columns
         
         self.model = self._build_model().to(self.device)
+        
+        # Apply torch.compile if enabled (PyTorch 2.0+)
+        # Check for torch_compile flag in args (backward compatible - defaults to False)
+        if getattr(args, 'torch_compile', False):
+            if hasattr(torch, 'compile'):
+                compile_mode = getattr(args, 'compile_mode', 'reduce-overhead')
+                if exp_manager:
+                    exp_manager.log(f"Compiling model with torch.compile (mode={compile_mode})...")
+                else:
+                    print(f"Compiling model with torch.compile (mode={compile_mode})...")
+                self.model = torch.compile(
+                    self.model,
+                    mode=compile_mode,
+                    fullgraph=False  # More compatible with dynamic models
+                )
+            else:
+                warning_msg = "torch.compile requested but not available (requires PyTorch 2.0+)"
+                if exp_manager:
+                    exp_manager.log(f"WARNING: {warning_msg}")
+                else:
+                    print(f"WARNING: {warning_msg}")
 
     def _build_model(self):
         """

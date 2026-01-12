@@ -356,6 +356,29 @@ def _load_model_and_checkpoint(experiment_dir, eval_config, checkpoint_config):
     model.eval()
     print(f'[Info] Successfully loaded model: {checkpoint_config.model}')
     
+    # Apply torch.compile if enabled in evaluation config (PyTorch 2.0+)
+    # Check for torch_compile flag in eval_config (backward compatible - defaults to False)
+    if getattr(eval_config, 'torch_compile', False):
+        if hasattr(torch, 'compile'):
+            compile_mode = getattr(eval_config, 'compile_mode', 'reduce-overhead')
+            print(f"[Info] Compiling model for evaluation with torch.compile (mode={compile_mode})...")
+            model = torch.compile(
+                model,
+                mode=compile_mode,
+                fullgraph=False  # More compatible with dynamic models
+            )
+            # Warm-up compilation with a dummy forward pass
+            print("[Info] Warming up torch.compile...")
+            try:
+                with torch.no_grad():
+                    dummy_x = torch.randn(1, checkpoint_config.input_len, checkpoint_config.model_config.enc_in).to(device)
+                    _ = model(x=dummy_x)
+                print("[Info] Compilation warm-up complete")
+            except Exception as e:
+                print(f"[Warning] Warm-up forward pass failed (model will compile on first real batch): {e}")
+        else:
+            print("[Warning] torch.compile requested but not available (requires PyTorch 2.0+)")
+    
     return model, device
 
 

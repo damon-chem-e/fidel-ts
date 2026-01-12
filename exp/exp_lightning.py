@@ -35,6 +35,27 @@ class TimeSeriesLightningModel(pl.LightningModule):
         # Build model
         self.model = model_init(self.args.model, self.args.model_config, self.args)
         
+        # Apply torch.compile if enabled (PyTorch 2.0+)
+        # Check for torch_compile flag in args (backward compatible - defaults to False)
+        if getattr(args, 'torch_compile', False):
+            if hasattr(torch, 'compile'):
+                compile_mode = getattr(args, 'compile_mode', 'reduce-overhead')
+                if exp_manager:
+                    exp_manager.log(f"Compiling model with torch.compile (mode={compile_mode})...")
+                else:
+                    print(f"Compiling model with torch.compile (mode={compile_mode})...")
+                self.model = torch.compile(
+                    self.model,
+                    mode=compile_mode,
+                    fullgraph=False  # More compatible with dynamic models
+                )
+            else:
+                warning_msg = "torch.compile requested but not available (requires PyTorch 2.0+)"
+                if exp_manager:
+                    exp_manager.log(f"WARNING: {warning_msg}")
+                else:
+                    print(f"WARNING: {warning_msg}")
+        
         # Loss function
         # --- MODIFICATION START ---
         # The criterion itself is correct (reduction='mean' is fine for training steps).

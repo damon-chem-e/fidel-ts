@@ -66,6 +66,10 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     args.evaluate_test_during_training = config.training.evaluate_test_during_training
     args.truncate_train_for_purge = config.training.truncate_train_for_purge
     
+    # PyTorch Compile (PyTorch 2.0+) - optional, defaults to False for backward compatibility
+    args.torch_compile = getattr(config.training, 'torch_compile', False)
+    args.compile_mode = getattr(config.training, 'compile_mode', 'reduce-overhead')
+    
     # GPU
     args.use_gpu = config.device.use_gpu
     args.gpu = config.device.gpu

@@ -50,6 +50,10 @@ class TrainingConfig(BaseModel):
     loss: str = Field(default="mse", description="Loss function (mse, l1)")
     lradj: str = Field(default="type3", description="Learning rate adjustment strategy")
     
+    # PyTorch Compile (PyTorch 2.0+ optimization)
+    torch_compile: bool = Field(default=False, description="Enable torch.compile for faster training (PyTorch 2.0+)")
+    compile_mode: str = Field(default="reduce-overhead", description="torch.compile mode (default/reduce-overhead/max-autotune)")
+    
     # Task definition (mutually exclusive with input_len/output_len)
     ahead: Optional[str] = Field(default=None, description="Ahead task (day/week/month)")
     input_len: Optional[Union[int, str]] = Field(default=None, description="Input sequence length")
