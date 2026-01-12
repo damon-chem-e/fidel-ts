@@ -1,0 +1,678 @@
+# Experiment Suite: LeRet on Time MMD and TTC datasets
+# Description: Train LeRet model on all Time MMD (Liu et al., 2024b) and TTC (Kim et al., 2024) datasets
+# Usage: python -m cli.suite run configs/experiment_suites/leret/time_mmd_ttc.yaml
+# Note: Input/output lens follow Table 4 from the original papers:
+#       - Time MMD datasets use 7:1:2 train/val/test ratio splits
+#       - TTC datasets use 7:1:2 train/val/test ratio splits
+#       Uses y_hetero (text embeddings) with timestamp_semantics: t_about
+
+suite:
+  name: "leret_time_mmd_ttc"
+  description: "Train LeRet model on all Time MMD and TTC datasets with text embeddings"
+  tags: ["leret", "retention", "pytorch", "time_mmd", "ttc", "text-embeddings"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: false
+    log_dir: "./logs/suites/leret/time_mmd_ttc"
+    
+  # Experiments in this suite
+  experiments:
+    # ===========================================
+    # Time MMD Datasets (Liu et al., 2024b)
+    # ===========================================
+    
+    # Agriculture: context=24, prediction=6
+    - name: "leret_timemmd_agriculture"
+      description: "LeRet with text embeddings on Time MMD Agriculture dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "LeRet"
+          config_path: "model_configs/general/LeRet.yaml"
+        data:
+          name: "time_mmd_agriculture"
+          config_path: "data_configs/time_mmd/Algriculture/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 50  # Total epochs (pretrain + finetune)
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          # LeRet-specific two-stage training
+          leret:
+            training_stage: "both"
+            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_loss: "mse"
+            finetune_loss: "mse"
+            pretrain_learning_rate: 1e-3
+        wandb:
+          tags: ["leret", "time_mmd_agriculture"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/leret/time_mmd_ttc"
+        model_config_overrides:
+          # Original LeRet hyperparameters
+          d_model: 128
+          n_heads: 8
+          e_layers: 3
+          d_ff: 256
+          patch_len: 16
+          stride: 8
+          padding_patch: end
+          revin: True
+          affine: False
+          subtract_last: False
+          decomposition: False
+          kernel_size: 25
+          individual: False
+          dropout: 0.05
+          fc_dropout: 0.05
+          head_dropout: 0.0
+          # Text embedding configuration
+          use_language: True
+          language_dim: 768
+          # Task type for text-guided forecasting
+          task: TGTSF
+          # Dataset-specific (enc_in will be inferred automatically)
+          seq_len: 24
+          pred_len: 6
+    
+    # Climate: context=24, prediction=6
+    - name: "leret_timemmd_climate"
+      description: "LeRet with text embeddings on Time MMD Climate dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "LeRet"
+          config_path: "model_configs/general/LeRet.yaml"
+        data:
+          name: "time_mmd_climate"
+          config_path: "data_configs/time_mmd/Climate/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 50  # Total epochs (pretrain + finetune)
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          # LeRet-specific two-stage training
+          leret:
+            training_stage: "both"
+            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_loss: "mse"
+            finetune_loss: "mse"
+            pretrain_learning_rate: 1e-3
+        wandb:
+          tags: ["leret", "time_mmd_climate"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/leret/time_mmd_ttc"
+        model_config_overrides:
+          # Original LeRet hyperparameters
+          d_model: 128
+          n_heads: 8
+          e_layers: 3
+          d_ff: 256
+          patch_len: 16
+          stride: 8
+          padding_patch: end
+          revin: True
+          affine: False
+          subtract_last: False
+          decomposition: False
+          kernel_size: 25
+          individual: False
+          dropout: 0.05
+          fc_dropout: 0.05
+          head_dropout: 0.0
+          # Text embedding configuration
+          use_language: True
+          language_dim: 768
+          # Task type for text-guided forecasting
+          task: TGTSF
+          # Dataset-specific (enc_in will be inferred automatically)
+          seq_len: 24
+          pred_len: 6
+    
+    # Economy: context=24, prediction=6
+    - name: "leret_timemmd_economy"
+      description: "LeRet with text embeddings on Time MMD Economy dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "LeRet"
+          config_path: "model_configs/general/LeRet.yaml"
+        data:
+          name: "time_mmd_economy"
+          config_path: "data_configs/time_mmd/Economy/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 50  # Total epochs (pretrain + finetune)
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          # LeRet-specific two-stage training
+          leret:
+            training_stage: "both"
+            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_loss: "mse"
+            finetune_loss: "mse"
+            pretrain_learning_rate: 1e-3
+        wandb:
+          tags: ["leret", "time_mmd_economy"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/leret/time_mmd_ttc"
+        model_config_overrides:
+          # Original LeRet hyperparameters
+          d_model: 128
+          n_heads: 8
+          e_layers: 3
+          d_ff: 256
+          patch_len: 16
+          stride: 8
+          padding_patch: end
+          revin: True
+          affine: False
+          subtract_last: False
+          decomposition: False
+          kernel_size: 25
+          individual: False
+          dropout: 0.05
+          fc_dropout: 0.05
+          head_dropout: 0.0
+          # Text embedding configuration
+          use_language: True
+          language_dim: 768
+          # Task type for text-guided forecasting
+          task: TGTSF
+          # Dataset-specific (enc_in will be inferred automatically)
+          seq_len: 24
+          pred_len: 6
+    
+    # Energy: context=24, prediction=12
+    - name: "leret_timemmd_energy"
+      description: "LeRet with text embeddings on Time MMD Energy dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "LeRet"
+          config_path: "model_configs/general/LeRet.yaml"
+        data:
+          name: "time_mmd_energy"
+          config_path: "data_configs/time_mmd/Energy/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 12      # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 50  # Total epochs (pretrain + finetune)
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          # LeRet-specific two-stage training
+          leret:
+            training_stage: "both"
+            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_loss: "mse"
+            finetune_loss: "mse"
+            pretrain_learning_rate: 1e-3
+        wandb:
+          tags: ["leret", "time_mmd_energy"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/leret/time_mmd_ttc"
+        model_config_overrides:
+          # Original LeRet hyperparameters
+          d_model: 128
+          n_heads: 8
+          e_layers: 3
+          d_ff: 256
+          patch_len: 16
+          stride: 8
+          padding_patch: end
+          revin: True
+          affine: False
+          subtract_last: False
+          decomposition: False
+          kernel_size: 25
+          individual: False
+          dropout: 0.05
+          fc_dropout: 0.05
+          head_dropout: 0.0
+          # Text embedding configuration
+          use_language: True
+          language_dim: 768
+          # Task type for text-guided forecasting
+          task: TGTSF
+          # Dataset-specific (enc_in will be inferred automatically)
+          seq_len: 24
+          pred_len: 12
+    
+    # Environment: context=24, prediction=48
+    - name: "leret_timemmd_environment"
+      description: "LeRet with text embeddings on Time MMD Environment dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "LeRet"
+          config_path: "model_configs/general/LeRet.yaml"
+        data:
+          name: "time_mmd_environment"
+          config_path: "data_configs/time_mmd/Environment/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 48      # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 50  # Total epochs (pretrain + finetune)
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          # LeRet-specific two-stage training
+          leret:
+            training_stage: "both"
+            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_loss: "mse"
+            finetune_loss: "mse"
+            pretrain_learning_rate: 1e-3
+        wandb:
+          tags: ["leret", "time_mmd_environment"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/leret/time_mmd_ttc"
+        model_config_overrides:
+          # Original LeRet hyperparameters
+          d_model: 128
+          n_heads: 8
+          e_layers: 3
+          d_ff: 256
+          patch_len: 16
+          stride: 8
+          padding_patch: end
+          revin: True
+          affine: False
+          subtract_last: False
+          decomposition: False
+          kernel_size: 25
+          individual: False
+          dropout: 0.05
+          fc_dropout: 0.05
+          head_dropout: 0.0
+          # Text embedding configuration
+          use_language: True
+          language_dim: 768
+          # Task type for text-guided forecasting
+          task: TGTSF
+          # Dataset-specific (enc_in will be inferred automatically)
+          seq_len: 24
+          pred_len: 48
+    
+    # Health (Public_Health): context=24, prediction=12
+    - name: "leret_timemmd_health"
+      description: "LeRet with text embeddings on Time MMD Health dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "LeRet"
+          config_path: "model_configs/general/LeRet.yaml"
+        data:
+          name: "time_mmd_health"
+          config_path: "data_configs/time_mmd/Public_Health/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 12      # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 50  # Total epochs (pretrain + finetune)
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          # LeRet-specific two-stage training
+          leret:
+            training_stage: "both"
+            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_loss: "mse"
+            finetune_loss: "mse"
+            pretrain_learning_rate: 1e-3
+        wandb:
+          tags: ["leret", "time_mmd_health"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/leret/time_mmd_ttc"
+        model_config_overrides:
+          # Original LeRet hyperparameters
+          d_model: 128
+          n_heads: 8
+          e_layers: 3
+          d_ff: 256
+          patch_len: 16
+          stride: 8
+          padding_patch: end
+          revin: True
+          affine: False
+          subtract_last: False
+          decomposition: False
+          kernel_size: 25
+          individual: False
+          dropout: 0.05
+          fc_dropout: 0.05
+          head_dropout: 0.0
+          # Text embedding configuration
+          use_language: True
+          language_dim: 768
+          # Task type for text-guided forecasting
+          task: TGTSF
+          # Dataset-specific (enc_in will be inferred automatically)
+          seq_len: 24
+          pred_len: 12
+    
+    # Socialgood: context=24, prediction=6
+    - name: "leret_timemmd_socialgood"
+      description: "LeRet with text embeddings on Time MMD SocialGood dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "LeRet"
+          config_path: "model_configs/general/LeRet.yaml"
+        data:
+          name: "time_mmd_socialgood"
+          config_path: "data_configs/time_mmd/SocialGood/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 50  # Total epochs (pretrain + finetune)
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          # LeRet-specific two-stage training
+          leret:
+            training_stage: "both"
+            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_loss: "mse"
+            finetune_loss: "mse"
+            pretrain_learning_rate: 1e-3
+        wandb:
+          tags: ["leret", "time_mmd_socialgood"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/leret/time_mmd_ttc"
+        model_config_overrides:
+          # Original LeRet hyperparameters
+          d_model: 128
+          n_heads: 8
+          e_layers: 3
+          d_ff: 256
+          patch_len: 16
+          stride: 8
+          padding_patch: end
+          revin: True
+          affine: False
+          subtract_last: False
+          decomposition: False
+          kernel_size: 25
+          individual: False
+          dropout: 0.05
+          fc_dropout: 0.05
+          head_dropout: 0.0
+          # Text embedding configuration
+          use_language: True
+          language_dim: 768
+          # Task type for text-guided forecasting
+          task: TGTSF
+          # Dataset-specific (enc_in will be inferred automatically)
+          seq_len: 24
+          pred_len: 6
+    
+    # Traffic: context=24, prediction=6
+    - name: "leret_timemmd_traffic"
+      description: "LeRet with text embeddings on Time MMD Traffic dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "LeRet"
+          config_path: "model_configs/general/LeRet.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 50  # Total epochs (pretrain + finetune)
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          # LeRet-specific two-stage training
+          leret:
+            training_stage: "both"
+            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_loss: "mse"
+            finetune_loss: "mse"
+            pretrain_learning_rate: 1e-3
+        wandb:
+          tags: ["leret", "time_mmd_traffic"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/leret/time_mmd_ttc"
+        model_config_overrides:
+          # Original LeRet hyperparameters
+          d_model: 128
+          n_heads: 8
+          e_layers: 3
+          d_ff: 256
+          patch_len: 16
+          stride: 8
+          padding_patch: end
+          revin: True
+          affine: False
+          subtract_last: False
+          decomposition: False
+          kernel_size: 25
+          individual: False
+          dropout: 0.05
+          fc_dropout: 0.05
+          head_dropout: 0.0
+          # Text embedding configuration
+          use_language: True
+          language_dim: 768
+          # Task type for text-guided forecasting
+          task: TGTSF
+          # Dataset-specific (enc_in will be inferred automatically)
+          seq_len: 24
+          pred_len: 6
+    
+    # ===========================================
+    # TTC Datasets (Kim et al., 2024)
+    # ===========================================
+    
+    # Weather: context=7, prediction=7
+    - name: "leret_ttc_weather"
+      description: "LeRet with text embeddings on TTC Weather dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "LeRet"
+          config_path: "model_configs/general/LeRet.yaml"
+        data:
+          name: "ttc_weather"
+          config_path: "data_configs/ttc/climate/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 7        # Context length from Table 4
+          output_len: 7       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 50  # Total epochs (pretrain + finetune)
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          # LeRet-specific two-stage training
+          leret:
+            training_stage: "both"
+            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_loss: "mse"
+            finetune_loss: "mse"
+            pretrain_learning_rate: 1e-3
+        wandb:
+          tags: ["leret", "ttc_weather"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/leret/time_mmd_ttc"
+        model_config_overrides:
+          # Original LeRet hyperparameters
+          d_model: 128
+          n_heads: 8
+          e_layers: 3
+          d_ff: 256
+          patch_len: 16
+          stride: 8
+          padding_patch: end
+          revin: True
+          affine: False
+          subtract_last: False
+          decomposition: False
+          kernel_size: 25
+          individual: False
+          dropout: 0.05
+          fc_dropout: 0.05
+          head_dropout: 0.0
+          # Text embedding configuration
+          use_language: True
+          language_dim: 768
+          # Task type for text-guided forecasting
+          task: TGTSF
+          # Dataset-specific (enc_in will be inferred automatically)
+          seq_len: 7
+          pred_len: 7
+    
+    # Medical: context=7, prediction=7
+    - name: "leret_ttc_medical"
+      description: "LeRet with text embeddings on TTC Medical dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "LeRet"
+          config_path: "model_configs/general/LeRet.yaml"
+        data:
+          name: "ttc_medical"
+          config_path: "data_configs/ttc/medical/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 7        # Context length from Table 4
+          output_len: 7       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 50  # Total epochs (pretrain + finetune)
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          # LeRet-specific two-stage training
+          leret:
+            training_stage: "both"
+            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_loss: "mse"
+            finetune_loss: "mse"
+            pretrain_learning_rate: 1e-3
+        wandb:
+          tags: ["leret", "ttc_medical"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/leret/time_mmd_ttc"
+        model_config_overrides:
+          # Original LeRet hyperparameters
+          d_model: 128
+          n_heads: 8
+          e_layers: 3
+          d_ff: 256
+          patch_len: 16
+          stride: 8
+          padding_patch: end
+          revin: True
+          affine: False
+          subtract_last: False
+          decomposition: False
+          kernel_size: 25
+          individual: False
+          dropout: 0.05
+          fc_dropout: 0.05
+          head_dropout: 0.0
+          # Text embedding configuration
+          use_language: True
+          language_dim: 768
+          # Task type for text-guided forecasting
+          task: TGTSF
+          # Dataset-specific (enc_in will be inferred automatically)
+          seq_len: 7
+          pred_len: 7

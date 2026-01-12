@@ -354,9 +354,10 @@ class Model(nn.Module):
             res_init = res_init.permute(0, 2, 1)
             trend_init = trend_init.permute(0, 2, 1)
             
-            # Process through separate backbones
-            res, auto_res = self.model_res(res_init)
-            trend, auto_trend = self.model_trend(trend_init)
+            # Process through separate backbones with optional language integration
+            language_integrator = self.language_integrator if (self.use_language and language_embeddings is not None) else None
+            res, auto_res = self.model_res(res_init, language_integrator=language_integrator, language_embeddings=language_embeddings)
+            trend, auto_trend = self.model_trend(trend_init, language_integrator=language_integrator, language_embeddings=language_embeddings)
             
             # Combine outputs
             forecast = res + trend
@@ -372,8 +373,9 @@ class Model(nn.Module):
             # Transpose for backbone: [B, L, C] -> [B, C, L]
             x = x.permute(0, 2, 1)
             
-            # Process through backbone
-            forecast, auto_y = self.model(x)
+            # Process through backbone with optional language integration
+            language_integrator = self.language_integrator if (self.use_language and language_embeddings is not None) else None
+            forecast, auto_y = self.model(x, language_integrator=language_integrator, language_embeddings=language_embeddings)
             
             # Transpose back: [B, C, L] -> [B, L, C]
             forecast = forecast.permute(0, 2, 1)

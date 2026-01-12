@@ -1,0 +1,82 @@
+# Experiment Suite: LeRet on NYC_traffic_speed
+# Description: Train LeRet model on NYC_traffic_speed dataset with text embeddings
+# Usage: python -m cli.suite run configs/experiment_suites/leret/nyc_traffic_speed.yaml
+# Note: NYC_traffic_speed uses hourly sampling (downsampled to -h)
+#       Input: 360 samples = 15 days (half month), Output: 168 samples = 1 week (second smallest)
+#       Split points: {Jan. 1, 2021, Jan. 1, 2022}
+#       Uses y_hetero (text embeddings) with timestamp_semantics: t_about
+
+suite:
+  name: "leret_nyc_traffic_speed"
+  description: "Train LeRet model on NYC_traffic_speed dataset with text embeddings, 15-day context, 1-week prediction"
+  tags: ["leret", "retention", "pytorch", "fidel-ts", "nyc_traffic_speed", "text-embeddings"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/leret/nyc_traffic_speed"
+    
+  # Experiments in this suite
+  experiments:
+    - name: "leret_nyc_traffic_speed"
+      description: "LeRet with text embeddings on NYC_traffic_speed with 15-day context, 1-week prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "LeRet"
+          config_path: "model_configs/general/LeRet.yaml"
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 360      # 15 days at hourly intervals (half month)
+          output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720})
+          batch_size: 768
+          learning_rate: 8.66e-4
+          patience: 5
+          epochs: 50  # Total epochs (pretrain + finetune)
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          # LeRet-specific two-stage training
+          leret:
+            training_stage: "both"
+            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_loss: "mse"
+            finetune_loss: "mse"
+            pretrain_learning_rate: 1e-3
+        wandb:
+          tags: ["leret", "nyc_traffic_speed"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/leret/nyc_traffic_speed"
+        model_config_overrides:
+          # Original LeRet hyperparameters
+          d_model: 128
+          n_heads: 8
+          e_layers: 3
+          d_ff: 256
+          patch_len: 16
+          stride: 8
+          padding_patch: end
+          revin: True
+          affine: False
+          subtract_last: False
+          decomposition: False
+          kernel_size: 25
+          individual: False
+          dropout: 0.05
+          fc_dropout: 0.05
+          head_dropout: 0.0
+          # Text embedding configuration
+          use_language: True
+          language_dim: 768
+          # Task type for text-guided forecasting
+          task: TGTSF
+          # Dataset-specific (enc_in will be inferred automatically)
+          seq_len: 360
+          pred_len: 168

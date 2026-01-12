@@ -428,12 +428,19 @@ class LeRet_backbone(nn.Module):
             head_dropout=head_dropout
         )
     
-    def forward(self, z: Tensor) -> Tuple[Tensor, Tensor]:
+    def forward(
+        self, 
+        z: Tensor,
+        language_integrator=None,
+        language_embeddings=None
+    ) -> Tuple[Tensor, Tensor]:
         """
         Forward pass through LeRet backbone.
         
         Args:
             z: Input time series [batch, n_vars, seq_len]
+            language_integrator: Optional language integrator module for text embeddings
+            language_embeddings: Optional language embeddings [text_num, language_dim]
             
         Returns:
             Tuple of:
@@ -462,6 +469,14 @@ class LeRet_backbone(nn.Module):
         # =================================================================
         # h: [B, C, d_model, patch_num]
         h = self.backbone(z)
+        
+        # =================================================================
+        # Language integration (optional)
+        # =================================================================
+        if language_integrator is not None and language_embeddings is not None:
+            # Integrate language knowledge into encoded patches
+            # h: [B, C, d_model, patch_num] -> [B, C, d_model, patch_num] (enhanced)
+            h = language_integrator(h, language_embeddings)
         
         # =================================================================
         # Patch-level head (Stage 1 - auto-regression)

@@ -216,9 +216,29 @@ if HAS_LIGHTNING:
                 batch_x = batch_x.to(self.device)
                 batch_y = batch_y.to(self.device)
             
+            # Extract and process text embeddings if available
+            language_embeddings = None
+            if batch_y_hetero is not None:
+                # Convert to tensor if needed
+                if not isinstance(batch_y_hetero, torch.Tensor):
+                    batch_y_hetero = torch.tensor(batch_y_hetero, dtype=torch.float32)
+                
+                batch_y_hetero = batch_y_hetero.to(self.device)
+                
+                # Aggregate y_hetero from [B, pred_len, num_items, text_dim] to [text_num, language_dim]
+                # Strategy: Mean pooling across batch, pred_len, and num_items to get single aggregated embedding
+                # batch_y_hetero: [B, pred_len, num_items, text_dim]
+                if batch_y_hetero.numel() > 0:
+                    # Flatten batch, pred_len, and num_items dimensions, then take mean
+                    # Result: [text_dim] -> [1, text_dim] to match expected format
+                    language_embeddings = batch_y_hetero.mean(dim=(0, 1, 2))  # [text_dim]
+                    language_embeddings = language_embeddings.unsqueeze(0)  # [1, text_dim]
+            
             # Build forward kwargs
             model_params = list(inspect.signature(self.model.forward).parameters.keys())
             forward_kwargs = {'x': batch_x} if 'x' in model_params else {}
+            if 'language_embeddings' in model_params and language_embeddings is not None:
+                forward_kwargs['language_embeddings'] = language_embeddings
             
             forecast, auto_y = self.model(**forward_kwargs)
             return forecast, auto_y, batch_x, batch_y
@@ -537,8 +557,26 @@ class LeRetPyTorchTrainer:
         batch_x = batch_x.to(self.device)
         batch_y = batch_y.to(self.device)
         
+        # Extract and process text embeddings if available
+        language_embeddings = None
+        if batch_y_hetero is not None:
+            # Convert to tensor if needed
+            if not isinstance(batch_y_hetero, torch.Tensor):
+                batch_y_hetero = torch.tensor(batch_y_hetero, dtype=torch.float32)
+            
+            batch_y_hetero = batch_y_hetero.to(self.device)
+            
+            # Aggregate y_hetero from [B, pred_len, num_items, text_dim] to [text_num, language_dim]
+            # Strategy: Mean pooling across batch, pred_len, and num_items to get single aggregated embedding
+            # batch_y_hetero: [B, pred_len, num_items, text_dim]
+            if batch_y_hetero.numel() > 0:
+                # Flatten batch, pred_len, and num_items dimensions, then take mean
+                # Result: [text_dim] -> [1, text_dim] to match expected format
+                language_embeddings = batch_y_hetero.mean(dim=(0, 1, 2))  # [text_dim]
+                language_embeddings = language_embeddings.unsqueeze(0)  # [1, text_dim]
+        
         # LeRet returns (forecast, auto_y)
-        forecast, auto_y = self.model(x=batch_x)
+        forecast, auto_y = self.model(x=batch_x, language_embeddings=language_embeddings)
         
         return forecast, auto_y, batch_x, batch_y, sample_ids
     
