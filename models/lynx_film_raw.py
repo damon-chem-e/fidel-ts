@@ -36,6 +36,7 @@ from torch import nn
 import torch
 import copy
 import numpy as np
+import warnings
 from layers.TGTSF_torch import text_encoder
 from layers.lynx_film_layers import iTransformerFilm
 
@@ -368,6 +369,86 @@ class Model(nn.Module):
                 # If conversion fails, use zero tensor as placeholder
                 return torch.zeros((1, 1), dtype=torch.float32).to(device)
     
+    def _convert_text_embedding_to_tensor(self, text_embedding, device, name="text_embedding"):
+        """
+        Convert text embedding (x_hetero or y_hetero) to a tensor and move it to the specified device.
+        
+        Handles various input types that text embeddings can be:
+        - List of numpy arrays or tensors (per-sample embeddings)
+        - Numpy array (single sample or batch)
+        - Tensor (moves to device)
+        - Other types (attempts conversion, falls back to placeholder)
+        
+        Args:
+            text_embedding: Text embeddings in various formats
+            device: Target device for the tensor
+            name: Name of the embedding (for logging/warning purposes)
+            
+        Returns:
+            torch.Tensor: text_embedding as a float tensor on the specified device
+        """
+        # Handle list types (common when DataLoader collates per-sample arrays)
+        if isinstance(text_embedding, list):
+            list_len = len(text_embedding)
+            if list_len == 0:
+                # Empty list - create zero tensor as placeholder
+                warnings.warn(
+                    f"Empty list received for {name}. Creating zero tensor placeholder. "
+                    f"This may indicate a data loading issue.",
+                    UserWarning
+                )
+                return torch.zeros((1, 1, 1), dtype=torch.float32).to(device)
+            elif isinstance(text_embedding[0], (np.ndarray, np.generic)):
+                # List of numpy arrays - stack them into a single tensor
+                # Each array is (seq_len, num_items, embed_dim), stacking adds batch dimension
+                # Check for unexpected length (should match batch size)
+                if list_len == 1:
+                    warnings.warn(
+                        f"List with only 1 element for {name}. Expected batch_size elements. "
+                        f"Shape may be incorrect.",
+                        UserWarning
+                    )
+                tensor_result = torch.from_numpy(np.stack(text_embedding)).float().to(device)
+                return tensor_result
+            elif isinstance(text_embedding[0], torch.Tensor):
+                # List of tensors - stack them
+                if list_len == 1:
+                    warnings.warn(
+                        f"List with only 1 element for {name}. Expected batch_size elements. "
+                        f"Shape may be incorrect.",
+                        UserWarning
+                    )
+                return torch.stack(text_embedding).float().to(device)
+            else:
+                # Try to convert list to tensor directly
+                try:
+                    return torch.tensor(text_embedding, dtype=torch.float32).to(device)
+                except (TypeError, ValueError):
+                    # If conversion fails, use zero tensor as placeholder
+                    warnings.warn(
+                        f"Failed to convert list to tensor for {name}. Using zero tensor placeholder. "
+                        f"List length: {list_len}, first element type: {type(text_embedding[0])}",
+                        UserWarning
+                    )
+                    return torch.zeros((1, 1, 1), dtype=torch.float32).to(device)
+        
+        # Handle numpy array
+        elif isinstance(text_embedding, (np.ndarray, np.generic)):
+            return torch.from_numpy(np.asarray(text_embedding)).float().to(device)
+        
+        # Handle tensor
+        elif isinstance(text_embedding, torch.Tensor):
+            # Already a tensor, just move to device
+            return text_embedding.float().to(device)
+        
+        # Fallback: try to convert to tensor
+        else:
+            try:
+                return torch.tensor(text_embedding, dtype=torch.float32).to(device)
+            except (TypeError, ValueError):
+                # If conversion fails, use zero tensor as placeholder
+                return torch.zeros((1, 1, 1), dtype=torch.float32).to(device)
+    
     def move_to_device(self, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, 
                       hetero_x_time, hetero_y_time, hetero_general, hetero_channel, device):
         """
@@ -400,13 +481,21 @@ class Model(nn.Module):
         # Convert hetero_channel to tensor and move to device
         hetero_channel = self._convert_hetero_channel_to_tensor(hetero_channel, device)
         
-        # Move text based on timestamp_semantics
+        # Convert text embeddings to tensors and move to device
+        # Convert both x_hetero and y_hetero, but only the one specified by timestamp_semantics
+        # will be used in the forward pass
         # - t_about: We use y_hetero (news) - forecasts ABOUT prediction window
         # - t_known: We use x_hetero (historical_events) - avoids lookahead bias
-        if self.timestamp_semantics == 't_about':
-            y_hetero = y_hetero.float().to(device)
-        elif self.timestamp_semantics == 't_known':
-            x_hetero = x_hetero.float().to(device)
+        if x_hetero is not None:
+            x_hetero = self._convert_text_embedding_to_tensor(x_hetero, device, name="x_hetero")
+        if y_hetero is not None:
+            y_hetero = self._convert_text_embedding_to_tensor(y_hetero, device, name="y_hetero")
+        
+        # Log shape of the relevant text embedding based on timestamp_semantics
+        if self.timestamp_semantics == 't_about' and y_hetero is not None:
+            print(f'[ info ] LYNX-FiLM-raw: y_hetero (news) shape: {y_hetero.shape}')
+        elif self.timestamp_semantics == 't_known' and x_hetero is not None:
+            print(f'[ info ] LYNX-FiLM-raw: x_hetero (historical_events) shape: {x_hetero.shape}')
         
         return seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel
 
