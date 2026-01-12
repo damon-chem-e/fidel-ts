@@ -1,0 +1,80 @@
+# Experiment Suite: TimeCMA on California_ISO
+# Description: Train TimeCMA model on California_ISO dataset
+# Usage: python -m cli.suite run configs/experiment_suites/timecma/california_iso.yaml
+# Note: California_ISO uses hourly sampling (downsampled to -h)
+#       Input: 360 samples = 15 days (half month), Output: 168 samples = 1 week (second smallest)
+#       Split points: {Jan. 1, 2021, Jan. 1, 2022}
+#
+# IMPORTANT: This suite requires pre-computed LLM embeddings!
+# Each experiment in this suite has an llm_embedding section that specifies
+# the LLM model and settings for embedding generation.
+
+suite:
+  name: "timecma_california_iso"
+  description: "Train TimeCMA model on California_ISO dataset with 15-day context, 1-week prediction"
+  tags: ["timecma", "multimodal", "cross-modal", "llm", "pytorch", "fidel-ts", "california_iso", "aaai2025"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/timecma/california_iso"
+    
+  # Experiments in this suite
+  experiments:
+    - name: "timecma_gpt2_california_iso"
+      description: "TimeCMA with GPT-2 embeddings on California_ISO with 15-day context, 1-week prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeCMA"
+          config_path: "model_configs/general/TimeCMA.yaml"
+        data:
+          name: "California_ISO"
+          config_path: "data_configs/California_ISO/fullCAISO_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 360      # 15 days at hourly intervals (half month)
+          output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720})
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timecma", "california_iso"]
+        # LLM embedding configuration for TimeCMA
+        llm_embedding:
+          model_name: "gpt2"
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
+          # Memory-efficient mode for large Fidel-TS dataset
+          memory_efficient: true
+          batch_size: 2048
+          chunk_size: 500000
+        model_config_overrides:
+          # California_ISO channel configuration
+          enc_in: 1           # Number of input channels
+          # TimeCMA architecture parameters
+          channel: 32         # Hidden dimension
+          d_ff: 32            # Feed-forward dimension
+          e_layers: 1         # Encoder layers
+          d_layers: 1         # Decoder layers
+          n_heads: 8          # Attention heads
+          dropout: 0.2
+          # GPT-2 base embedding dimension
+          d_llm: 768
+          # Sequence configuration
+          seq_len: 360
+          pred_len: 168
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timecma/california_iso"

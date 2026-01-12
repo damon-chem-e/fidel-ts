@@ -1,0 +1,541 @@
+# Experiment Suite: TimeCMA on Time MMD and TTC datasets
+# Description: Train TimeCMA model on all Time MMD (Liu et al., 2024b) and TTC (Kim et al., 2024) datasets
+# Usage: python -m cli.suite run configs/experiment_suites/timecma/time_mmd_ttc.yaml
+# Note: Input/output lens follow Table 4 from the original papers:
+#       - Time MMD datasets use 7:1:2 train/val/test ratio splits
+#       - TTC datasets use 7:1:2 train/val/test ratio splits
+#
+# IMPORTANT: This suite requires pre-computed LLM embeddings!
+# Each experiment in this suite has an llm_embedding section that specifies
+# the LLM model and settings for embedding generation.
+
+suite:
+  name: "timecma_time_mmd_ttc"
+  description: "Train TimeCMA model on all Time MMD and TTC datasets"
+  tags: ["timecma", "multimodal", "cross-modal", "llm", "pytorch", "time_mmd", "ttc", "aaai2025"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/timecma/time_mmd_ttc"
+    
+  # Experiments in this suite
+  experiments:
+    # ===========================================
+    # Time MMD Datasets (Liu et al., 2024b)
+    # ===========================================
+    
+    # Agriculture: context=24, prediction=6
+    - name: "timecma_gpt2_timemmd_agriculture"
+      description: "TimeCMA with GPT-2 embeddings on Time MMD Agriculture dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeCMA"
+          config_path: "model_configs/general/TimeCMA.yaml"
+        data:
+          name: "time_mmd_agriculture"
+          config_path: "data_configs/time_mmd/Algriculture/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timecma", "time_mmd_agriculture"]
+        # LLM embedding configuration for TimeCMA
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
+        model_config_overrides:
+          enc_in: 1           # Number of input channels
+          channel: 32         # Hidden dimension
+          d_ff: 32            # Feed-forward dimension
+          e_layers: 1         # Encoder layers
+          d_layers: 1         # Decoder layers
+          n_heads: 8          # Attention heads
+          dropout: 0.2
+          d_llm: 768          # GPT-2 base embedding dimension
+          seq_len: 24
+          pred_len: 6
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timecma/time_mmd_ttc"
+    
+    # Climate: context=24, prediction=6
+    - name: "timecma_gpt2_timemmd_climate"
+      description: "TimeCMA with GPT-2 embeddings on Time MMD Climate dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeCMA"
+          config_path: "model_configs/general/TimeCMA.yaml"
+        data:
+          name: "time_mmd_climate"
+          config_path: "data_configs/time_mmd/Climate/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timecma", "time_mmd_climate"]
+        # LLM embedding configuration for TimeCMA
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
+        model_config_overrides:
+          enc_in: 1
+          channel: 32
+          d_ff: 32
+          e_layers: 1
+          d_layers: 1
+          n_heads: 8
+          dropout: 0.2
+          d_llm: 768
+          seq_len: 24
+          pred_len: 6
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timecma/time_mmd_ttc"
+    
+    # Economy: context=24, prediction=6
+    - name: "timecma_gpt2_timemmd_economy"
+      description: "TimeCMA with GPT-2 embeddings on Time MMD Economy dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeCMA"
+          config_path: "model_configs/general/TimeCMA.yaml"
+        data:
+          name: "time_mmd_economy"
+          config_path: "data_configs/time_mmd/Economy/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timecma", "time_mmd_economy"]
+        # LLM embedding configuration for TimeCMA
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
+        model_config_overrides:
+          enc_in: 1
+          channel: 32
+          d_ff: 32
+          e_layers: 1
+          d_layers: 1
+          n_heads: 8
+          dropout: 0.2
+          d_llm: 768
+          seq_len: 24
+          pred_len: 6
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timecma/time_mmd_ttc"
+    
+    # Energy: context=24, prediction=12
+    - name: "timecma_gpt2_timemmd_energy"
+      description: "TimeCMA with GPT-2 embeddings on Time MMD Energy dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeCMA"
+          config_path: "model_configs/general/TimeCMA.yaml"
+        data:
+          name: "time_mmd_energy"
+          config_path: "data_configs/time_mmd/Energy/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 12      # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timecma", "time_mmd_energy"]
+        # LLM embedding configuration for TimeCMA
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
+        model_config_overrides:
+          enc_in: 1
+          channel: 32
+          d_ff: 32
+          e_layers: 1
+          d_layers: 1
+          n_heads: 8
+          dropout: 0.2
+          d_llm: 768
+          seq_len: 24
+          pred_len: 12
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timecma/time_mmd_ttc"
+    
+    # Environment: context=24, prediction=48
+    - name: "timecma_gpt2_timemmd_environment"
+      description: "TimeCMA with GPT-2 embeddings on Time MMD Environment dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeCMA"
+          config_path: "model_configs/general/TimeCMA.yaml"
+        data:
+          name: "time_mmd_environment"
+          config_path: "data_configs/time_mmd/Environment/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 48      # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timecma", "time_mmd_environment"]
+        # LLM embedding configuration for TimeCMA
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
+        model_config_overrides:
+          enc_in: 1
+          channel: 32
+          d_ff: 32
+          e_layers: 1
+          d_layers: 1
+          n_heads: 8
+          dropout: 0.2
+          d_llm: 768
+          seq_len: 24
+          pred_len: 48
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timecma/time_mmd_ttc"
+    
+    # Health (Public_Health): context=24, prediction=12
+    - name: "timecma_gpt2_timemmd_health"
+      description: "TimeCMA with GPT-2 embeddings on Time MMD Health dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeCMA"
+          config_path: "model_configs/general/TimeCMA.yaml"
+        data:
+          name: "time_mmd_health"
+          config_path: "data_configs/time_mmd/Public_Health/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 12      # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timecma", "time_mmd_health"]
+        # LLM embedding configuration for TimeCMA
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
+        model_config_overrides:
+          enc_in: 1
+          channel: 32
+          d_ff: 32
+          e_layers: 1
+          d_layers: 1
+          n_heads: 8
+          dropout: 0.2
+          d_llm: 768
+          seq_len: 24
+          pred_len: 12
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timecma/time_mmd_ttc"
+    
+    # Socialgood: context=24, prediction=6
+    - name: "timecma_gpt2_timemmd_socialgood"
+      description: "TimeCMA with GPT-2 embeddings on Time MMD SocialGood dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeCMA"
+          config_path: "model_configs/general/TimeCMA.yaml"
+        data:
+          name: "time_mmd_socialgood"
+          config_path: "data_configs/time_mmd/SocialGood/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timecma", "time_mmd_socialgood"]
+        # LLM embedding configuration for TimeCMA
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
+        model_config_overrides:
+          enc_in: 1
+          channel: 32
+          d_ff: 32
+          e_layers: 1
+          d_layers: 1
+          n_heads: 8
+          dropout: 0.2
+          d_llm: 768
+          seq_len: 24
+          pred_len: 6
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timecma/time_mmd_ttc"
+    
+    # Traffic: context=24, prediction=6
+    - name: "timecma_gpt2_timemmd_traffic"
+      description: "TimeCMA with GPT-2 embeddings on Time MMD Traffic dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeCMA"
+          config_path: "model_configs/general/TimeCMA.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timecma", "time_mmd_traffic"]
+        # LLM embedding configuration for TimeCMA
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
+        model_config_overrides:
+          enc_in: 1
+          channel: 32
+          d_ff: 32
+          e_layers: 1
+          d_layers: 1
+          n_heads: 8
+          dropout: 0.2
+          d_llm: 768
+          seq_len: 24
+          pred_len: 6
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timecma/time_mmd_ttc"
+    
+    # ===========================================
+    # TTC Datasets (Kim et al., 2024)
+    # ===========================================
+    
+    # Weather: context=7, prediction=7
+    - name: "timecma_gpt2_ttc_weather"
+      description: "TimeCMA with GPT-2 embeddings on TTC Weather dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeCMA"
+          config_path: "model_configs/general/TimeCMA.yaml"
+        data:
+          name: "ttc_weather"
+          config_path: "data_configs/ttc/climate/config.yaml"
+        training:
+          input_len: 7        # Context length from Table 4
+          output_len: 7       # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timecma", "ttc_weather"]
+        # LLM embedding configuration for TimeCMA
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
+        model_config_overrides:
+          enc_in: 4           # TTC Weather has 4 features
+          channel: 32
+          d_ff: 32
+          e_layers: 1
+          d_layers: 1
+          n_heads: 8
+          dropout: 0.2
+          d_llm: 768
+          seq_len: 7
+          pred_len: 7
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timecma/time_mmd_ttc"
+    
+    # Medical: context=7, prediction=7
+    - name: "timecma_gpt2_ttc_medical"
+      description: "TimeCMA with GPT-2 embeddings on TTC Medical dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TimeCMA"
+          config_path: "model_configs/general/TimeCMA.yaml"
+        data:
+          name: "ttc_medical"
+          config_path: "data_configs/ttc/medical/config.yaml"
+        training:
+          input_len: 7        # Context length from Table 4
+          output_len: 7       # Prediction length from Table 4
+          batch_size: 32
+          learning_rate: 1e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["timecma", "ttc_medical"]
+        # LLM embedding configuration for TimeCMA
+        llm_embedding:
+          model_name: "gpt2"
+          batch_size: 64
+          cache_dir: "./LLM_cache/"
+          prompt_template: "timecma_v1"
+        model_config_overrides:
+          enc_in: 1           # TTC Medical has 1 feature
+          channel: 32
+          d_ff: 32
+          e_layers: 1
+          d_layers: 1
+          n_heads: 8
+          dropout: 0.2
+          d_llm: 768
+          seq_len: 7
+          pred_len: 7
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/timecma/time_mmd_ttc"
