@@ -47,6 +47,8 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: true   # Enable to log test_loss per-epoch for evaluation
           truncate_train_for_purge: true        # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # reduce overhead and improve performance
         wandb:
           tags: ["lynx_film_raw", "nyc_traffic_speed", "sweep"]
         experiment:
