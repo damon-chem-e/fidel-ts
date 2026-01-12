@@ -31,9 +31,11 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
           d_model: 1024
           e_layers: 2
           n_heads: 8
+          input_text_dim: 768
         data:
           name: "time_mmd_agriculture"
           config_path: "data_configs/time_mmd/Algriculture/config.yaml"
@@ -64,9 +66,11 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
           d_model: 1024
           e_layers: 2
           n_heads: 8
+          input_text_dim: 768
         data:
           name: "time_mmd_climate"
           config_path: "data_configs/time_mmd/Climate/config.yaml"
@@ -97,9 +101,11 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
           d_model: 1024
           e_layers: 2
           n_heads: 8
+          input_text_dim: 768
         data:
           name: "time_mmd_economy"
           config_path: "data_configs/time_mmd/Economy/config.yaml"
@@ -130,9 +136,11 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
           d_model: 1024
           e_layers: 2
           n_heads: 8
+          input_text_dim: 768
         data:
           name: "time_mmd_energy"
           config_path: "data_configs/time_mmd/Energy/config.yaml"
@@ -163,9 +171,11 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
           d_model: 1024
           e_layers: 2
           n_heads: 8
+          input_text_dim: 768
         data:
           name: "time_mmd_environment"
           config_path: "data_configs/time_mmd/Environment/config.yaml"
@@ -196,9 +206,11 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
           d_model: 1024
           e_layers: 2
           n_heads: 8
+          input_text_dim: 768
         data:
           name: "time_mmd_health"
           config_path: "data_configs/time_mmd/Public_Health/config.yaml"
@@ -229,9 +241,11 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
           d_model: 1024
           e_layers: 2
           n_heads: 8
+          input_text_dim: 768
         data:
           name: "time_mmd_socialgood"
           config_path: "data_configs/time_mmd/SocialGood/config.yaml"
@@ -262,9 +276,11 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
           d_model: 1024
           e_layers: 2
           n_heads: 8
+          input_text_dim: 768
         data:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
@@ -299,9 +315,11 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
           d_model: 1024
           e_layers: 2
           n_heads: 8
+          input_text_dim: 768
         data:
           name: "ttc_weather"
           config_path: "data_configs/ttc/climate/config.yaml"
@@ -332,9 +350,11 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
           d_model: 1024
           e_layers: 2
           n_heads: 8
+          input_text_dim: 768
         data:
           name: "ttc_medical"
           config_path: "data_configs/ttc/medical/config.yaml"

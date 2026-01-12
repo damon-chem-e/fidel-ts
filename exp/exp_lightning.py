@@ -41,7 +41,7 @@ class TimeSeriesLightningModel(pl.LightningModule):
             if hasattr(torch, 'compile'):
                 compile_mode = getattr(args, 'compile_mode', 'reduce-overhead')
                 if exp_manager:
-                    exp_manager.log(f"Compiling model with torch.compile (mode={compile_mode})...")
+                    exp_manager.logger.info(f"Compiling model with torch.compile (mode={compile_mode})...")
                 else:
                     print(f"Compiling model with torch.compile (mode={compile_mode})...")
                 self.model = torch.compile(
@@ -52,7 +52,7 @@ class TimeSeriesLightningModel(pl.LightningModule):
             else:
                 warning_msg = "torch.compile requested but not available (requires PyTorch 2.0+)"
                 if exp_manager:
-                    exp_manager.log(f"WARNING: {warning_msg}")
+                    exp_manager.logger.warning(f"WARNING: {warning_msg}")
                 else:
                     print(f"WARNING: {warning_msg}")
         
