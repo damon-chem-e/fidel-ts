@@ -380,14 +380,20 @@ def _merge_model_config_overrides(checkpoint_config, config_dict):
     """
     Merge model_config overrides from experiment_config.yaml into checkpoint_config.
     
+    CRITICAL: These overrides (e.g., d_model, e_layers, n_heads) were used during training
+    and must be applied to ensure the model architecture matches the checkpoint.
+    
     Args:
         checkpoint_config: Checkpoint configuration to update
         config_dict: Experiment config dictionary
     """
-    if 'model_config' not in config_dict or not isinstance(config_dict['model_config'], dict):
+    # Look for model_config_overrides (the actual key used in experiment configs)
+    model_config_overrides = config_dict.get('model_config_overrides', {})
+    
+    if not model_config_overrides:
         return
     
-    model_config_overrides = config_dict['model_config']
+    print(f"[Info] Applying model_config_overrides: {model_config_overrides}")
     
     # Ensure model_config is a dotdict for attribute access
     if not isinstance(checkpoint_config.model_config, dotdict):
@@ -396,10 +402,9 @@ def _merge_model_config_overrides(checkpoint_config, config_dict):
         else:
             checkpoint_config.model_config = dotdict({})
     
-    # Merge overrides (only non-empty values)
+    # Merge overrides
     for key, value in model_config_overrides.items():
-        if value:  # Only override if value is not empty/None/empty string
-            checkpoint_config.model_config[key] = value
+        checkpoint_config.model_config[key] = value
 
 
 def _validate_pretrained_model_path(checkpoint_config):

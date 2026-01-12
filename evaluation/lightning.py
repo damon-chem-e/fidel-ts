@@ -222,6 +222,15 @@ def evaluate(config):
             else:
                 raise FileNotFoundError(f"Model config not found: {model_config_path}")
         
+        # CRITICAL: Apply model_config_overrides from experiment config
+        # These overrides (e.g., d_model, e_layers, n_heads) were used during training
+        # and must be applied to ensure the model architecture matches the checkpoint
+        model_config_overrides = checkpoint_config_dict.get('model_config_overrides', {})
+        if model_config_overrides:
+            print(f"[Info] Applying model_config_overrides: {model_config_overrides}")
+            for key, value in model_config_overrides.items():
+                checkpoint_config.model_config[key] = value
+        
         # Load data config
         if data_config_path.exists():
             with open(data_config_path, 'r', encoding='utf-8') as f:
