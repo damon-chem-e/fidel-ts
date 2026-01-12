@@ -39,6 +39,8 @@ suite:
         data:
           name: "time_mmd_agriculture"
           config_path: "data_configs/time_mmd/Algriculture/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
@@ -74,6 +76,8 @@ suite:
         data:
           name: "time_mmd_climate"
           config_path: "data_configs/time_mmd/Climate/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
@@ -109,6 +113,8 @@ suite:
         data:
           name: "time_mmd_economy"
           config_path: "data_configs/time_mmd/Economy/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
@@ -144,6 +150,8 @@ suite:
         data:
           name: "time_mmd_energy"
           config_path: "data_configs/time_mmd/Energy/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
         training:
           input_len: 24       # Context length from Table 4
           output_len: 12      # Prediction length from Table 4
@@ -179,6 +187,8 @@ suite:
         data:
           name: "time_mmd_environment"
           config_path: "data_configs/time_mmd/Environment/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
         training:
           input_len: 24       # Context length from Table 4
           output_len: 48      # Prediction length from Table 4
@@ -214,6 +224,8 @@ suite:
         data:
           name: "time_mmd_health"
           config_path: "data_configs/time_mmd/Public_Health/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
         training:
           input_len: 24       # Context length from Table 4
           output_len: 12      # Prediction length from Table 4
@@ -249,6 +261,8 @@ suite:
         data:
           name: "time_mmd_socialgood"
           config_path: "data_configs/time_mmd/SocialGood/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
@@ -284,6 +298,8 @@ suite:
         data:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
         training:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
@@ -323,6 +339,8 @@ suite:
         data:
           name: "ttc_weather"
           config_path: "data_configs/ttc/climate/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
         training:
           input_len: 7        # Context length from Table 4
           output_len: 7       # Prediction length from Table 4
@@ -358,6 +376,8 @@ suite:
         data:
           name: "ttc_medical"
           config_path: "data_configs/ttc/medical/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
         training:
           input_len: 7        # Context length from Table 4
           output_len: 7       # Prediction length from Table 4
