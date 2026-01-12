@@ -36,7 +36,7 @@ suite:
           name: "TimeCMA"
           config_path: "model_configs/general/TimeCMA.yaml"
         data:
-          name: "time_mmd_agriculture"
+          name: "time_mmd_algriculture"
           config_path: "data_configs/time_mmd/Algriculture/config.yaml"
         training:
           input_len: 24       # Context length from Table 4
@@ -55,7 +55,7 @@ suite:
           devices: "0"
         wandb:
           enabled: true
-          tags: ["timecma", "time_mmd_agriculture"]
+          tags: ["timecma", "time_mmd_algriculture"]
         # LLM embedding configuration for TimeCMA
         llm_embedding:
           model_name: "gpt2"
@@ -448,7 +448,7 @@ suite:
           name: "TimeCMA"
           config_path: "model_configs/general/TimeCMA.yaml"
         data:
-          name: "ttc_weather"
+          name: "ttc_climate"
           config_path: "data_configs/ttc/climate/config.yaml"
         training:
           input_len: 7        # Context length from Table 4
@@ -467,7 +467,7 @@ suite:
           devices: "0"
         wandb:
           enabled: true
-          tags: ["timecma", "ttc_weather"]
+          tags: ["timecma", "ttc_climate"]
         # LLM embedding configuration for TimeCMA
         llm_embedding:
           model_name: "gpt2"
