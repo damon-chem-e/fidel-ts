@@ -185,6 +185,8 @@ if HAS_LIGHTNING:
             self.save_hyperparameters(ignore=['args', 'exp_manager', 'leret_config'])
             
             # Build the LeRet model
+            # Note: enc_in inference for Lightning should happen in _run_lightning_* functions
+            # before creating the Lightning module
             self.model = model_init(self.args.model, self.args.model_config, self.args)
             
             # Loss functions for each stage
@@ -332,6 +334,9 @@ def _run_lightning_pretrain(args, exp_manager, data_module, leret_config):
     exp_manager.logger.info(f"  Epochs: {leret_config.pretrain_epochs}")
     exp_manager.logger.info("=" * 60)
     
+    # Ensure enc_in is set before creating model
+    _ensure_enc_in_for_lightning(args, exp_manager, data_module)
+    
     model = LeRetLightningModule(args, exp_manager, "pretrain", leret_config)
     checkpoint_dir = str(exp_manager.get_checkpoint_dir())
     
@@ -390,6 +395,44 @@ def _run_lightning_pretrain(args, exp_manager, data_module, leret_config):
     return pretrain_ckpt_path
 
 
+def _ensure_enc_in_for_lightning(args, exp_manager, data_module):
+    """Ensure enc_in is set for Lightning training by inferring from data_module."""
+    # Check if enc_in is already set
+    if hasattr(args, 'model_config_overrides') and args.model_config_overrides:
+        if 'enc_in' in args.model_config_overrides:
+            return  # enc_in already set
+    
+    # Try to get from data_config.input_channel
+    if hasattr(args, 'data_config') and hasattr(args.data_config, 'input_channel'):
+        if not hasattr(args, 'model_config_overrides'):
+            args.model_config_overrides = {}
+        args.model_config_overrides['enc_in'] = args.data_config.input_channel
+        if exp_manager:
+            exp_manager.logger.info(f"Inferred enc_in={args.data_config.input_channel} from data_config.input_channel")
+        return
+    
+    # Infer from first batch of training data
+    try:
+        train_loader = data_module.train_dataloader()
+        # Get first batch to determine channel count
+        for batch in train_loader:
+            sample_ids, batch_x, batch_y, *_ = batch
+            enc_in = batch_x.shape[-1]  # Last dimension is number of channels
+            if not hasattr(args, 'model_config_overrides'):
+                args.model_config_overrides = {}
+            args.model_config_overrides['enc_in'] = int(enc_in)
+            if exp_manager:
+                exp_manager.logger.info(f"Inferred enc_in={enc_in} from first training batch (shape: {batch_x.shape})")
+            break
+    except Exception as e:
+        # If inference fails, raise informative error
+        raise ValueError(
+            f"enc_in must be provided in model_config_overrides. "
+            f"Could not infer from data: {e}. "
+            f"Example: model_config_overrides: {{enc_in: 7}}"
+        )
+
+
 def _run_lightning_finetune(args, exp_manager, data_module, leret_config, pretrain_ckpt_path=None):
     """Run Lightning finetune stage."""
     exp_manager.logger.info("=" * 60)
@@ -406,6 +449,9 @@ def _run_lightning_finetune(args, exp_manager, data_module, leret_config, pretra
     ckpt_exp_id = checkpoint.get('experiment_id')
     if ckpt_exp_id and ckpt_exp_id != exp_manager.experiment_id:
         raise ValueError(f"Experiment ID mismatch: {ckpt_exp_id} vs {exp_manager.experiment_id}")
+    
+    # Ensure enc_in is set before creating model
+    _ensure_enc_in_for_lightning(args, exp_manager, data_module)
     
     model = LeRetLightningModule(args, exp_manager, "finetune", leret_config)
     model.load_state_dict(checkpoint['state_dict'], strict=False)
@@ -522,24 +568,64 @@ class LeRetPyTorchTrainer:
         self.exp_manager = exp_manager
         self.device = self._get_device()
         
-        # Build model
+        # Data provider (needed to determine enc_in if not provided)
+        from data_provider.data_factory import Data_Provider
+        console = exp_manager.get_console() if exp_manager else None
+        self.data_provider = Data_Provider(args, buffer=(not args.disable_buffer), console=console)
+        
+        # Determine enc_in from data if not provided in config
+        self._ensure_enc_in_set()
+        
+        # Build model (after enc_in is determined)
         self.model = self._build_model()
         self.model.to(self.device)
         
         # Patching parameters
         self.patch_len = getattr(args, 'patch_len', 16)
         self.stride = getattr(args, 'stride', 8)
-        
-        # Data provider
-        from data_provider.data_factory import Data_Provider
-        console = exp_manager.get_console() if exp_manager else None
-        self.data_provider = Data_Provider(args, buffer=(not args.disable_buffer), console=console)
     
     def _get_device(self):
         """Get the training device."""
         if self.args.use_gpu and torch.cuda.is_available():
             return torch.device(f'cuda:{self.args.gpu}')
         return torch.device('cpu')
+    
+    def _ensure_enc_in_set(self):
+        """Ensure enc_in is set in model_config_overrides by inferring from data if needed."""
+        # Check if enc_in is already set
+        if hasattr(self.args, 'model_config_overrides') and self.args.model_config_overrides:
+            if 'enc_in' in self.args.model_config_overrides:
+                return  # enc_in already set
+        
+        # Try to get from data_config.input_channel
+        if hasattr(self.args, 'data_config') and hasattr(self.args.data_config, 'input_channel'):
+            if not hasattr(self.args, 'model_config_overrides'):
+                self.args.model_config_overrides = {}
+            self.args.model_config_overrides['enc_in'] = self.args.data_config.input_channel
+            if self.exp_manager:
+                self.exp_manager.logger.info(f"Inferred enc_in={self.args.data_config.input_channel} from data_config.input_channel")
+            return
+        
+        # Infer from first batch of training data
+        try:
+            train_loader = self.data_provider.get_train(return_type='loader')
+            # Get first batch to determine channel count
+            for batch in train_loader:
+                sample_ids, batch_x, batch_y, *_ = batch
+                enc_in = batch_x.shape[-1]  # Last dimension is number of channels
+                if not hasattr(self.args, 'model_config_overrides'):
+                    self.args.model_config_overrides = {}
+                self.args.model_config_overrides['enc_in'] = int(enc_in)
+                if self.exp_manager:
+                    self.exp_manager.logger.info(f"Inferred enc_in={enc_in} from first training batch (shape: {batch_x.shape})")
+                break
+        except Exception as e:
+            # If inference fails, raise informative error
+            raise ValueError(
+                f"enc_in must be provided in model_config_overrides. "
+                f"Could not infer from data: {e}. "
+                f"Example: model_config_overrides: {{enc_in: 7}}"
+            )
     
     def _build_model(self):
         """Build the LeRet model."""
