@@ -366,11 +366,13 @@ class FidelTSEmbeddingLoader:
         
         static_text_path = self.paths.get('static_text_path')
         if not static_text_path:
-            print(f'[ info ] No static_text_path found in resolved paths')
+            print(f'[ warning ] No static_text_path found in resolved paths')
+            print(f'[ debug ] Available paths: {list(self.paths.keys())}')
             return None
         
+        print(f'[ debug ] Checking for static text at: {static_text_path}')
         if not static_text_path.exists():
-            print(f'[ info ] Static text JSON file not found: {static_text_path}')
+            print(f'[ warning ] Static text JSON file not found: {static_text_path}')
             return None
         
         try:
