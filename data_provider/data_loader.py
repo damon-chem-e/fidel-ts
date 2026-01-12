@@ -691,25 +691,25 @@ class Heterogeneous_Dataset(Dataset):
     def init_hetero_data(self, id):
         """
         Factory method that creates a callable hetero_data_getter function for a specific entity ID.
-        
+
         This method prepares entity-specific parameters (downtime ranges, static info) and creates
         a partially applied version of `get_hetero_data` that can be called with just timestamps.
         The returned function implements the hetero_data_getter interface expected by Universal_Dataset.
-        
+
         Where It's Used:
         ----------------
         Called by Data_Provider.get_datasets() for each entity ID when creating Universal_Dataset
         instances for Fidel-TS datasets (non-Time-MMD datasets with hetero_info configured).
         The returned function is passed as the `hetero_data_getter` parameter to Universal_Dataset.
-        
+
         Args:
             id: Entity/channel ID for which to create the hetero_data_getter function
-        
+
         Returns:
             callable: A partially applied function that takes timestamps and returns
                 (matched_times, general_info, channel_info, output_dynamic) tuple.
                 This function can be called as: hetero_data_getter(timestamps)
-        
+
         Process:
         --------
         1. Extracts downtime ranges from id_info for the given entity ID
@@ -723,8 +723,10 @@ class Heterogeneous_Dataset(Dataset):
         with its own downtime ranges and channel_info. For Time-MMD datasets, use
         TimeMMD_HeteroGetter instead, which handles text directly from CSV columns.
         """
-        down_time = self.id_info[id]['sensor_downtime']
-        down_time = [down_time[k]['time'] for k in down_time.keys()]
+        # Get sensor_downtime from id_info, use empty dict as default if not present
+        # (e.g., for auto-created id_info files that don't have full metadata)
+        sensor_downtime = self.id_info[id].get('sensor_downtime', {})
+        down_time = [sensor_downtime[k]['time'] for k in sensor_downtime.keys()]
         down_time = [[pd.to_datetime(t[0]), pd.to_datetime(t[1])] for t in down_time]
 
         # check if all the downtime have timezone

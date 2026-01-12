@@ -394,16 +394,33 @@ class Data_Provider(object):
         """
         # Get id_info filename (default: 'id_info.json')
         id_info_filename = getattr(self.dataset_config, 'id_info', 'id_info.json')
-        id_info_path = os.path.join(self.dataset_config.root_path, id_info_filename)
         
-        # Try to load existing id_info file if present
-        if os.path.exists(id_info_path):
+        # For fidel-ts datasets, id_info.json is at the dataset root (parent of time_series/)
+        # For Time-MMD datasets, id_info.json is at root_path itself
+        # Try both locations: parent directory first, then root_path
+        parent_id_info_path = os.path.join(os.path.dirname(self.dataset_config.root_path), id_info_filename)
+        root_id_info_path = os.path.join(self.dataset_config.root_path, id_info_filename)
+        
+        # Check parent directory first (fidel-ts pattern)
+        if os.path.exists(parent_id_info_path):
             try:
-                with open(id_info_path, 'r') as f:
+                with open(parent_id_info_path, 'r') as f:
                     return json.load(f)
             except Exception as e:
-                print(f'[ warning ] Failed to load existing id_info from {id_info_path}: {e}')
+                print(f'[ warning ] Failed to load existing id_info from {parent_id_info_path}: {e}')
+        
+        # Check root_path directory (Time-MMD pattern)
+        if os.path.exists(root_id_info_path):
+            try:
+                with open(root_id_info_path, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f'[ warning ] Failed to load existing id_info from {root_id_info_path}: {e}')
                 print(f'[ info ] Will attempt to auto-create id_info')
+        
+        # Neither location has id_info - will auto-create
+        # Use root_path as the default location for auto-created files
+        id_info_path = root_id_info_path
         
         # id_info doesn't exist - try to auto-create it
         print(f'[ info ] id_info file not found at {id_info_path}')
