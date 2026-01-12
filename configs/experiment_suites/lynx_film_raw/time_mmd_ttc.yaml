@@ -367,7 +367,6 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
-          resume_experiment_id: "20260112-170254_0ef2d9e8e8b5"
     
     # Medical: context=7, prediction=7
     - name: "lynx_film_raw_ttc_medical"
