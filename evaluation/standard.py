@@ -10,6 +10,7 @@ import os
 import json
 import glob
 import yaml
+import numpy as np
 from tqdm import tqdm
 from models import model_init
 from data_provider.data_factory import Data_Provider
@@ -199,6 +200,125 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
         return channel_mse_norm, channel_mae_norm, channel_mse_denorm, channel_mae_denorm, channel_counts
     else:
         return total_mse_norm, total_mae_norm, total_mse_denorm, total_mae_denorm, num_samples
+
+
+def _evaluate_single_entity(entity_name, entity_loader, dataset, split_name, filtered_samples,
+                            model, checkpoint_config, device, channel_wise):
+    """
+    Evaluate a single entity and return its metrics.
+    
+    Args:
+        entity_name: Name of the entity being evaluated
+        entity_loader: DataLoader for this entity
+        dataset: Dataset object (may be dict or single dataset)
+        split_name: Name of the split ('train', 'val', 'test')
+        filtered_samples: Optional dict of filtered sample indexes
+        model: Trained model
+        checkpoint_config: Checkpoint configuration
+        device: PyTorch device
+        channel_wise: Whether to compute channel-wise metrics
+        
+    Returns:
+        tuple: (entity_name, mse_norm, mae_norm, mse_denorm, mae_denorm, num_samples)
+    """
+    print(f"\n[Info] Testing on {split_name} dataset - entity: {entity_name}")
+    
+    # Get dataset for this entity - prefer from loader, fallback to provided dataset
+    entity_dataset = None
+    if hasattr(entity_loader, 'dataset'):
+        entity_dataset = entity_loader.dataset
+    elif isinstance(dataset, dict) and entity_name in dataset:
+        entity_dataset = dataset[entity_name]
+    elif not isinstance(dataset, dict):
+        entity_dataset = dataset
+    
+    # Get indexes for this entity
+    if filtered_samples is not None:
+        indexes = filtered_samples.get(f"{split_name}_{entity_name}", filtered_samples.get(split_name, []))
+    else:
+        indexes = None
+    
+    # Run evaluation for this entity
+    result = evaluate_full_dataset(entity_loader, model, checkpoint_config, device, indexes, 
+                                  channel_wise, dataset=entity_dataset)
+    
+    if not channel_wise:
+        mse_norm, mae_norm, mse_denorm, mae_denorm, num_samples = result
+        return (entity_name, mse_norm, mae_norm, mse_denorm, mae_denorm, num_samples)
+    else:
+        # For channel_wise, return the raw result tuple with entity_name prepended
+        return (entity_name, result)
+
+
+def _aggregate_entity_metrics(entity_metrics, split_name, nan_aware=False):
+    """
+    Aggregate metrics from multiple entities into final results.
+    
+    Args:
+        entity_metrics: List of (entity_name, mse_norm, mae_norm, mse_denorm, mae_denorm, num_samples) tuples
+        split_name: Name of the split (for logging)
+        nan_aware: If True, exclude entities with NaN metrics and warn about them
+        
+    Returns:
+        dict: Aggregated results with keys 'mse_norm', 'mae_norm', 'mse_denorm', 'mae_denorm', 
+              'num_samples', 'is_concat', or None if no valid metrics
+    """
+    if not entity_metrics:
+        return None
+    
+    # If NaN-aware, filter out entities with NaN values
+    if nan_aware:
+        valid_metrics = []
+        entities_with_nan = []
+        
+        for entity_name, mse_norm, mae_norm, mse_denorm, mae_denorm, num_samples in entity_metrics:
+            has_nan = (np.isnan(mse_norm) or np.isnan(mae_norm) or 
+                      np.isnan(mse_denorm) or np.isnan(mae_denorm))
+            if has_nan:
+                entities_with_nan.append(entity_name)
+                print(f"[Warning] Entity '{entity_name}' produced NaN metrics - excluded from aggregation")
+            else:
+                valid_metrics.append((entity_name, mse_norm, mae_norm, mse_denorm, mae_denorm, num_samples))
+        
+        if entities_with_nan:
+            print(f"\n[Warning] {len(entities_with_nan)} entity/entities with NaN metrics (excluded): {', '.join(entities_with_nan)}")
+        
+        if not valid_metrics:
+            print(f"\n[Error] No valid entity metrics found for '{split_name}' (all entities produced NaN)")
+            return None
+        
+        entity_metrics = valid_metrics
+    
+    # Aggregate metrics: sum totals and divide by total samples
+    total_mse_norm = sum(m[1] for m in entity_metrics)
+    total_mae_norm = sum(m[2] for m in entity_metrics)
+    total_mse_denorm = sum(m[3] for m in entity_metrics if m[3] > 0)
+    total_mae_denorm = sum(m[4] for m in entity_metrics if m[4] > 0)
+    total_samples = sum(m[5] for m in entity_metrics)
+    
+    if total_samples == 0:
+        return None
+    
+    avg_mse_norm = total_mse_norm / total_samples
+    avg_mae_norm = total_mae_norm / total_samples
+    avg_mse_denorm = total_mse_denorm / total_samples if total_mse_denorm > 0 else None
+    avg_mae_denorm = total_mae_denorm / total_samples if total_mse_denorm > 0 else None
+    
+    # Print results
+    print(f"\n-> Results for '{split_name}' (normalized): MSE = {avg_mse_norm:.7f}, MAE = {avg_mae_norm:.7f}")
+    if avg_mse_denorm is not None:
+        print(f"-> Results for '{split_name}' (denormalized): MSE = {avg_mse_denorm:.7f}, MAE = {avg_mae_denorm:.7f}")
+    else:
+        print(f"-> Results for '{split_name}' (denormalized): N/A (scaler not available)")
+    
+    return {
+        'mse_norm': avg_mse_norm,
+        'mae_norm': avg_mae_norm,
+        'mse_denorm': avg_mse_denorm,
+        'mae_denorm': avg_mae_denorm,
+        'num_samples': total_samples,
+        'is_concat': False
+    }
 
 
 def find_checkpoint(eval_config):
@@ -468,94 +588,54 @@ def _run_evaluation_loop(loaders_dict, datasets_dict, model, checkpoint_config, 
         
         # Handle case where loader is a dictionary (multiple entities)
         if isinstance(loader, dict):
-            # Aggregate results across all entities
-            total_mse_norm, total_mae_norm = 0.0, 0.0
-            total_mse_denorm, total_mae_denorm = 0.0, 0.0
-            total_samples = 0
+            # Check if NaN-aware aggregation is enabled (default: False - propagate NaN as before)
+            nan_aware_aggregation = getattr(eval_config, 'nan_aware_aggregation', False)
             
-            for entity_name, entity_loader in loader.items():
-                print(f"\n[Info] Testing on {split_name} dataset - entity: {entity_name}")
+            # Evaluate each entity and collect metrics (single loop, no duplication)
+            if not eval_config.channel_wise:
+                entity_metrics = []
+                for entity_name, entity_loader in loader.items():
+                    entity_result = _evaluate_single_entity(
+                        entity_name, entity_loader, dataset, split_name, filtered_samples,
+                        model, checkpoint_config, device, eval_config.channel_wise
+                    )
+                    entity_metrics.append(entity_result)
                 
-                # Get dataset for this entity - prefer from loader, fallback to provided dataset
-                entity_dataset = None
-                if hasattr(entity_loader, 'dataset'):
-                    entity_dataset = entity_loader.dataset
-                elif isinstance(dataset, dict) and entity_name in dataset:
-                    entity_dataset = dataset[entity_name]
-                elif not isinstance(dataset, dict):
-                    entity_dataset = dataset
-                
-                # Get indexes for this entity
-                if filtered_samples is not None:
-                    indexes = filtered_samples.get(f"{split_name}_{entity_name}", filtered_samples.get(split_name, []))
-                else:
-                    indexes = None
-                
-                # Run evaluation for this entity
-                result = evaluate_full_dataset(entity_loader, model, checkpoint_config, device, indexes, 
-                                              eval_config.channel_wise, dataset=entity_dataset)
-                
-                if not eval_config.channel_wise:
-                    mse_norm, mae_norm, mse_denorm, mae_denorm, num_samples = result
-                    total_mse_norm += mse_norm
-                    total_mae_norm += mae_norm
-                    if mse_denorm > 0:
-                        total_mse_denorm += mse_denorm
-                        total_mae_denorm += mae_denorm
-                    total_samples += num_samples
-            
-            # Aggregate results
-            if total_samples > 0:
-                avg_mse_norm = total_mse_norm / total_samples
-                avg_mae_norm = total_mae_norm / total_samples
-                avg_mse_denorm = total_mse_denorm / total_samples if total_mse_denorm > 0 else None
-                avg_mae_denorm = total_mae_denorm / total_samples if total_mae_denorm > 0 else None
-                
-                print(f"\n-> Results for '{split_name}' (normalized): MSE = {avg_mse_norm:.7f}, MAE = {avg_mae_norm:.7f}")
-                if avg_mse_denorm is not None:
-                    print(f"-> Results for '{split_name}' (denormalized): MSE = {avg_mse_denorm:.7f}, MAE = {avg_mae_denorm:.7f}")
-                else:
-                    print(f"-> Results for '{split_name}' (denormalized): N/A (scaler not available)")
-                
-                results[split_name] = {
-                    'mse_norm': avg_mse_norm,
-                    'mae_norm': avg_mae_norm,
-                    'mse_denorm': avg_mse_denorm,
-                    'mae_denorm': avg_mae_denorm,
-                    'num_samples': total_samples,
-                    'is_concat': False  # Per-entity evaluation, denormalized metrics are valid
-                }
-            else:
-                results[split_name] = None
-        else:
-            # Single loader (single entity or ConcatDataset)
-            print(f"\n[Info] Testing on {split_name} dataset")
-            
-            # Check if this is a ConcatDataset (multiple entities concatenated)
-            is_concat_dataset = False
-            if hasattr(loader, 'dataset'):
-                loader_dataset = loader.dataset
-                if hasattr(loader_dataset, 'datasets') and isinstance(loader_dataset.datasets, (list, tuple)):
-                    is_concat_dataset = len(loader_dataset.datasets) > 1
-            
-            # Try to get dataset from loader if not provided
-            if dataset is None and hasattr(loader, 'dataset'):
-                dataset = loader.dataset
-            
-            # Get indexes for this dataset
-            if filtered_samples is not None:
-                indexes = filtered_samples.get(split_name, [])
-                print(f"[Info] Using {len(indexes)} filtered samples for testing.")
-                print(f"[Info] Sample indexes: {indexes}")
-            else:
-                indexes = None
-                print("[Info] Using all samples for testing.")
-            
-            # Run evaluation
-            result = evaluate_full_dataset(loader, model, checkpoint_config, device, indexes, 
-                                          eval_config.channel_wise, dataset=dataset)
+                # Aggregate with optional NaN filtering
+                results[split_name] = _aggregate_entity_metrics(
+                    entity_metrics, split_name, nan_aware=nan_aware_aggregation
+                )
+            # Skip to next split - dict loaders are fully handled above
+            continue
         
-        # Process results
+        # Single loader (single entity or ConcatDataset)
+        print(f"\n[Info] Testing on {split_name} dataset")
+        
+        # Check if this is a ConcatDataset (multiple entities concatenated)
+        is_concat_dataset = False
+        if hasattr(loader, 'dataset'):
+            loader_dataset = loader.dataset
+            if hasattr(loader_dataset, 'datasets') and isinstance(loader_dataset.datasets, (list, tuple)):
+                is_concat_dataset = len(loader_dataset.datasets) > 1
+        
+        # Try to get dataset from loader if not provided
+        if dataset is None and hasattr(loader, 'dataset'):
+            dataset = loader.dataset
+        
+        # Get indexes for this dataset
+        if filtered_samples is not None:
+            indexes = filtered_samples.get(split_name, [])
+            print(f"[Info] Using {len(indexes)} filtered samples for testing.")
+            print(f"[Info] Sample indexes: {indexes}")
+        else:
+            indexes = None
+            print("[Info] Using all samples for testing.")
+        
+        # Run evaluation
+        result = evaluate_full_dataset(loader, model, checkpoint_config, device, indexes, 
+                                      eval_config.channel_wise, dataset=dataset)
+        
+        # Process results for single loader
         if eval_config.channel_wise:
             channel_mse_norm, channel_mae_norm, channel_mse_denorm, channel_mae_denorm, channel_counts = result
             if channel_mse_norm is None or sum(channel_counts) == 0:
