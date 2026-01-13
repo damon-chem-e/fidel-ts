@@ -1,0 +1,866 @@
+(.venv) [damonp@node1634 fidel-ts]$ python -m cli.test suite configs/experiment_suites/lynx_film_raw/time_mmd_ttc.yaml
+
+============================================================
+Suite Evaluation: lynx_film_raw_time_mmd_ttc
+Suite ID: lynx_film_raw_time_mmd_ttc_20260112_165034
+Suite Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034
+Evaluation Type: standard
+Total Experiments: 10
+============================================================
+
+✓ 10 experiment(s) ready for evaluation:
+
+  ✓ lynx_film_raw_timemmd_agriculture
+    Resume ID: 20260112-165034_a80e67e1db27
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165034_a80e67e1db27
+
+  ✓ lynx_film_raw_timemmd_climate
+    Resume ID: 20260112-165246_2c91222ecb6f
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165246_2c91222ecb6f
+
+  ✓ lynx_film_raw_timemmd_economy
+    Resume ID: 20260112-165323_33e0caa120db
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165323_33e0caa120db
+
+  ✓ lynx_film_raw_timemmd_energy
+    Resume ID: 20260112-165426_d3b32dbd3b5f
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165426_d3b32dbd3b5f
+
+  ✓ lynx_film_raw_timemmd_environment
+    Resume ID: 20260112-165600_7faa21e30710
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165600_7faa21e30710
+
+  ✓ lynx_film_raw_timemmd_health
+    Resume ID: 20260112-165905_e5e68cc97e77
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165905_e5e68cc97e77
+
+  ✓ lynx_film_raw_timemmd_socialgood
+    Resume ID: 20260112-170109_a6c4cfb44081
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-170109_a6c4cfb44081
+
+  ✓ lynx_film_raw_timemmd_traffic
+    Resume ID: 20260112-170220_6802e9c22160
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-170220_6802e9c22160
+
+  ✓ lynx_film_raw_ttc_weather
+    Resume ID: 20260112-175332_4661319d8c63
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-175332_4661319d8c63
+
+  ✓ lynx_film_raw_ttc_medical
+    Resume ID: 20260112-180721_b6904e01040e
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-180721_b6904e01040e
+
+
+============================================================
+Summary: 10 valid, 0 invalid
+============================================================
+
+
+[1/10] Evaluating: lynx_film_raw_timemmd_agriculture
+  Resume ID: 20260112-165034_a80e67e1db27
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165034_a80e67e1db27
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165034_a80e67e1db27
+[Info] Applying model_config_overrides: {'d_model': 1024, 'e_layers': 2, 'n_heads': 8, 'input_text_dim': 768}
+[Info] Applying data_config overrides: {'timemmd_text_output': 'embedding'}
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[ info ] LYNX-FiLM-raw: timestamp_semantics = t_known
+         -> Using historical_events (x_hetero) - avoiding lookahead bias
+[ info ] LYNX-FiLM-raw: Added learned projection layer 768 -> 256
+[ info ] iTransformerFilm: timestamp_semantics=t_known
+         -> text_seq_len = ceil(24/3) = 8 (from x_hetero/historical_events)
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165034_a80e67e1db27/checkpoints/best_checkpoint.pth
+[Info] Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys
+[Info] Successfully loaded model: lynx_film_raw
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+Running tests:   0%|                                                                                                                                                                      | 0/26 [00:00<?, ?it/s][ info ] Loading bert-base-uncased from local cache: HF_cache/models--bert-base-uncased
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 26/26 [00:04<00:00,  5.21it/s]
+-> Results for 'train' (normalized): MSE = 0.0886405, MAE = 0.2154088
+-> Results for 'train' (denormalized): MSE = 33.1703607, MAE = 4.1669913
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:01<00:00,  2.06it/s]
+-> Results for 'val' (normalized): MSE = 0.0668606, MAE = 0.2169316
+-> Results for 'val' (denormalized): MSE = 25.0200832, MAE = 4.1964497
+
+[Info] Testing on test dataset - entity: all
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 8/8 [00:02<00:00,  3.87it/s]
+
+-> Results for 'test' (normalized): MSE = 0.2129336, MAE = 0.3371865
+-> Results for 'test' (denormalized): MSE = 79.6824122, MAE = 6.5227269
+-> Results for 'test' (normalized): MSE = 0.2129336, MAE = 0.3371865
+-> Results for 'test' (denormalized): MSE = 79.6824122, MAE = 6.5227269
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.0886405, MAE: 0.2154088
+  Denormalized - MSE: 33.1703607, MAE: 4.1669913
+  Samples: 312
+
+VAL Set:
+  Normalized   - MSE: 0.0668606, MAE: 0.2169316
+  Denormalized - MSE: 25.0200832, MAE: 4.1964497
+  Samples: 44
+
+TEST Set:
+  Normalized   - MSE: 0.2129336, MAE: 0.3371865
+  Denormalized - MSE: 79.6824122, MAE: 6.5227269
+  Samples: 95
+==================================================
+  ✓ Evaluation completed successfully
+
+[2/10] Evaluating: lynx_film_raw_timemmd_climate
+  Resume ID: 20260112-165246_2c91222ecb6f
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165246_2c91222ecb6f
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165246_2c91222ecb6f
+[Info] Applying model_config_overrides: {'d_model': 1024, 'e_layers': 2, 'n_heads': 8, 'input_text_dim': 768}
+[Info] Applying data_config overrides: {'timemmd_text_output': 'embedding'}
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[ info ] LYNX-FiLM-raw: timestamp_semantics = t_known
+         -> Using historical_events (x_hetero) - avoiding lookahead bias
+[ info ] LYNX-FiLM-raw: Added learned projection layer 768 -> 256
+[ info ] iTransformerFilm: timestamp_semantics=t_known
+         -> text_seq_len = ceil(24/3) = 8 (from x_hetero/historical_events)
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165246_2c91222ecb6f/checkpoints/best_checkpoint.pth
+[Info] Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys
+[Info] Successfully loaded model: lynx_film_raw
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 26/26 [00:02<00:00, 10.66it/s]
+-> Results for 'train' (normalized): MSE = 0.8389671, MAE = 0.7270326
+-> Results for 'train' (denormalized): MSE = 0.2413966, MAE = 0.3899842
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:01<00:00,  2.49it/s]
+-> Results for 'val' (normalized): MSE = 1.0160237, MAE = 0.7953425
+-> Results for 'val' (denormalized): MSE = 0.2923412, MAE = 0.4266260
+
+[Info] Testing on test dataset - entity: all
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 8/8 [00:01<00:00,  4.85it/s]
+
+-> Results for 'test' (normalized): MSE = 1.0203656, MAE = 0.8124895
+-> Results for 'test' (denormalized): MSE = 0.2935905, MAE = 0.4358238
+-> Results for 'test' (normalized): MSE = 1.0203656, MAE = 0.8124895
+-> Results for 'test' (denormalized): MSE = 0.2935905, MAE = 0.4358238
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.8389671, MAE: 0.7270326
+  Denormalized - MSE: 0.2413966, MAE: 0.3899842
+  Samples: 312
+
+VAL Set:
+  Normalized   - MSE: 1.0160237, MAE: 0.7953425
+  Denormalized - MSE: 0.2923412, MAE: 0.4266260
+  Samples: 44
+
+TEST Set:
+  Normalized   - MSE: 1.0203656, MAE: 0.8124895
+  Denormalized - MSE: 0.2935905, MAE: 0.4358238
+  Samples: 95
+==================================================
+  ✓ Evaluation completed successfully
+
+[3/10] Evaluating: lynx_film_raw_timemmd_economy
+  Resume ID: 20260112-165323_33e0caa120db
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165323_33e0caa120db
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165323_33e0caa120db
+[Info] Applying model_config_overrides: {'d_model': 1024, 'e_layers': 2, 'n_heads': 8, 'input_text_dim': 768}
+[Info] Applying data_config overrides: {'timemmd_text_output': 'embedding'}
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[ info ] LYNX-FiLM-raw: timestamp_semantics = t_known
+         -> Using historical_events (x_hetero) - avoiding lookahead bias
+[ info ] LYNX-FiLM-raw: Added learned projection layer 768 -> 256
+[ info ] iTransformerFilm: timestamp_semantics=t_known
+         -> text_seq_len = ceil(24/3) = 8 (from x_hetero/historical_events)
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165323_33e0caa120db/checkpoints/best_checkpoint.pth
+[Info] Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys
+[Info] Successfully loaded model: lynx_film_raw
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 22/22 [00:02<00:00,  9.97it/s]
+-> Results for 'train' (normalized): MSE = 0.2325385, MAE = 0.3642035
+-> Results for 'train' (denormalized): MSE = 77041329.0000000, MAE = 6629.1606445
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:02<00:00,  1.87it/s]
+-> Results for 'val' (normalized): MSE = 0.1003819, MAE = 0.2612171
+-> Results for 'val' (denormalized): MSE = 33257110.2702703, MAE = 4754.6230139
+
+[Info] Testing on test dataset - entity: all
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 7/7 [00:02<00:00,  3.35it/s]
+
+-> Results for 'test' (normalized): MSE = 0.0163576, MAE = 0.1014648
+-> Results for 'test' (denormalized): MSE = 5419380.9750000, MAE = 1846.8434509
+-> Results for 'test' (normalized): MSE = 0.0163576, MAE = 0.1014648
+-> Results for 'test' (denormalized): MSE = 5419380.9750000, MAE = 1846.8434509
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.2325385, MAE: 0.3642035
+  Denormalized - MSE: 77041329.0000000, MAE: 6629.1606445
+  Samples: 264
+
+VAL Set:
+  Normalized   - MSE: 0.1003819, MAE: 0.2612171
+  Denormalized - MSE: 33257110.2702703, MAE: 4754.6230139
+  Samples: 37
+
+TEST Set:
+  Normalized   - MSE: 0.0163576, MAE: 0.1014648
+  Denormalized - MSE: 5419380.9750000, MAE: 1846.8434509
+  Samples: 80
+==================================================
+  ✓ Evaluation completed successfully
+
+[4/10] Evaluating: lynx_film_raw_timemmd_energy
+  Resume ID: 20260112-165426_d3b32dbd3b5f
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165426_d3b32dbd3b5f
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165426_d3b32dbd3b5f
+[Info] Applying model_config_overrides: {'d_model': 1024, 'e_layers': 2, 'n_heads': 8, 'input_text_dim': 768}
+[Info] Applying data_config overrides: {'timemmd_text_output': 'embedding'}
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[ info ] LYNX-FiLM-raw: timestamp_semantics = t_known
+         -> Using historical_events (x_hetero) - avoiding lookahead bias
+[ info ] LYNX-FiLM-raw: Added learned projection layer 768 -> 256
+[ info ] iTransformerFilm: timestamp_semantics=t_known
+         -> text_seq_len = ceil(24/3) = 8 (from x_hetero/historical_events)
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165426_d3b32dbd3b5f/checkpoints/best_checkpoint.pth
+[Info] Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys
+[Info] Successfully loaded model: lynx_film_raw
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 83/83 [00:07<00:00, 10.60it/s]
+-> Results for 'train' (normalized): MSE = 0.0649214, MAE = 0.1623711
+-> Results for 'train' (denormalized): MSE = 0.0566806, MAE = 0.1517163
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 12/12 [00:06<00:00,  1.98it/s]
+-> Results for 'val' (normalized): MSE = 0.0278698, MAE = 0.1263008
+-> Results for 'val' (denormalized): MSE = 0.0243321, MAE = 0.1180130
+
+[Info] Testing on test dataset - entity: all
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 24/24 [00:06<00:00,  3.76it/s]
+
+-> Results for 'test' (normalized): MSE = 0.1143419, MAE = 0.2460846
+-> Results for 'test' (denormalized): MSE = 0.0998280, MAE = 0.2299365
+-> Results for 'test' (normalized): MSE = 0.1143419, MAE = 0.2460846
+-> Results for 'test' (denormalized): MSE = 0.0998280, MAE = 0.2299365
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.0649214, MAE: 0.1623711
+  Denormalized - MSE: 0.0566806, MAE: 0.1517163
+  Samples: 996
+
+VAL Set:
+  Normalized   - MSE: 0.0278698, MAE: 0.1263008
+  Denormalized - MSE: 0.0243321, MAE: 0.1180130
+  Samples: 137
+
+TEST Set:
+  Normalized   - MSE: 0.1143419, MAE: 0.2460846
+  Denormalized - MSE: 0.0998280, MAE: 0.2299365
+  Samples: 285
+==================================================
+  ✓ Evaluation completed successfully
+
+[5/10] Evaluating: lynx_film_raw_timemmd_environment
+  Resume ID: 20260112-165600_7faa21e30710
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165600_7faa21e30710
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165600_7faa21e30710
+[Info] Applying model_config_overrides: {'d_model': 1024, 'e_layers': 2, 'n_heads': 8, 'input_text_dim': 768}
+[Info] Applying data_config overrides: {'timemmd_text_output': 'embedding'}
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[ info ] LYNX-FiLM-raw: timestamp_semantics = t_known
+         -> Using historical_events (x_hetero) - avoiding lookahead bias
+[ info ] LYNX-FiLM-raw: Added learned projection layer 768 -> 256
+[ info ] iTransformerFilm: timestamp_semantics=t_known
+         -> text_seq_len = ceil(24/3) = 8 (from x_hetero/historical_events)
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165600_7faa21e30710/checkpoints/best_checkpoint.pth
+[Info] Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys
+[Info] Successfully loaded model: lynx_film_raw
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 641/641 [00:50<00:00, 12.63it/s]
+-> Results for 'train' (normalized): MSE = 0.8299228, MAE = 0.6438962
+-> Results for 'train' (denormalized): MSE = 1603.8590446, MAE = 28.3061040
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 89/89 [00:37<00:00,  2.35it/s]
+-> Results for 'val' (normalized): MSE = 0.6275310, MAE = 0.5725346
+-> Results for 'val' (denormalized): MSE = 1212.7288759, MAE = 25.1690000
+
+[Info] Testing on test dataset - entity: all
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 182/182 [00:40<00:00,  4.55it/s]
+
+-> Results for 'test' (normalized): MSE = 0.4904210, MAE = 0.4966573
+-> Results for 'test' (denormalized): MSE = 947.7583397, MAE = 21.8333872
+-> Results for 'test' (normalized): MSE = 0.4904210, MAE = 0.4966573
+-> Results for 'test' (denormalized): MSE = 947.7583397, MAE = 21.8333872
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.8299228, MAE: 0.6438962
+  Denormalized - MSE: 1603.8590446, MAE: 28.3061040
+  Samples: 7692
+
+VAL Set:
+  Normalized   - MSE: 0.6275310, MAE: 0.5725346
+  Denormalized - MSE: 1212.7288759, MAE: 25.1690000
+  Samples: 1063
+
+TEST Set:
+  Normalized   - MSE: 0.4904210, MAE: 0.4966573
+  Denormalized - MSE: 947.7583397, MAE: 21.8333872
+  Samples: 2174
+==================================================
+  ✓ Evaluation completed successfully
+
+[6/10] Evaluating: lynx_film_raw_timemmd_health
+  Resume ID: 20260112-165905_e5e68cc97e77
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165905_e5e68cc97e77
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165905_e5e68cc97e77
+[Info] Applying model_config_overrides: {'d_model': 1024, 'e_layers': 2, 'n_heads': 8, 'input_text_dim': 768}
+[Info] Applying data_config overrides: {'timemmd_text_output': 'embedding'}
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[ info ] LYNX-FiLM-raw: timestamp_semantics = t_known
+         -> Using historical_events (x_hetero) - avoiding lookahead bias
+[ info ] LYNX-FiLM-raw: Added learned projection layer 768 -> 256
+[ info ] iTransformerFilm: timestamp_semantics=t_known
+         -> text_seq_len = ceil(24/3) = 8 (from x_hetero/historical_events)
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-165905_e5e68cc97e77/checkpoints/best_checkpoint.pth
+[Info] Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys
+[Info] Successfully loaded model: lynx_film_raw
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 78/78 [00:07<00:00, 10.61it/s]
+-> Results for 'train' (normalized): MSE = 0.8504926, MAE = 0.6223106
+-> Results for 'train' (denormalized): MSE = 1.2410310, MAE = 0.7517324
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 11/11 [00:05<00:00,  1.92it/s]
+-> Results for 'val' (normalized): MSE = 1.4147275, MAE = 0.7813569
+-> Results for 'val' (denormalized): MSE = 2.0643573, MAE = 0.9438554
+
+[Info] Testing on test dataset - entity: all
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 23/23 [00:05<00:00,  3.84it/s]
+
+-> Results for 'test' (normalized): MSE = 1.4717708, MAE = 0.8104592
+-> Results for 'test' (denormalized): MSE = 2.1475944, MAE = 0.9790101
+-> Results for 'test' (normalized): MSE = 1.4717708, MAE = 0.8104592
+-> Results for 'test' (denormalized): MSE = 2.1475944, MAE = 0.9790101
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.8504926, MAE: 0.6223106
+  Denormalized - MSE: 1.2410310, MAE: 0.7517324
+  Samples: 936
+
+VAL Set:
+  Normalized   - MSE: 1.4147275, MAE: 0.7813569
+  Denormalized - MSE: 2.0643573, MAE: 0.9438554
+  Samples: 128
+
+TEST Set:
+  Normalized   - MSE: 1.4717708, MAE: 0.8104592
+  Denormalized - MSE: 2.1475944, MAE: 0.9790101
+  Samples: 267
+==================================================
+  ✓ Evaluation completed successfully
+
+[7/10] Evaluating: lynx_film_raw_timemmd_socialgood
+  Resume ID: 20260112-170109_a6c4cfb44081
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-170109_a6c4cfb44081
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-170109_a6c4cfb44081
+[Info] Applying model_config_overrides: {'d_model': 1024, 'e_layers': 2, 'n_heads': 8, 'input_text_dim': 768}
+[Info] Applying data_config overrides: {'timemmd_text_output': 'embedding'}
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[ info ] LYNX-FiLM-raw: timestamp_semantics = t_known
+         -> Using historical_events (x_hetero) - avoiding lookahead bias
+[ info ] LYNX-FiLM-raw: Added learned projection layer 768 -> 256
+[ info ] iTransformerFilm: timestamp_semantics=t_known
+         -> text_seq_len = ceil(24/3) = 8 (from x_hetero/historical_events)
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-170109_a6c4cfb44081/checkpoints/best_checkpoint.pth
+[Info] Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys
+[Info] Successfully loaded model: lynx_film_raw
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 50/50 [00:03<00:00, 13.11it/s]
+-> Results for 'train' (normalized): MSE = 0.1255032, MAE = 0.2444053
+-> Results for 'train' (denormalized): MSE = 0.3308952, MAE = 0.3968520
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 7/7 [00:02<00:00,  2.88it/s]
+-> Results for 'val' (normalized): MSE = 0.1814795, MAE = 0.2711274
+-> Results for 'val' (denormalized): MSE = 0.4784797, MAE = 0.4402419
+
+[Info] Testing on test dataset - entity: all
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 15/15 [00:02<00:00,  5.56it/s]
+
+-> Results for 'test' (normalized): MSE = nan, MAE = nan
+-> Results for 'test' (denormalized): N/A (scaler not available)
+-> Results for 'test' (normalized): MSE = nan, MAE = nan
+-> Results for 'test' (denormalized): N/A (scaler not available)
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.1255032, MAE: 0.2444053
+  Denormalized - MSE: 0.3308952, MAE: 0.3968520
+  Samples: 600
+
+VAL Set:
+  Normalized   - MSE: 0.1814795, MAE: 0.2711274
+  Denormalized - MSE: 0.4784797, MAE: 0.4402419
+  Samples: 84
+
+TEST Set:
+  Normalized   - MSE: nan, MAE: nan
+  Denormalized - N/A (scaler not available)
+  Samples: 176
+==================================================
+  ✓ Evaluation completed successfully
+
+[8/10] Evaluating: lynx_film_raw_timemmd_traffic
+  Resume ID: 20260112-170220_6802e9c22160
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-170220_6802e9c22160
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-170220_6802e9c22160
+[Info] Applying model_config_overrides: {'d_model': 1024, 'e_layers': 2, 'n_heads': 8, 'input_text_dim': 768}
+[Info] Applying data_config overrides: {'timemmd_text_output': 'embedding'}
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[ info ] LYNX-FiLM-raw: timestamp_semantics = t_known
+         -> Using historical_events (x_hetero) - avoiding lookahead bias
+[ info ] LYNX-FiLM-raw: Added learned projection layer 768 -> 256
+[ info ] iTransformerFilm: timestamp_semantics=t_known
+         -> text_seq_len = ceil(24/3) = 8 (from x_hetero/historical_events)
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-170220_6802e9c22160/checkpoints/best_checkpoint.pth
+[Info] Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys
+[Info] Successfully loaded model: lynx_film_raw
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 28/28 [00:03<00:00,  8.81it/s]
+-> Results for 'train' (normalized): MSE = 0.0104784, MAE = 0.0792294
+-> Results for 'train' (denormalized): MSE = 20273023.4285714, MAE = 3484.9596296
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:02<00:00,  1.64it/s]
+-> Results for 'val' (normalized): MSE = 0.0156215, MAE = 0.0998589
+-> Results for 'val' (denormalized): MSE = 30223659.0000000, MAE = 4392.3648071
+
+[Info] Testing on test dataset - entity: all
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 9/9 [00:02<00:00,  3.99it/s]
+
+-> Results for 'test' (normalized): MSE = 0.1667797, MAE = 0.2204064
+-> Results for 'test' (denormalized): MSE = 322675553.1764706, MAE = 9694.7292768
+-> Results for 'test' (normalized): MSE = 0.1667797, MAE = 0.2204064
+-> Results for 'test' (denormalized): MSE = 322675553.1764706, MAE = 9694.7292768
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.0104784, MAE: 0.0792294
+  Denormalized - MSE: 20273023.4285714, MAE: 3484.9596296
+  Samples: 336
+
+VAL Set:
+  Normalized   - MSE: 0.0156215, MAE: 0.0998589
+  Denormalized - MSE: 30223659.0000000, MAE: 4392.3648071
+  Samples: 48
+
+TEST Set:
+  Normalized   - MSE: 0.1667797, MAE: 0.2204064
+  Denormalized - MSE: 322675553.1764706, MAE: 9694.7292768
+  Samples: 102
+==================================================
+  ✓ Evaluation completed successfully
+
+[9/10] Evaluating: lynx_film_raw_ttc_weather
+  Resume ID: 20260112-175332_4661319d8c63
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-175332_4661319d8c63
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-175332_4661319d8c63
+[Info] Applying model_config_overrides: {'d_model': 1024, 'e_layers': 2, 'n_heads': 8, 'input_text_dim': 768}
+[Info] Applying data_config overrides: {'timemmd_text_output': 'embedding'}
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[ info ] LYNX-FiLM-raw: timestamp_semantics = t_known
+         -> Using historical_events (x_hetero) - avoiding lookahead bias
+[ info ] LYNX-FiLM-raw: Added learned projection layer 768 -> 256
+[ info ] iTransformerFilm: timestamp_semantics=t_known
+         -> text_seq_len = ceil(7/3) = 3 (from x_hetero/historical_events)
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-175332_4661319d8c63/checkpoints/best_checkpoint.pth
+[Info] Successfully loaded model: lynx_film_raw
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 210/210 [00:18<00:00, 11.62it/s]
+-> Results for 'train' (normalized): MSE = 0.8658783, MAE = 0.6272292
+-> Results for 'train' (denormalized): MSE = 76.9720893, MAE = 5.5261648
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 30/30 [00:09<00:00,  3.19it/s]
+-> Results for 'val' (normalized): MSE = 0.7823477, MAE = 0.5987583
+-> Results for 'val' (denormalized): MSE = 72.1108377, MAE = 5.2100377
+
+[Info] Testing on test dataset - entity: all
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 60/60 [00:10<00:00,  5.70it/s]
+
+-> Results for 'test' (normalized): MSE = 0.6919076, MAE = 0.5757416
+-> Results for 'test' (denormalized): MSE = 72.1830148, MAE = 5.3407585
+-> Results for 'test' (normalized): MSE = 0.6919076, MAE = 0.5757416
+-> Results for 'test' (denormalized): MSE = 72.1830148, MAE = 5.3407585
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.8658783, MAE: 0.6272292
+  Denormalized - MSE: 76.9720893, MAE: 5.5261648
+  Samples: 2520
+
+VAL Set:
+  Normalized   - MSE: 0.7823477, MAE: 0.5987583
+  Denormalized - MSE: 72.1108377, MAE: 5.2100377
+  Samples: 356
+
+TEST Set:
+  Normalized   - MSE: 0.6919076, MAE: 0.5757416
+  Denormalized - MSE: 72.1830148, MAE: 5.3407585
+  Samples: 719
+==================================================
+  ✓ Evaluation completed successfully
+
+[10/10] Evaluating: lynx_film_raw_ttc_medical
+  Resume ID: 20260112-180721_b6904e01040e
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-180721_b6904e01040e
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-180721_b6904e01040e
+[Info] Applying model_config_overrides: {'d_model': 1024, 'e_layers': 2, 'n_heads': 8, 'input_text_dim': 768}
+[Info] Applying data_config overrides: {'timemmd_text_output': 'embedding', 'filter_insufficient_entities': True, 'missing_value_strategy': 'forward_fill_indicators'}
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[ info ] LYNX-FiLM-raw: timestamp_semantics = t_known
+         -> Using historical_events (x_hetero) - avoiding lookahead bias
+[ info ] LYNX-FiLM-raw: Added learned projection layer 768 -> 256
+[ info ] iTransformerFilm: timestamp_semantics=t_known
+         -> text_seq_len = ceil(7/3) = 3 (from x_hetero/historical_events)
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-180721_b6904e01040e/checkpoints/best_checkpoint.pth
+[Info] Successfully loaded model: lynx_film_raw
+[ warning ] Filtered entity '20803': insufficient data in val split
+[ warning ] Filtered entity '25560': insufficient data in val split
+[ warning ] Filtered entity '26022': insufficient data in val split
+[ warning ] Filtered entity '26106': insufficient data in val split
+[ warning ] Filtered entity '27907': insufficient data in val split
+[ warning ] Filtered entity '28577': insufficient data in val split
+[ warning ] Filtered entity '4730': insufficient data in val split
+[ info ] Entity filtering: removed 7 entities, using 66 entities
+[ info ] Missing value treatment: 2 column(s) with missing values will be forward-filled with indicators: ['FiO2', 'Respiratory_Rate']
+[ info ] Numeric columns found: ['FiO2', 'Heart_Rate', 'Respiratory_Rate', 'SaO2']
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 351/351 [01:13<00:00,  4.78it/s]
+-> Results for 'train' (normalized): MSE = 0.5146327, MAE = 0.4350748
+-> Results for 'train' (denormalized): MSE = 21.7858892, MAE = 2.4656524
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+Running tests: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 28/28 [00:33<00:00,  1.20s/it]
+-> Results for 'val' (normalized): MSE = 1.7616238, MAE = 0.5022205
+-> Results for 'val' (denormalized): MSE = 39.5549449, MAE = 2.6434649
+
+[Info] Testing on test dataset - entity: 10576
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  4.50it/s]
+
+[Info] Testing on test dataset - entity: 10910
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.21it/s]
+
+[Info] Testing on test dataset - entity: 10977
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.38it/s]
+
+[Info] Testing on test dataset - entity: 1122
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.72it/s]
+
+[Info] Testing on test dataset - entity: 11465
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  4.02it/s]
+
+[Info] Testing on test dataset - entity: 11973
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.63it/s]
+
+[Info] Testing on test dataset - entity: 12096
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.49it/s]
+
+[Info] Testing on test dataset - entity: 12515
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  2.80it/s]
+
+[Info] Testing on test dataset - entity: 12578
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.84it/s]
+
+[Info] Testing on test dataset - entity: 12652
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.83it/s]
+
+[Info] Testing on test dataset - entity: 12680
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.67it/s]
+
+[Info] Testing on test dataset - entity: 13037
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.20it/s]
+
+[Info] Testing on test dataset - entity: 14151
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  2.60it/s]
+
+[Info] Testing on test dataset - entity: 14273
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.86it/s]
+
+[Info] Testing on test dataset - entity: 15032
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  4.01it/s]
+
+[Info] Testing on test dataset - entity: 15114
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  4.11it/s]
+
+[Info] Testing on test dataset - entity: 15204
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  1.69it/s]
+
+[Info] Testing on test dataset - entity: 15432
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 3/3 [00:00<00:00,  3.28it/s]
+
+[Info] Testing on test dataset - entity: 15482
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  4.32it/s]
+
+[Info] Testing on test dataset - entity: 15618
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.36it/s]
+
+[Info] Testing on test dataset - entity: 15989
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.80it/s]
+
+[Info] Testing on test dataset - entity: 16108
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.30it/s]
+
+[Info] Testing on test dataset - entity: 16146
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.87it/s]
+
+[Info] Testing on test dataset - entity: 1690
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.86it/s]
+
+[Info] Testing on test dataset - entity: 16957
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  4.58it/s]
+
+[Info] Testing on test dataset - entity: 17601
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  2.04it/s]
+
+[Info] Testing on test dataset - entity: 18040
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.50it/s]
+
+[Info] Testing on test dataset - entity: 18497
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.48it/s]
+
+[Info] Testing on test dataset - entity: 19956
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.96it/s]
+
+[Info] Testing on test dataset - entity: 20082
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.82it/s]
+
+[Info] Testing on test dataset - entity: 20415
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.85it/s]
+
+[Info] Testing on test dataset - entity: 21316
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.86it/s]
+
+[Info] Testing on test dataset - entity: 2160
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  2.21it/s]
+
+[Info] Testing on test dataset - entity: 2218
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.97it/s]
+
+[Info] Testing on test dataset - entity: 22188
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.54it/s]
+
+[Info] Testing on test dataset - entity: 22875
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.38it/s]
+
+[Info] Testing on test dataset - entity: 23705
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  4.88it/s]
+
+[Info] Testing on test dataset - entity: 24501
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.42it/s]
+
+[Info] Testing on test dataset - entity: 24974
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.10it/s]
+
+[Info] Testing on test dataset - entity: 25252
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.51it/s]
+
+[Info] Testing on test dataset - entity: 25398
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  4.43it/s]
+
+[Info] Testing on test dataset - entity: 25625
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.94it/s]
+
+[Info] Testing on test dataset - entity: 25714
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.38it/s]
+
+[Info] Testing on test dataset - entity: 25932
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.49it/s]
+
+[Info] Testing on test dataset - entity: 2624
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.33it/s]
+
+[Info] Testing on test dataset - entity: 26276
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  2.66it/s]
+
+[Info] Testing on test dataset - entity: 2705
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  1.81it/s]
+
+[Info] Testing on test dataset - entity: 2796
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.78it/s]
+
+[Info] Testing on test dataset - entity: 29396
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.86it/s]
+
+[Info] Testing on test dataset - entity: 29671
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.80it/s]
+
+[Info] Testing on test dataset - entity: 2976
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.41it/s]
+
+[Info] Testing on test dataset - entity: 29899
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  4.71it/s]
+
+[Info] Testing on test dataset - entity: 3014
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.96it/s]
+
+[Info] Testing on test dataset - entity: 30402
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.61it/s]
+
+[Info] Testing on test dataset - entity: 4515
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.40it/s]
+
+[Info] Testing on test dataset - entity: 517
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.07it/s]
+
+[Info] Testing on test dataset - entity: 5301
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.94it/s]
+
+[Info] Testing on test dataset - entity: 5424
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.96it/s]
+
+[Info] Testing on test dataset - entity: 5568
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  3.12it/s]
+
+[Info] Testing on test dataset - entity: 5822
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  4.08it/s]
+
+[Info] Testing on test dataset - entity: 6975
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  2.89it/s]
+
+[Info] Testing on test dataset - entity: 7679
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.47it/s]
+
+[Info] Testing on test dataset - entity: 7892
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.80it/s]
+
+[Info] Testing on test dataset - entity: 7917
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  2.70it/s]
+
+[Info] Testing on test dataset - entity: 8355
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.58it/s]
+
+[Info] Testing on test dataset - entity: 862
+Running tests: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00,  2.93it/s]
+
+-> Results for 'test' (normalized): MSE = 1.8606530, MAE = 0.5021201
+-> Results for 'test' (denormalized): MSE = 75.5354253, MAE = 3.0858294
+-> Results for 'test' (normalized): MSE = 0.3169214, MAE = 0.3188209
+-> Results for 'test' (denormalized): MSE = 41.3332745, MAE = 2.7736014
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.5146327, MAE: 0.4350748
+  Denormalized - MSE: 21.7858892, MAE: 2.4656524
+  Samples: 4212
+
+VAL Set:
+  Normalized   - MSE: 1.7616238, MAE: 0.5022205
+  Denormalized - MSE: 39.5549449, MAE: 2.6434649
+  Samples: 331
+
+TEST Set:
+  Normalized   - MSE: 0.3169214, MAE: 0.3188209
+  Denormalized - MSE: 41.3332745, MAE: 2.7736014
+  Samples: 20
+==================================================
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  WARNING: Denormalized metrics may be inaccurate
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+The following splits use ConcatDataset (multiple entities concatenated): TRAIN, VAL, TEST
+
+Why this matters:
+  - Each entity has its own scaler (mean/std) fitted on its data
+  - ConcatDataset loses track of which sample came from which entity
+  - Denormalized metrics use only the first entity's scaler
+  - This gives INCORRECT results for samples from other entities
+
+Normalized metrics are consistent with training but mix
+different real-world scales across entities.
+
+See: docs/planning/robust_evaluation_metrics_plan.md
+==================================================
+  ✓ Evaluation completed successfully
+
+============================================================
+Suite Evaluation Complete
+  Successful: 10
+  Failed: 0
+  Skipped (invalid): 0
+=============================================

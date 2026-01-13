@@ -1,3 +1,12 @@
+# my own stuff
+archive/
+context/experiment_tracking/running_experiments.md
+context/experiment_tracking/completed_experiments.md
+context/logs/
+context/temp_prompt.txt
+text_noise_injection/chat.md
+fidel-ts-worktree-lynx.code-workspace
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

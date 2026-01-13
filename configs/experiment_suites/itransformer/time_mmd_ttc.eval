@@ -1,0 +1,673 @@
+
+============================================================
+Suite Evaluation: itransformer_time_mmd_ttc
+Suite ID: itransformer_time_mmd_ttc_20260113_111324
+Suite Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324
+Evaluation Type: standard
+Total Experiments: 10
+============================================================
+
+✓ 10 experiment(s) ready for evaluation:
+
+  ✓ itransformer_timemmd_agriculture
+    Resume ID: 20260113-111324_7d386ba4708c
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111324_7d386ba4708c
+
+  ✓ itransformer_timemmd_climate
+    Resume ID: 20260113-111337_1a30b00e94e3
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111337_1a30b00e94e3
+
+  ✓ itransformer_timemmd_economy
+    Resume ID: 20260113-111345_fc4133a7d35a
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111345_fc4133a7d35a
+
+  ✓ itransformer_timemmd_energy
+    Resume ID: 20260113-111347_e620a7dd8e8c
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111347_e620a7dd8e8c
+
+  ✓ itransformer_timemmd_environment
+    Resume ID: 20260113-111350_70fcc6977944
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111350_70fcc6977944
+
+  ✓ itransformer_timemmd_health
+    Resume ID: 20260113-111351_be72e6a68d06
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111351_be72e6a68d06
+
+  ✓ itransformer_timemmd_socialgood
+    Resume ID: 20260113-111352_3f18c86242c1
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111352_3f18c86242c1
+
+  ✓ itransformer_timemmd_traffic
+    Resume ID: 20260113-111355_699118a11fac
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111355_699118a11fac
+
+  ✓ itransformer_ttc_weather
+    Resume ID: 20260113-111359_dfdb7276c5e3
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111359_dfdb7276c5e3
+
+  ✓ itransformer_ttc_medical
+    Resume ID: 20260113-111401_2749fc3e8ccc
+    Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111401_2749fc3e8ccc
+
+
+============================================================
+Summary: 10 valid, 0 invalid
+============================================================
+
+
+[1/10] Evaluating: itransformer_timemmd_agriculture
+  Resume ID: 20260113-111324_7d386ba4708c
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111324_7d386ba4708c
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111324_7d386ba4708c
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111324_7d386ba4708c/checkpoints/best_checkpoint.pth
+[Info] Successfully loaded model: iTransformer
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+-> Results for 'train' (normalized): MSE = 0.0742224, MAE = 0.1906600
+-> Results for 'train' (denormalized): MSE = 27.7749431, MAE = 3.6882358
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+-> Results for 'val' (normalized): MSE = 0.0606728, MAE = 0.2019722
+-> Results for 'val' (denormalized): MSE = 22.7045201, MAE = 3.9070651
+
+[Info] Testing on test dataset - entity: all
+
+-> Results for 'test' (normalized): MSE = 0.1754300, MAE = 0.2872396
+-> Results for 'test' (denormalized): MSE = 65.6480835, MAE = 5.5565274
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.0742224, MAE: 0.1906600
+  Denormalized - MSE: 27.7749431, MAE: 3.6882358
+  Samples: 288
+
+VAL Set:
+  Normalized   - MSE: 0.0606728, MAE: 0.2019722
+  Denormalized - MSE: 22.7045201, MAE: 3.9070651
+  Samples: 44
+
+TEST Set:
+  Normalized   - MSE: 0.1754300, MAE: 0.2872396
+  Denormalized - MSE: 65.6480835, MAE: 5.5565274
+  Samples: 95
+==================================================
+  ✓ Evaluation completed successfully
+
+[2/10] Evaluating: itransformer_timemmd_climate
+  Resume ID: 20260113-111337_1a30b00e94e3
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111337_1a30b00e94e3
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111337_1a30b00e94e3
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111337_1a30b00e94e3/checkpoints/best_checkpoint.pth
+[Info] Successfully loaded model: iTransformer
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+-> Results for 'train' (normalized): MSE = 0.7063128, MAE = 0.6623682
+-> Results for 'train' (denormalized): MSE = 0.2032279, MAE = 0.3552979
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+-> Results for 'val' (normalized): MSE = 0.9455682, MAE = 0.7600329
+-> Results for 'val' (denormalized): MSE = 0.2720690, MAE = 0.4076857
+
+[Info] Testing on test dataset - entity: all
+
+-> Results for 'test' (normalized): MSE = 1.0657086, MAE = 0.8340025
+-> Results for 'test' (denormalized): MSE = 0.3066371, MAE = 0.4473634
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.7063128, MAE: 0.6623682
+  Denormalized - MSE: 0.2032279, MAE: 0.3552979
+  Samples: 288
+
+VAL Set:
+  Normalized   - MSE: 0.9455682, MAE: 0.7600329
+  Denormalized - MSE: 0.2720690, MAE: 0.4076857
+  Samples: 44
+
+TEST Set:
+  Normalized   - MSE: 1.0657086, MAE: 0.8340025
+  Denormalized - MSE: 0.3066371, MAE: 0.4473634
+  Samples: 95
+==================================================
+  ✓ Evaluation completed successfully
+
+[3/10] Evaluating: itransformer_timemmd_economy
+  Resume ID: 20260113-111345_fc4133a7d35a
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111345_fc4133a7d35a
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111345_fc4133a7d35a
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111345_fc4133a7d35a/checkpoints/best_checkpoint.pth
+[Info] Successfully loaded model: iTransformer
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+-> Results for 'train' (normalized): MSE = 0.1930838, MAE = 0.3125352
+-> Results for 'train' (denormalized): MSE = 63969768.5000000, MAE = 5688.7051392
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+-> Results for 'val' (normalized): MSE = 0.0351150, MAE = 0.1410047
+-> Results for 'val' (denormalized): MSE = 11633810.5675676, MAE = 2566.5404944
+
+[Info] Testing on test dataset - entity: all
+
+-> Results for 'test' (normalized): MSE = 0.0112736, MAE = 0.0848502
+-> Results for 'test' (denormalized): MSE = 3735015.7000000, MAE = 1544.4263672
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.1930838, MAE: 0.3125352
+  Denormalized - MSE: 63969768.5000000, MAE: 5688.7051392
+  Samples: 256
+
+VAL Set:
+  Normalized   - MSE: 0.0351150, MAE: 0.1410047
+  Denormalized - MSE: 11633810.5675676, MAE: 2566.5404944
+  Samples: 37
+
+TEST Set:
+  Normalized   - MSE: 0.0112736, MAE: 0.0848502
+  Denormalized - MSE: 3735015.7000000, MAE: 1544.4263672
+  Samples: 80
+==================================================
+  ✓ Evaluation completed successfully
+
+[4/10] Evaluating: itransformer_timemmd_energy
+  Resume ID: 20260113-111347_e620a7dd8e8c
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111347_e620a7dd8e8c
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111347_e620a7dd8e8c
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111347_e620a7dd8e8c/checkpoints/best_checkpoint.pth
+[Info] Successfully loaded model: iTransformer
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+-> Results for 'train' (normalized): MSE = 0.0566642, MAE = 0.1518016
+-> Results for 'train' (denormalized): MSE = 0.0494716, MAE = 0.1418403
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+-> Results for 'val' (normalized): MSE = 0.0277566, MAE = 0.1256821
+-> Results for 'val' (denormalized): MSE = 0.0242333, MAE = 0.1174348
+
+[Info] Testing on test dataset - entity: all
+
+-> Results for 'test' (normalized): MSE = 0.1083806, MAE = 0.2419203
+-> Results for 'test' (denormalized): MSE = 0.0946234, MAE = 0.2260455
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.0566642, MAE: 0.1518016
+  Denormalized - MSE: 0.0494716, MAE: 0.1418403
+  Samples: 992
+
+VAL Set:
+  Normalized   - MSE: 0.0277566, MAE: 0.1256821
+  Denormalized - MSE: 0.0242333, MAE: 0.1174348
+  Samples: 137
+
+TEST Set:
+  Normalized   - MSE: 0.1083806, MAE: 0.2419203
+  Denormalized - MSE: 0.0946234, MAE: 0.2260455
+  Samples: 285
+==================================================
+  ✓ Evaluation completed successfully
+
+[5/10] Evaluating: itransformer_timemmd_environment
+  Resume ID: 20260113-111350_70fcc6977944
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111350_70fcc6977944
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111350_70fcc6977944
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111350_70fcc6977944/checkpoints/best_checkpoint.pth
+[Info] Successfully loaded model: iTransformer
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+-> Results for 'train' (normalized): MSE = 0.8281718, MAE = 0.6452808
+-> Results for 'train' (denormalized): MSE = 1600.4751162, MAE = 28.3669711
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+-> Results for 'val' (normalized): MSE = 0.6281928, MAE = 0.5752748
+-> Results for 'val' (denormalized): MSE = 1214.0078564, MAE = 25.2894633
+
+[Info] Testing on test dataset - entity: all
+
+-> Results for 'test' (normalized): MSE = 0.4916516, MAE = 0.4989204
+-> Results for 'test' (denormalized): MSE = 950.1364038, MAE = 21.9328728
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.8281718, MAE: 0.6452808
+  Denormalized - MSE: 1600.4751162, MAE: 28.3669711
+  Samples: 7680
+
+VAL Set:
+  Normalized   - MSE: 0.6281928, MAE: 0.5752748
+  Denormalized - MSE: 1214.0078564, MAE: 25.2894633
+  Samples: 1063
+
+TEST Set:
+  Normalized   - MSE: 0.4916516, MAE: 0.4989204
+  Denormalized - MSE: 950.1364038, MAE: 21.9328728
+  Samples: 2174
+==================================================
+  ✓ Evaluation completed successfully
+
+[6/10] Evaluating: itransformer_timemmd_health
+  Resume ID: 20260113-111351_be72e6a68d06
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111351_be72e6a68d06
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111351_be72e6a68d06
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111351_be72e6a68d06/checkpoints/best_checkpoint.pth
+[Info] Successfully loaded model: iTransformer
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+-> Results for 'train' (normalized): MSE = 0.7578191, MAE = 0.5455316
+-> Results for 'train' (denormalized): MSE = 1.1058027, MAE = 0.6589856
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+-> Results for 'val' (normalized): MSE = 1.1951423, MAE = 0.6685330
+-> Results for 'val' (denormalized): MSE = 1.7439407, MAE = 0.8075677
+
+[Info] Testing on test dataset - entity: all
+
+-> Results for 'test' (normalized): MSE = 1.2193569, MAE = 0.7278073
+-> Results for 'test' (denormalized): MSE = 1.7792741, MAE = 0.8791692
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.7578191, MAE: 0.5455316
+  Denormalized - MSE: 1.1058027, MAE: 0.6589856
+  Samples: 928
+
+VAL Set:
+  Normalized   - MSE: 1.1951423, MAE: 0.6685330
+  Denormalized - MSE: 1.7439407, MAE: 0.8075677
+  Samples: 128
+
+TEST Set:
+  Normalized   - MSE: 1.2193569, MAE: 0.7278073
+  Denormalized - MSE: 1.7792741, MAE: 0.8791692
+  Samples: 267
+==================================================
+  ✓ Evaluation completed successfully
+
+[7/10] Evaluating: itransformer_timemmd_socialgood
+  Resume ID: 20260113-111352_3f18c86242c1
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111352_3f18c86242c1
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111352_3f18c86242c1
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111352_3f18c86242c1/checkpoints/best_checkpoint.pth
+[Info] Successfully loaded model: iTransformer
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+-> Results for 'train' (normalized): MSE = 0.0936895, MAE = 0.2055845
+-> Results for 'train' (denormalized): MSE = 0.2470169, MAE = 0.3338168
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+-> Results for 'val' (normalized): MSE = 0.1277512, MAE = 0.2081174
+-> Results for 'val' (denormalized): MSE = 0.3368223, MAE = 0.3379297
+
+[Info] Testing on test dataset - entity: all
+
+-> Results for 'test' (normalized): MSE = nan, MAE = nan
+-> Results for 'test' (denormalized): N/A (scaler not available)
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.0936895, MAE: 0.2055845
+  Denormalized - MSE: 0.2470169, MAE: 0.3338168
+  Samples: 576
+
+VAL Set:
+  Normalized   - MSE: 0.1277512, MAE: 0.2081174
+  Denormalized - MSE: 0.3368223, MAE: 0.3379297
+  Samples: 84
+
+TEST Set:
+  Normalized   - MSE: nan, MAE: nan
+  Denormalized - N/A (scaler not available)
+  Samples: 176
+==================================================
+  ✓ Evaluation completed successfully
+
+[8/10] Evaluating: itransformer_timemmd_traffic
+  Resume ID: 20260113-111355_699118a11fac
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111355_699118a11fac
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111355_699118a11fac
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111355_699118a11fac/checkpoints/best_checkpoint.pth
+[Info] Successfully loaded model: iTransformer
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+-> Results for 'train' (normalized): MSE = 0.0062396, MAE = 0.0590481
+-> Results for 'train' (denormalized): MSE = 12071978.7000000, MAE = 2597.2701172
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+-> Results for 'val' (normalized): MSE = 0.0098900, MAE = 0.0791247
+-> Results for 'val' (denormalized): MSE = 19134557.3333333, MAE = 3480.3568522
+
+[Info] Testing on test dataset - entity: all
+
+-> Results for 'test' (normalized): MSE = 0.1782910, MAE = 0.2158612
+-> Results for 'test' (denormalized): MSE = 344946982.7450981, MAE = 9494.8033567
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.0062396, MAE: 0.0590481
+  Denormalized - MSE: 12071978.7000000, MAE: 2597.2701172
+  Samples: 320
+
+VAL Set:
+  Normalized   - MSE: 0.0098900, MAE: 0.0791247
+  Denormalized - MSE: 19134557.3333333, MAE: 3480.3568522
+  Samples: 48
+
+TEST Set:
+  Normalized   - MSE: 0.1782910, MAE: 0.2158612
+  Denormalized - MSE: 344946982.7450981, MAE: 9494.8033567
+  Samples: 102
+==================================================
+  ✓ Evaluation completed successfully
+
+[9/10] Evaluating: itransformer_ttc_weather
+  Resume ID: 20260113-111359_dfdb7276c5e3
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111359_dfdb7276c5e3
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111359_dfdb7276c5e3
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111359_dfdb7276c5e3/checkpoints/best_checkpoint.pth
+[Info] Successfully loaded model: iTransformer
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+-> Results for 'train' (normalized): MSE = 0.8433494, MAE = 0.6124605
+-> Results for 'train' (denormalized): MSE = 74.7368026, MAE = 5.4261817
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+-> Results for 'val' (normalized): MSE = 0.7766535, MAE = 0.5892894
+-> Results for 'val' (denormalized): MSE = 70.6212497, MAE = 5.1416305
+
+[Info] Testing on test dataset - entity: all
+
+-> Results for 'test' (normalized): MSE = 0.6941967, MAE = 0.5712319
+-> Results for 'test' (denormalized): MSE = 71.6535591, MAE = 5.3059494
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.8433494, MAE: 0.6124605
+  Denormalized - MSE: 74.7368026, MAE: 5.4261817
+  Samples: 2496
+
+VAL Set:
+  Normalized   - MSE: 0.7766535, MAE: 0.5892894
+  Denormalized - MSE: 70.6212497, MAE: 5.1416305
+  Samples: 356
+
+TEST Set:
+  Normalized   - MSE: 0.6941967, MAE: 0.5712319
+  Denormalized - MSE: 71.6535591, MAE: 5.3059494
+  Samples: 719
+==================================================
+  ✓ Evaluation completed successfully
+
+[10/10] Evaluating: itransformer_ttc_medical
+  Resume ID: 20260113-111401_2749fc3e8ccc
+  Directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111401_2749fc3e8ccc
+[Info] Loading config from experiment directory: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111401_2749fc3e8ccc
+[Info] Applying data_config overrides: {'filter_insufficient_entities': True, 'missing_value_strategy': 'forward_fill_indicators'}
+[Info] Running on device: cuda:0
+[ info ] model_init: Propagated timestamp_semantics=t_known from data config to model
+[Info] Loading model from: /nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_time_mmd_ttc_20260113_111324/20260113-111401_2749fc3e8ccc/checkpoints/best_checkpoint.pth
+[Info] Successfully loaded model: iTransformer
+[ warning ] Filtered entity '20803': insufficient data in val split
+[ warning ] Filtered entity '25560': insufficient data in val split
+[ warning ] Filtered entity '26022': insufficient data in val split
+[ warning ] Filtered entity '26106': insufficient data in val split
+[ warning ] Filtered entity '27907': insufficient data in val split
+[ warning ] Filtered entity '28577': insufficient data in val split
+[ warning ] Filtered entity '4730': insufficient data in val split
+[ info ] Entity filtering: removed 7 entities, using 66 entities
+[ info ] Missing value treatment: 2 column(s) with missing values will be forward-filled with indicators: ['FiO2', 'Respiratory_Rate']
+[ info ] Numeric columns found: ['FiO2', 'Heart_Rate', 'Respiratory_Rate', 'SaO2']
+
+[Info] Testing on train dataset
+[Info] Using all samples for testing.
+-> Results for 'train' (normalized): MSE = 0.4928931, MAE = 0.4241373
+-> Results for 'train' (denormalized): MSE = 20.6410526, MAE = 2.3993311
+
+[Info] Testing on val dataset
+[Info] Using all samples for testing.
+-> Results for 'val' (normalized): MSE = 1.7402688, MAE = 0.4962992
+-> Results for 'val' (denormalized): MSE = 39.1984181, MAE = 2.6219614
+
+[Info] Testing on test dataset - entity: 10576
+
+[Info] Testing on test dataset - entity: 10910
+
+[Info] Testing on test dataset - entity: 10977
+
+[Info] Testing on test dataset - entity: 1122
+
+[Info] Testing on test dataset - entity: 11465
+
+[Info] Testing on test dataset - entity: 11973
+
+[Info] Testing on test dataset - entity: 12096
+
+[Info] Testing on test dataset - entity: 12515
+
+[Info] Testing on test dataset - entity: 12578
+
+[Info] Testing on test dataset - entity: 12652
+
+[Info] Testing on test dataset - entity: 12680
+
+[Info] Testing on test dataset - entity: 13037
+
+[Info] Testing on test dataset - entity: 14151
+
+[Info] Testing on test dataset - entity: 14273
+
+[Info] Testing on test dataset - entity: 15032
+
+[Info] Testing on test dataset - entity: 15114
+
+[Info] Testing on test dataset - entity: 15204
+
+[Info] Testing on test dataset - entity: 15432
+
+[Info] Testing on test dataset - entity: 15482
+
+[Info] Testing on test dataset - entity: 15618
+
+[Info] Testing on test dataset - entity: 15989
+
+[Info] Testing on test dataset - entity: 16108
+
+[Info] Testing on test dataset - entity: 16146
+
+[Info] Testing on test dataset - entity: 1690
+
+[Info] Testing on test dataset - entity: 16957
+
+[Info] Testing on test dataset - entity: 17601
+
+[Info] Testing on test dataset - entity: 18040
+
+[Info] Testing on test dataset - entity: 18497
+
+[Info] Testing on test dataset - entity: 19956
+
+[Info] Testing on test dataset - entity: 20082
+
+[Info] Testing on test dataset - entity: 20415
+
+[Info] Testing on test dataset - entity: 21316
+
+[Info] Testing on test dataset - entity: 2160
+
+[Info] Testing on test dataset - entity: 2218
+
+[Info] Testing on test dataset - entity: 22188
+
+[Info] Testing on test dataset - entity: 22875
+
+[Info] Testing on test dataset - entity: 23705
+
+[Info] Testing on test dataset - entity: 24501
+
+[Info] Testing on test dataset - entity: 24974
+
+[Info] Testing on test dataset - entity: 25252
+
+[Info] Testing on test dataset - entity: 25398
+
+[Info] Testing on test dataset - entity: 25625
+
+[Info] Testing on test dataset - entity: 25714
+
+[Info] Testing on test dataset - entity: 25932
+
+[Info] Testing on test dataset - entity: 2624
+
+[Info] Testing on test dataset - entity: 26276
+
+[Info] Testing on test dataset - entity: 2705
+
+[Info] Testing on test dataset - entity: 2796
+
+[Info] Testing on test dataset - entity: 29396
+
+[Info] Testing on test dataset - entity: 29671
+
+[Info] Testing on test dataset - entity: 2976
+
+[Info] Testing on test dataset - entity: 29899
+
+[Info] Testing on test dataset - entity: 3014
+
+[Info] Testing on test dataset - entity: 30402
+
+[Info] Testing on test dataset - entity: 4515
+
+[Info] Testing on test dataset - entity: 517
+
+[Info] Testing on test dataset - entity: 5301
+
+[Info] Testing on test dataset - entity: 5424
+
+[Info] Testing on test dataset - entity: 5568
+
+[Info] Testing on test dataset - entity: 5822
+
+[Info] Testing on test dataset - entity: 6975
+
+[Info] Testing on test dataset - entity: 7679
+
+[Info] Testing on test dataset - entity: 7892
+
+[Info] Testing on test dataset - entity: 7917
+
+[Info] Testing on test dataset - entity: 8355
+
+[Info] Testing on test dataset - entity: 862
+
+-> Results for 'test' (normalized): MSE = 1.8115171, MAE = 0.4952999
+-> Results for 'test' (denormalized): MSE = 72.7803816, MAE = 3.0177759
+
+==================================================
+               Evaluation Summary
+==================================================
+
+TRAIN Set:
+  Normalized   - MSE: 0.4928931, MAE: 0.4241373
+  Denormalized - MSE: 20.6410526, MAE: 2.3993311
+  Samples: 4192
+
+VAL Set:
+  Normalized   - MSE: 1.7402688, MAE: 0.4962992
+  Denormalized - MSE: 39.1984181, MAE: 2.6219614
+  Samples: 331
+
+TEST Set:
+  Normalized   - MSE: 1.8115171, MAE: 0.4952999
+  Denormalized - MSE: 72.7803816, MAE: 3.0177759
+  Samples: 1096
+==================================================
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  WARNING: Denormalized metrics may be inaccurate
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+The following splits use ConcatDataset (multiple entities concatenated): TRAIN, VAL
+
+Why this matters:
+  - Each entity has its own scaler (mean/std) fitted on its data
+  - ConcatDataset loses track of which sample came from which entity
+  - Denormalized metrics use only the first entity's scaler
+  - This gives INCORRECT results for samples from other entities
+
+Normalized metrics are consistent with training but mix
+different real-world scales across entities.
+
+See: docs/planning/robust_evaluation_metrics_plan.md
+==================================================
+  ✓ Evaluation completed successfully
+
+============================================================
+Suite Evaluation Complete
+  Successful: 10
+  Failed: 0
+  Skipped (invalid): 0
+============================================================
+
