@@ -728,3 +728,837 @@ def compute_film_regularization(film_params, lambda_reg=0.01):
         reg_loss += torch.mean(gamma2 ** 2) + torch.mean(beta2 ** 2)
     return lambda_reg * reg_loss
 ```
+
+---
+---
+
+# Part II: Rethinking the Regularization Target
+
+## Critical Analysis: Why Biasing Toward Zero May Be Wrong
+
+### The Fundamental Issue
+
+Options 1-8 above share a common assumption: that biasing $\gamma \to 0$ and $\beta \to 0$ represents a "safe" or "unimodal-equivalent" fallback. **This assumption is flawed.**
+
+Consider the current FiLM formulation:
+$$z_{\text{mod}} = (1 + \gamma) \odot \text{LayerNorm}(z) + \beta$$
+
+When $\gamma = 0$ and $\beta = 0$:
+$$z_{\text{mod}} = \text{LayerNorm}(z)$$
+
+This is simply the **identity transformation after LayerNorm**—NOT equivalent to a trained unimodal baseline.
+
+### What Does a Unimodal iTransformer Learn?
+
+A standard iTransformer's LayerNorm has **learned affine parameters** $\gamma_{\text{uni}}, \beta_{\text{uni}}$:
+$$z_{\text{uni}} = \gamma_{\text{uni}} \odot \frac{z - \mu}{\sigma} + \beta_{\text{uni}}$$
+
+These parameters are optimized over training to produce useful representations. In contrast, our FiLM formulation applies text-conditioned parameters **on top of** the standard LayerNorm (which may or may not have its own affine parameters).
+
+**Key insight**: Setting $\gamma_{\text{FiLM}} = 0, \beta_{\text{FiLM}} = 0$ does NOT recover the unimodal baseline—it just removes the additional text-based transformation.
+
+### The lynx_film vs lynx_film_raw Tradeoff
+
+The existing `lynx_film` model addresses this via **residual learning**:
+
+```
+lynx_film:
+    final_pred = unimodal_pred + residual_pred
+
+    where:
+    - unimodal_pred: from frozen, pre-trained iTransformer
+    - residual_pred: from iTransformerFilm (text-modulated)
+```
+
+**Advantages:**
+- Guaranteed to never underperform unimodal (residual can learn to be zero)
+- Safe fallback when text is harmful
+
+**Disadvantages:**
+- Learns a *correction* rather than direct signal
+- May lose information: if optimal prediction requires significant departure from unimodal, the residual must learn a large offset
+- Empirically underperforms `lynx_film_raw` when text IS helpful (per user observation)
+
+```
+lynx_film_raw:
+    final_pred = film_modulated_pred
+
+    - Direct text modulation of representations
+    - Can learn full signal from scratch
+    - No guaranteed fallback
+```
+
+**The core tension**: We want the expressiveness of `lynx_film_raw` with the safety of `lynx_film`.
+
+---
+
+## Literature Review: Parallel Pathway and Mixing Approaches
+
+### Gated Multimodal Units (GMU) — Arevalo et al., 2017
+
+The [GMU architecture](https://arxiv.org/abs/1702.01992) learns to dynamically weight modality contributions:
+
+**Mathematical Formulation:**
+$$h_v = \tanh(W_v \cdot x_v)$$
+$$h_t = \tanh(W_t \cdot x_t)$$
+$$z = \sigma(W_z \cdot [x_v; x_t])$$
+$$h = z \odot h_v + (1 - z) \odot h_t$$
+
+Where:
+- $x_v, x_t$ are visual and textual inputs
+- $z \in [0,1]^d$ is a learned gate (per feature dimension)
+- The final representation $h$ is a **convex combination** of modality-specific transformations
+
+**Key property**: When $z \to 1$, the model relies on visual; when $z \to 0$, it relies on textual. The gate learns to suppress uninformative modalities.
+
+### COLD Fusion — Pham et al., 2022
+
+[COLD Fusion](https://arxiv.org/abs/2206.05833) learns uncertainty-aware fusion for multimodal emotion recognition:
+
+**Mathematical Formulation:**
+$$h_{VA} = w_V \cdot h_V + w_A \cdot h_A$$
+
+Where weights derive from learned variances:
+$$w_V = \frac{\|\sigma_V\|_2}{\|\sigma_V\|_2 + \|\sigma_A\|_2}$$
+
+**Key property**: Higher variance = higher informativeness. The model learns to estimate uncertainty and weight accordingly.
+
+### Pre-Gating and Contextual Attention Gate (PCAG) — 2024
+
+[PCAG](https://www.sciencedirect.com/science/article/pii/S0893608024004775) introduces two-stage gating:
+1. **Pre-gate**: Filters uninformative cross-modal interactions BEFORE fusion
+2. **Contextual gate**: Reduces uncertainty introduced by cross-attention
+
+**Key insight**: Sometimes the right answer is to NOT fuse—pre-filtering prevents noise injection.
+
+### Entropy-Gated Contrastive Fusion (AECF) — 2025
+
+[AECF](https://arxiv.org/abs/2505.15417) introduces adaptive entropy regularization:
+- Gates are entropy-regularized to prevent collapse to single modality
+- Instance-adaptive: per-sample fusion weights
+- Lattice-calibrated: consistent behavior across modality subsets
+
+### Conditional Batch Normalization Pitfalls — NeurIPS 2022
+
+[This paper](https://arxiv.org/abs/2211.15071) warns that CBN (a FiLM variant) can enable **shortcut learning**:
+- Model may exploit conditioning signal without learning useful visual features
+- Multi-modal performance can improve while unimodal features degrade
+- Recommendation: validate that both modalities are actually being used
+
+**Relevance**: Our text modulation could similarly enable shortcuts—the model might overfit to text patterns without learning robust time series features.
+
+---
+
+## Option 9: Parallel Pathway Mixing (GMU-Style)
+
+### Concept
+
+Maintain **two parallel LayerNorm pathways**:
+1. **Text-agnostic pathway**: Standard learned LayerNorm (like unimodal baseline)
+2. **Text-conditioned pathway**: FiLM-modulated LayerNorm
+
+Learn a mixing gate $\alpha$ that combines them.
+
+### Mathematical Formulation
+
+**Parallel Pathways:**
+$$z_{\text{base}} = \gamma_{\text{base}} \odot \text{Norm}(h) + \beta_{\text{base}} \quad \text{(learned, text-free)}$$
+$$z_{\text{text}} = (1 + \gamma_{\text{FiLM}}) \odot \text{Norm}(h) + \beta_{\text{FiLM}} \quad \text{(text-conditioned)}$$
+
+**Mixing Gate:**
+$$\alpha = \sigma(g(x, T))$$
+
+Where $g$ is a gating network conditioned on time series $x$ and/or text $T$.
+
+**Final Output:**
+$$z_{\text{final}} = \alpha \odot z_{\text{text}} + (1 - \alpha) \odot z_{\text{base}}$$
+
+### Why This Is Different From Options 1-8
+
+When $\alpha \to 0$:
+$$z_{\text{final}} \to z_{\text{base}} = \gamma_{\text{base}} \odot \text{Norm}(h) + \beta_{\text{base}}$$
+
+This is a **learned text-free transformation**, not identity. The model can learn an optimal text-free representation that serves as a proper fallback.
+
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│               OPTION 9: PARALLEL PATHWAY MIXING (GMU-Style)             │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  Pre-Norm Hidden State                                                  │
+│  h: [B, C, d_model]                                                    │
+│        │                                                                │
+│        ▼                                                                │
+│  ┌──────────────┐                                                      │
+│  │  LayerNorm   │                                                      │
+│  │  (no affine) │                                                      │
+│  └──────────────┘                                                      │
+│        │                                                                │
+│        │ Norm(h): [B, C, d_model]                                      │
+│        │                                                                │
+│        ├─────────────────────────────────┐                              │
+│        │                                 │                              │
+│        ▼                                 ▼                              │
+│  ┌───────────────────┐           ┌───────────────────┐                │
+│  │  TEXT-FREE PATH   │           │  TEXT-COND PATH   │                │
+│  │                   │           │                   │                │
+│  │  γ_base, β_base   │           │  γ_FiLM, β_FiLM   │                │
+│  │  (learned params) │           │  (from text)      │                │
+│  │                   │           │                   │                │
+│  │  z_base = γ_base  │           │  z_text = (1+γ)   │                │
+│  │    ⊙ Norm(h)      │           │    ⊙ Norm(h)      │                │
+│  │    + β_base       │           │    + β_FiLM       │                │
+│  │                   │           │                   │                │
+│  └───────────────────┘           └───────────────────┘                │
+│        │                                 │                              │
+│        │ z_base: [B,C,d]                 │ z_text: [B,C,d]             │
+│        │                                 │                              │
+│        └────────────┬────────────────────┘                              │
+│                     │                                                   │
+│                     ▼                                                   │
+│           ┌─────────────────────┐                                      │
+│           │    MIXING GATE      │                                      │
+│           │                     │                                      │
+│           │  α = σ(g(x, T))     │ ◄─── Conditioned on x and/or T      │
+│           │                     │                                      │
+│           │  Options for g:     │                                      │
+│           │  - g(x): TS only    │                                      │
+│           │  - g(T): text only  │                                      │
+│           │  - g(x,T): both     │                                      │
+│           │  - learnable scalar │                                      │
+│           └─────────────────────┘                                      │
+│                     │                                                   │
+│                     │ α: [B, C] or [B, C, d]                           │
+│                     │                                                   │
+│                     ▼                                                   │
+│      ┌────────────────────────────────────────┐                        │
+│      │                                        │                        │
+│      │  z_final = α ⊙ z_text + (1-α) ⊙ z_base │                        │
+│      │                                        │                        │
+│      └────────────────────────────────────────┘                        │
+│                     │                                                   │
+│                     ▼                                                   │
+│              z_final: [B, C, d_model]                                  │
+│                                                                         │
+│  KEY PROPERTY:                                                         │
+│  When α → 0: z_final → z_base (learned text-free, NOT identity)       │
+│  When α → 1: z_final → z_text (full text modulation)                  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Variants of the Mixing Gate
+
+**9a. Static Learned Gate:**
+$$\alpha = \sigma(\alpha_{\text{raw}}) \quad \text{single learnable scalar}$$
+
+**9b. Channel-wise Static Gate:**
+$$\alpha_c = \sigma(\alpha_{\text{raw},c}) \quad \text{per channel}$$
+
+**9c. Input-Conditioned Gate (time series):**
+$$\alpha = \sigma(W_g \cdot \text{pool}(x) + b_g)$$
+
+**9d. Cross-Modal Gate (GMU-style):**
+$$\alpha = \sigma(W_z \cdot [\text{pool}(x); \text{pool}(T)] + b_z)$$
+
+**9e. Feature-wise Gate:**
+$$\alpha \in [0,1]^{B \times C \times d} \quad \text{different gate per feature dimension}$$
+
+### Pros
+- **Proper fallback**: $\alpha \to 0$ yields learned text-free representation, not identity
+- **Best of both worlds**: can learn full text signal when helpful, ignore when harmful
+- **Interpretable**: $\alpha$ directly measures text reliance
+- **Flexible**: gate can be static or dynamic
+
+### Cons
+- More parameters (additional $\gamma_{\text{base}}, \beta_{\text{base}}$ per layer)
+- Potential for mode collapse (always choose one pathway)
+- Need to ensure both pathways are trained
+
+### Implementation Complexity
+**Medium** - Two affine transforms + mixing logic
+
+---
+
+## Option 10: Pre-Trained Text-Free Pathway (lynx_film Hybrid)
+
+### Concept
+
+Initialize the text-free pathway $(\gamma_{\text{base}}, \beta_{\text{base}})$ from a **pre-trained unimodal iTransformer**, then learn whether to use text modulation.
+
+This combines the `lynx_film` philosophy (leverage pre-trained unimodal) with the `lynx_film_raw` architecture (FiLM modulation inside the model).
+
+### Mathematical Formulation
+
+**Initialization:**
+$$\gamma_{\text{base}}^{(\ell)}, \beta_{\text{base}}^{(\ell)} \leftarrow \text{LayerNorm}_{\ell}.\text{weight}, \text{LayerNorm}_{\ell}.\text{bias}$$
+
+From a pre-trained unimodal iTransformer.
+
+**Training Options:**
+
+**(10a) Frozen baseline + learned mixing:**
+$$\gamma_{\text{base}}, \beta_{\text{base}} \text{ frozen}$$
+$$\alpha, \gamma_{\text{FiLM}}, \beta_{\text{FiLM}} \text{ learned}$$
+
+**(10b) Fine-tuned baseline + learned mixing:**
+All parameters trainable, but baseline initialized from pre-trained.
+
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│          OPTION 10: PRE-TRAINED TEXT-FREE PATHWAY                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  INITIALIZATION PHASE                                            │   │
+│  │                                                                  │   │
+│  │  Pre-trained Unimodal iTransformer                              │   │
+│  │       │                                                          │   │
+│  │       │ Extract LayerNorm params from each layer                │   │
+│  │       │                                                          │   │
+│  │       ▼                                                          │   │
+│  │  γ_base^(ℓ) ← LN^(ℓ).weight                                     │   │
+│  │  β_base^(ℓ) ← LN^(ℓ).bias                                       │   │
+│  │                                                                  │   │
+│  │  These represent the "known good" unimodal configuration        │   │
+│  │                                                                  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  TRAINING PHASE                                                  │   │
+│  │                                                                  │   │
+│  │           Norm(h)                                                │   │
+│  │              │                                                   │   │
+│  │       ┌──────┴──────┐                                           │   │
+│  │       │             │                                            │   │
+│  │       ▼             ▼                                            │   │
+│  │  ┌─────────┐   ┌─────────┐                                      │   │
+│  │  │UNIMODAL │   │  TEXT   │                                      │   │
+│  │  │ PATHWAY │   │ PATHWAY │                                      │   │
+│  │  │         │   │         │                                      │   │
+│  │  │γ_base,  │   │γ_FiLM,  │                                      │   │
+│  │  │β_base   │   │β_FiLM   │                                      │   │
+│  │  │         │   │(from T) │                                      │   │
+│  │  │[FROZEN] │   │[LEARNED]│                                      │   │
+│  │  │   or    │   │         │                                      │   │
+│  │  │[FINE-   │   │         │                                      │   │
+│  │  │ TUNED]  │   │         │                                      │   │
+│  │  └─────────┘   └─────────┘                                      │   │
+│  │       │             │                                            │   │
+│  │       │ z_uni       │ z_text                                    │   │
+│  │       │             │                                            │   │
+│  │       └──────┬──────┘                                           │   │
+│  │              │                                                   │   │
+│  │              ▼                                                   │   │
+│  │     z = α·z_text + (1-α)·z_uni                                  │   │
+│  │                                                                  │   │
+│  │     α = σ(g(x,T))  [initialized with bias toward α≈0]           │   │
+│  │                                                                  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  COMPARISON TO lynx_film:                                              │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                                                                  │   │
+│  │  lynx_film:        y = y_unimodal + residual                    │   │
+│  │                    (additive in OUTPUT space)                    │   │
+│  │                                                                  │   │
+│  │  Option 10:        z = α·z_text + (1-α)·z_uni                   │   │
+│  │                    (interpolation in REPRESENTATION space)      │   │
+│  │                                                                  │   │
+│  │  Key difference: Option 10 allows α∈(0,1) interpolation,        │   │
+│  │  lynx_film is purely additive (always uses both)                │   │
+│  │                                                                  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Pros
+- **Principled initialization**: baseline pathway starts from proven-good unimodal configuration
+- **Guaranteed competence**: even with random $\alpha$, one pathway produces reasonable predictions
+- **Smoother optimization**: not starting from scratch
+- **Interpretable fallback**: $\alpha \to 0$ truly recovers (approximate) unimodal behavior
+
+### Cons
+- Requires pre-trained unimodal model
+- If baseline is frozen, may limit adaptability
+- If baseline is fine-tuned, may drift from good unimodal solution
+
+### Implementation Complexity
+**Medium-High** - Requires checkpoint loading + selective freezing
+
+---
+
+## Option 11: Uncertainty-Weighted Mixing (COLD Fusion Style)
+
+### Concept
+
+Instead of learning a gate directly, learn to estimate **uncertainty** for each pathway, then weight inversely by uncertainty.
+
+### Mathematical Formulation
+
+**Distributional Representation:**
+Model each pathway output as a distribution:
+$$z_{\text{base}} \sim \mathcal{N}(\mu_{\text{base}}, \sigma_{\text{base}}^2)$$
+$$z_{\text{text}} \sim \mathcal{N}(\mu_{\text{text}}, \sigma_{\text{text}}^2)$$
+
+Where $\sigma$ represents epistemic uncertainty (model's confidence).
+
+**Uncertainty-Weighted Fusion:**
+$$w_{\text{text}} = \frac{1/\sigma_{\text{text}}^2}{1/\sigma_{\text{text}}^2 + 1/\sigma_{\text{base}}^2}$$
+$$z_{\text{final}} = w_{\text{text}} \cdot \mu_{\text{text}} + (1 - w_{\text{text}}) \cdot \mu_{\text{base}}$$
+
+**Intuition**: High uncertainty = low weight. If text pathway is uncertain, rely more on baseline.
+
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│          OPTION 11: UNCERTAINTY-WEIGHTED MIXING (COLD Style)            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│                          Norm(h)                                        │
+│                             │                                           │
+│              ┌──────────────┴──────────────┐                           │
+│              │                             │                            │
+│              ▼                             ▼                            │
+│  ┌───────────────────────┐    ┌───────────────────────┐               │
+│  │   TEXT-FREE PATHWAY   │    │   TEXT-COND PATHWAY   │               │
+│  │                       │    │                       │               │
+│  │   MLP → μ_base, σ_base│    │   MLP → μ_text, σ_text│               │
+│  │                       │    │   (conditioned on T)  │               │
+│  └───────────────────────┘    └───────────────────────┘               │
+│              │                             │                            │
+│              │ (μ_base, σ_base)            │ (μ_text, σ_text)          │
+│              │                             │                            │
+│              └──────────────┬──────────────┘                           │
+│                             │                                           │
+│                             ▼                                           │
+│               ┌─────────────────────────────┐                          │
+│               │  UNCERTAINTY-BASED FUSION   │                          │
+│               │                             │                          │
+│               │  Precision pooling:         │                          │
+│               │                             │                          │
+│               │  w_text = (1/σ²_text)       │                          │
+│               │         / (1/σ²_text        │                          │
+│               │          + 1/σ²_base)       │                          │
+│               │                             │                          │
+│               │  z = w_text·μ_text          │                          │
+│               │    + (1-w_text)·μ_base      │                          │
+│               │                             │                          │
+│               └─────────────────────────────┘                          │
+│                             │                                           │
+│                             ▼                                           │
+│                     z_final: [B, C, d]                                 │
+│                                                                         │
+│  TRAINING OBJECTIVE:                                                   │
+│                                                                         │
+│  In addition to forecast loss, add calibration losses:                 │
+│                                                                         │
+│  L_calibration: σ should correlate with actual errors                  │
+│  L_ordinality:  σ_text > σ_base when text hurts, vice versa           │
+│                                                                         │
+│  These ensure σ estimates are meaningful, not arbitrary                │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Pros
+- **Principled**: based on probabilistic reasoning
+- **Self-calibrating**: model learns its own confidence
+- **Interpretable**: σ values indicate reliability
+- **Robust**: high uncertainty automatically downweighted
+
+### Cons
+- More complex architecture (need to predict μ and σ)
+- Requires calibration loss (additional hyperparameters)
+- Uncertainty estimates may not be well-calibrated without careful training
+- Higher computational cost
+
+### Implementation Complexity
+**High** - Distributional outputs + calibration losses
+
+---
+
+## Option 12: Residual FiLM on Pre-Norm (Additive Mixing)
+
+### Concept
+
+Instead of interpolating between pathways, use **additive** combination where FiLM provides a **residual correction** to the baseline.
+
+### Mathematical Formulation
+
+**Baseline transformation:**
+$$z_{\text{base}} = \gamma_{\text{base}} \odot \text{Norm}(h) + \beta_{\text{base}}$$
+
+**FiLM residual:**
+$$\Delta z = \alpha \cdot (\gamma_{\text{FiLM}} \odot \text{Norm}(h) + \beta_{\text{FiLM}})$$
+
+**Final output:**
+$$z_{\text{final}} = z_{\text{base}} + \Delta z$$
+
+With $\alpha \in [0, 1]$ as a learned gating coefficient.
+
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│           OPTION 12: RESIDUAL FiLM (Additive Mixing)                    │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│                          Norm(h)                                        │
+│                             │                                           │
+│              ┌──────────────┼──────────────┐                           │
+│              │              │              │                            │
+│              ▼              │              ▼                            │
+│  ┌───────────────────┐     │    ┌───────────────────┐                 │
+│  │   BASE AFFINE     │     │    │   FiLM RESIDUAL   │                 │
+│  │                   │     │    │                   │                 │
+│  │  z_base = γ_base  │     │    │  Δz = γ_FiLM ⊙    │                 │
+│  │    ⊙ Norm(h)      │     │    │    Norm(h) +      │                 │
+│  │    + β_base       │     │    │    β_FiLM         │                 │
+│  │                   │     │    │                   │                 │
+│  │  [learned params] │     │    │  [from text T]    │                 │
+│  └───────────────────┘     │    └───────────────────┘                 │
+│              │              │              │                            │
+│              │              │              │                            │
+│              │              │              ▼                            │
+│              │              │    ┌───────────────────┐                 │
+│              │              │    │  SCALE BY GATE    │                 │
+│              │              │    │                   │                 │
+│              │              │    │  α·Δz             │                 │
+│              │              │    │                   │                 │
+│              │              │    │  where α = σ(g)   │                 │
+│              │              │    └───────────────────┘                 │
+│              │              │              │                            │
+│              │              │              │                            │
+│              └──────────────┴──────────────┘                           │
+│                             │                                           │
+│                             ▼                                           │
+│              ┌─────────────────────────────┐                           │
+│              │                             │                           │
+│              │  z_final = z_base + α·Δz   │                           │
+│              │                             │                           │
+│              └─────────────────────────────┘                           │
+│                             │                                           │
+│                             ▼                                           │
+│                     z_final: [B, C, d]                                 │
+│                                                                         │
+│  KEY PROPERTY:                                                         │
+│  When α = 0: z_final = z_base (pure baseline)                         │
+│  When α = 1: z_final = z_base + Δz (full FiLM correction)             │
+│                                                                         │
+│  DIFFERENCE FROM OPTION 9 (interpolation):                             │
+│  - Option 9:  z = α·z_text + (1-α)·z_base (convex combination)        │
+│  - Option 12: z = z_base + α·Δz (additive residual)                   │
+│                                                                         │
+│  Additive allows z_final to go BEYOND either pathway                   │
+│  Interpolation constrains z_final to lie BETWEEN pathways              │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Mathematical Comparison: Interpolation vs Residual
+
+**Interpolation (Option 9):**
+$$z = \alpha \cdot z_{\text{text}} + (1-\alpha) \cdot z_{\text{base}}$$
+$$z \in \text{ConvexHull}(z_{\text{text}}, z_{\text{base}})$$
+
+**Residual (Option 12):**
+$$z = z_{\text{base}} + \alpha \cdot \Delta z$$
+$$z \in z_{\text{base}} + [0, \Delta z]$$
+
+The residual formulation allows **extrapolation** when $\alpha > 1$ (if sigmoid is replaced with softplus or removed).
+
+### Pros
+- Preserves baseline information (always included)
+- FiLM correction can be arbitrarily large or small
+- Similar to lynx_film but at representation level, not output level
+- Gate only controls magnitude of correction, not whether to include baseline
+
+### Cons
+- If $\Delta z$ is large, small $\alpha$ may still cause significant shift
+- Less symmetric than interpolation
+- May need to scale $\Delta z$ to prevent instability
+
+### Implementation Complexity
+**Medium** - Straightforward addition with gating
+
+---
+
+## Option 13: Entropy-Regularized Gating (AECF Style)
+
+### Concept
+
+Add an **entropy penalty** on the gate distribution to prevent collapse to always-on or always-off. This encourages the model to use both pathways across different samples.
+
+### Mathematical Formulation
+
+**Gate with entropy regularization:**
+$$\alpha = \sigma(g(x, T))$$
+
+**Entropy of gate distribution (across batch):**
+$$H(\alpha) = -\mathbb{E}[\alpha \log \alpha + (1-\alpha) \log (1-\alpha)]$$
+
+**Training Loss:**
+$$\mathcal{L} = \mathcal{L}_{\text{forecast}} - \lambda_H \cdot H(\alpha)$$
+
+The negative sign encourages HIGH entropy (diverse gate values).
+
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│           OPTION 13: ENTROPY-REGULARIZED GATING                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│                    Standard Parallel Pathway                            │
+│                    (as in Option 9)                                     │
+│                           │                                             │
+│                           ▼                                             │
+│                    ┌─────────────┐                                     │
+│                    │    Gate     │                                     │
+│                    │  α = σ(g)   │                                     │
+│                    └─────────────┘                                     │
+│                           │                                             │
+│            ┌──────────────┼──────────────┐                             │
+│            │              │              │                              │
+│            ▼              │              ▼                              │
+│      ┌──────────┐        │       ┌───────────────┐                    │
+│      │ Fusion   │        │       │ Entropy       │                    │
+│      │ z = mix  │        │       │ Regularizer   │                    │
+│      │ (α,z_t,  │        │       │               │                    │
+│      │  z_b)    │        │       │ H(α) = -E[    │                    │
+│      └──────────┘        │       │  α log α +    │                    │
+│            │              │       │  (1-α)log(1-α)│                    │
+│            │              │       │ ]             │                    │
+│            │              │       └───────────────┘                    │
+│            │              │              │                              │
+│            ▼              │              ▼                              │
+│      ┌──────────┐        │       ┌───────────────┐                    │
+│      │ L_fore-  │        │       │ -λ_H · H(α)   │                    │
+│      │ cast     │        │       │               │                    │
+│      └──────────┘        │       │ (maximize     │                    │
+│            │              │       │  entropy)     │                    │
+│            │              │       └───────────────┘                    │
+│            │              │              │                              │
+│            └──────────────┴──────────────┘                             │
+│                           │                                             │
+│                           ▼                                             │
+│            ┌─────────────────────────────┐                             │
+│            │                             │                             │
+│            │  L_total = L_forecast       │                             │
+│            │          - λ_H · H(α)       │                             │
+│            │                             │                             │
+│            └─────────────────────────────┘                             │
+│                                                                         │
+│  EFFECT:                                                               │
+│                                                                         │
+│  Without entropy reg:  α tends toward 0 or 1 (mode collapse)           │
+│  With entropy reg:     α encouraged to vary across samples             │
+│                                                                         │
+│  This ensures model LEARNS when to use text vs baseline,               │
+│  rather than always defaulting to one                                  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Pros
+- Prevents mode collapse
+- Encourages adaptive behavior
+- Works with any gating mechanism
+- Well-principled information-theoretic regularization
+
+### Cons
+- Requires tuning $\lambda_H$
+- May force diversity even when one pathway is always better
+- Adds complexity to loss function
+
+### Implementation Complexity
+**Low** (on top of existing gating) - Just add entropy term to loss
+
+---
+
+## Comparative Analysis: Options 9-13
+
+### Design Dimensions
+
+| Aspect | Opt 9 | Opt 10 | Opt 11 | Opt 12 | Opt 13 |
+|--------|-------|--------|--------|--------|--------|
+| Mixing Type | Interpolation | Interpolation | Uncertainty-weighted | Additive | Any |
+| Baseline Init | Random | Pre-trained | Random | Random/Pre-trained | Any |
+| Gate Type | Learned | Learned | Derived from σ | Learned | Learned |
+| Regularization | None | None | Calibration loss | None | Entropy |
+| Expressiveness | Bounded | Bounded | Bounded | Unbounded | Depends |
+
+### When to Use Each
+
+**Option 9 (Parallel Pathways)**:
+- General-purpose, good starting point
+- When you want clean separation between text and text-free processing
+
+**Option 10 (Pre-trained Baseline)**:
+- When you have a strong pre-trained unimodal model
+- When you want guaranteed non-degradation from unimodal
+
+**Option 11 (Uncertainty-Weighted)**:
+- When you need calibrated confidence estimates
+- For safety-critical applications
+- When interpretability of confidence is important
+
+**Option 12 (Residual FiLM)**:
+- When text should provide corrections/refinements
+- When you expect text contribution to be additive
+- More expressive but less bounded
+
+**Option 13 (Entropy-Regularized)**:
+- When you observe mode collapse in gating
+- When you want to ensure both pathways are utilized
+- As an add-on to other options
+
+---
+
+## Recommended Hybrid Approach
+
+Based on the analysis of the lynx_film vs lynx_film_raw tradeoff and the literature review, I recommend:
+
+### Primary Architecture: Option 10 + Option 13
+
+**Option 10 (Pre-trained Baseline)** with **Option 13 (Entropy Regularization)**
+
+```
+Architecture:
+1. Initialize γ_base, β_base from pre-trained unimodal iTransformer
+2. Learn γ_FiLM, β_FiLM from text via FiLMGenerator
+3. Learn mixing gate α = σ(g(x, T))
+4. Combine: z = α · z_text + (1-α) · z_base
+5. Regularize: L = L_forecast - λ_H · H(α)
+
+Configuration variants:
+- (10a + 13): Frozen baseline, learned mixing, entropy-regularized
+- (10b + 13): Fine-tuned baseline, learned mixing, entropy-regularized
+```
+
+### Fallback: Option 9 + Option 13
+
+If pre-trained unimodal is unavailable:
+
+**Option 9 (Parallel Pathways)** with **Option 13 (Entropy Regularization)**
+
+Both pathways learned from scratch, but entropy regularization prevents collapse.
+
+### Experimental Validation Order
+
+1. **Baseline**: Compare lynx_film_raw vs lynx_film (current)
+2. **Option 9**: Parallel pathways with static gate (simplest new approach)
+3. **Option 10a**: Pre-trained frozen baseline + learned gate
+4. **Option 10a + 13**: Add entropy regularization
+5. **Option 10b + 13**: Allow baseline fine-tuning
+
+---
+
+## Appendix: Implementation Sketches for Options 9-13
+
+### Option 9 Implementation
+
+```python
+class ParallelPathwayFiLMLayer(nn.Module):
+    def __init__(self, d_model, text_dim, seq_len):
+        super().__init__()
+        # Text-free pathway (learned)
+        self.gamma_base = nn.Parameter(torch.ones(d_model))
+        self.beta_base = nn.Parameter(torch.zeros(d_model))
+
+        # Text-conditioned pathway
+        self.film_gen = FiLMGenerator(text_dim, d_model, seq_len)
+
+        # Mixing gate (can be upgraded to input-conditioned)
+        self.gate_raw = nn.Parameter(torch.tensor(0.0))  # init at α=0.5
+
+    def forward(self, h_norm, text_emb):
+        # Text-free transformation
+        z_base = self.gamma_base * h_norm + self.beta_base
+
+        # Text-conditioned transformation
+        gamma_film, beta_film, _, _ = self.film_gen(text_emb)
+        z_text = (1 + gamma_film) * h_norm + beta_film
+
+        # Mixing
+        alpha = torch.sigmoid(self.gate_raw)
+        z_final = alpha * z_text + (1 - alpha) * z_base
+
+        return z_final, alpha  # return alpha for logging/regularization
+```
+
+### Option 10 Implementation
+
+```python
+class PretrainedBaselineFiLMLayer(nn.Module):
+    def __init__(self, d_model, text_dim, seq_len,
+                 pretrained_gamma, pretrained_beta, freeze_baseline=True):
+        super().__init__()
+        # Initialize from pre-trained unimodal
+        self.gamma_base = nn.Parameter(pretrained_gamma.clone())
+        self.beta_base = nn.Parameter(pretrained_beta.clone())
+
+        if freeze_baseline:
+            self.gamma_base.requires_grad = False
+            self.beta_base.requires_grad = False
+
+        # Text-conditioned pathway
+        self.film_gen = FiLMGenerator(text_dim, d_model, seq_len)
+
+        # Mixing gate with bias toward baseline (α ≈ 0.1 at init)
+        self.gate_raw = nn.Parameter(torch.tensor(-2.0))
+
+    def forward(self, h_norm, text_emb):
+        z_base = self.gamma_base * h_norm + self.beta_base
+
+        gamma_film, beta_film, _, _ = self.film_gen(text_emb)
+        z_text = (1 + gamma_film) * h_norm + beta_film
+
+        alpha = torch.sigmoid(self.gate_raw)
+        z_final = alpha * z_text + (1 - alpha) * z_base
+
+        return z_final, alpha
+```
+
+### Option 13 (Entropy Regularization) Implementation
+
+```python
+def entropy_regularization(alphas, eps=1e-8):
+    """
+    Compute batch entropy of gate values.
+
+    alphas: list of [B, C] or [B, C, d] gate tensors from each layer
+    Returns: scalar entropy (to be MAXIMIZED, so subtract from loss)
+    """
+    total_entropy = 0.0
+    for alpha in alphas:
+        # Binary entropy: -[α log α + (1-α) log(1-α)]
+        entropy = -(alpha * torch.log(alpha + eps) +
+                    (1 - alpha) * torch.log(1 - alpha + eps))
+        total_entropy += entropy.mean()
+
+    return total_entropy / len(alphas)
+
+
+# In training loop:
+loss = forecast_loss - lambda_H * entropy_regularization(gate_alphas)
+```
+
+---
+
+## Sources
+
+- [Distill: Feature-wise Transformations](https://distill.pub/2018/feature-wise-transformations/) - Comprehensive overview of FiLM and related methods
+- [Gated Multimodal Units for Information Fusion](https://arxiv.org/abs/1702.01992) - GMU architecture for learned modality mixing
+- [COLD Fusion: Uncertainty-Aware Multimodal Fusion](https://arxiv.org/abs/2206.05833) - Calibrated uncertainty-weighted fusion
+- [Pitfalls of Conditional Batch Normalization](https://arxiv.org/abs/2211.15071) - Warnings about shortcut learning in CBN
+- [Multimodal Alignment and Fusion: A Survey](https://arxiv.org/abs/2411.17040) - Recent survey on fusion methods
+- [Entropy-Gated Contrastive Fusion (AECF)](https://arxiv.org/abs/2505.15417) - Entropy regularization for robust fusion
+- [Pre-gating and Contextual Attention Gate](https://www.sciencedirect.com/science/article/pii/S0893608024004775) - Two-stage gating for filtering uninformative interactions
