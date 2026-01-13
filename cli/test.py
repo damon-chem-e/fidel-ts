@@ -733,16 +733,12 @@ def suite(
                 # Load experiment config from saved directory
                 config = _load_experiment_config_from_directory(exp_dir)
                 
-                # Merge evaluation options from suite config if present
+                # Extract evaluation options from suite config if present
                 # This allows adding evaluation options to the suite config for already-trained experiments
                 exp_overrides = exp.get('overrides', {})
+                evaluation_overrides = None
                 if 'evaluation' in exp_overrides and exp_overrides['evaluation'] is not None:
-                    # Add evaluation options to the config
-                    config_dict = config.model_dump()
-                    config_dict['evaluation'] = exp_overrides['evaluation']
-                    # Reconstruct config from dict (using ExperimentConfig.model_validate)
-                    from cli.config.models import ExperimentConfig
-                    config = ExperimentConfig.model_validate(config_dict)
+                    evaluation_overrides = exp_overrides['evaluation']
                 
                 # Build evaluation config
                 eval_config = build_evaluation_config_from_experiment_config(
@@ -752,7 +748,8 @@ def suite(
                     output_dir=output_dir,
                     version=version,
                     device_override=device,
-                    batch_size_override=batch_size
+                    batch_size_override=batch_size,
+                    evaluation_overrides=evaluation_overrides
                 )
                 
                 # Create config structure expected by evaluate function

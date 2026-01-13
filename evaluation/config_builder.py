@@ -101,7 +101,8 @@ def build_evaluation_config_from_experiment_config(
     output_dir: str = "./output",
     version: str = "best",
     device_override: Optional[str] = None,
-    batch_size_override: Optional[int] = None
+    batch_size_override: Optional[int] = None,
+    evaluation_overrides: Optional[Dict[str, Any]] = None
 ) -> dotdict:
     """
     Build evaluation configuration from experiment config.
@@ -117,6 +118,7 @@ def build_evaluation_config_from_experiment_config(
         version: Checkpoint version - "best", "latest", or specific pattern (default: "best")
         device_override: Optional device override (overrides config.device.gpu)
         batch_size_override: Optional batch size override (overrides config.training.batch_size)
+        evaluation_overrides: Optional dict of evaluation options to override (e.g., from suite config)
         
     Returns:
         dotdict: Evaluation configuration compatible with evaluation functions
@@ -190,6 +192,13 @@ def build_evaluation_config_from_experiment_config(
     # Handle case where evaluation key exists but is None
     if evaluation_options is None:
         evaluation_options = {}
+    
+    # Merge evaluation overrides from suite config (takes precedence)
+    if evaluation_overrides is not None:
+        if isinstance(evaluation_options, dict):
+            evaluation_options = {**evaluation_options, **evaluation_overrides}
+        else:
+            evaluation_options = evaluation_overrides
     
     # 8. Build evaluation config
     eval_config = dotdict({
