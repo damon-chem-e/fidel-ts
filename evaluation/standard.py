@@ -17,7 +17,65 @@ from data_provider.data_factory import Data_Provider
 from utils.tools import dotdict
 
 
-def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, dataset=None):
+def _compute_per_sample_losses(prediction, target):
+    """
+    Compute per-sample MSE and MAE losses.
+    
+    Args:
+        prediction: Model predictions, shape (batch_size, seq_len, features)
+        target: Ground truth targets, shape (batch_size, seq_len, features)
+        
+    Returns:
+        tuple: (mse_per_sample, mae_per_sample) both of shape (batch_size,)
+    """
+    # Compute per-sample, per-timestep losses
+    mse_loss_per_sample = torch.nn.MSELoss(reduction='none')(prediction, target)
+    mae_loss_per_sample = torch.nn.L1Loss(reduction='none')(prediction, target)
+    
+    # Reduce across sequence and feature dimensions to get per-sample loss
+    # Shape: (batch_size, seq_len, features) -> (batch_size,)
+    mse_per_sample = mse_loss_per_sample.mean(dim=(1, 2))
+    mae_per_sample = mae_loss_per_sample.mean(dim=(1, 2))
+    
+    return mse_per_sample, mae_per_sample
+
+
+def _filter_nan_samples(prediction, target, mse_per_sample, mae_per_sample):
+    """
+    Filter out samples that have NaN in their losses.
+    
+    Args:
+        prediction: Model predictions, shape (batch_size, seq_len, features)
+        target: Ground truth targets, shape (batch_size, seq_len, features)
+        mse_per_sample: Per-sample MSE losses, shape (batch_size,)
+        mae_per_sample: Per-sample MAE losses, shape (batch_size,)
+        
+    Returns:
+        tuple: (prediction_valid, target_valid, valid_mask, num_valid_samples, num_skipped)
+            - prediction_valid: Filtered predictions (only valid samples)
+            - target_valid: Filtered targets (only valid samples)
+            - valid_mask: Boolean mask indicating valid samples, shape (batch_size,)
+            - num_valid_samples: Number of valid samples
+            - num_skipped: Number of skipped samples
+    """
+    # Identify valid samples (no NaN in either loss)
+    valid_mask = ~(torch.isnan(mse_per_sample) | torch.isnan(mae_per_sample))
+    num_valid_samples = valid_mask.sum().item()
+    num_skipped = prediction.size(0) - num_valid_samples
+    
+    if num_valid_samples > 0:
+        # Filter to valid samples only
+        prediction_valid = prediction[valid_mask]
+        target_valid = target[valid_mask]
+    else:
+        # All samples are NaN
+        prediction_valid = None
+        target_valid = None
+    
+    return prediction_valid, target_valid, valid_mask, num_valid_samples, num_skipped
+
+
+def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, dataset=None, filter_nan_samples=False):
     """
     Evaluates all samples in a dataset using a DataLoader for efficient batch processing.
     Calculates both normalized and denormalized MSE and MAE over the entire dataset.
@@ -30,11 +88,17 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
         indexes: List of sample indexes to evaluate (None for all)
         channel_wise: Whether to compute channel-wise metrics
         dataset: Optional dataset object to access scaler for denormalization
+        filter_nan_samples: If True, filter out individual samples with NaN losses (less performant)
     
     Returns:
         If channel_wise: (channel_mse_norm, channel_mae_norm, channel_mse_denorm, channel_mae_denorm, channel_counts)
         Otherwise: (total_mse_norm, total_mae_norm, total_mse_denorm, total_mae_denorm, num_samples)
     """
+    # Log performance warning if filtering is enabled
+    if filter_nan_samples:
+        print("[Warning] filter_nan_samples is enabled. This requires per-sample loss computation "
+              "which is less performant than batch-averaged losses. Evaluation will be slower.")
+    
     # Normalized metrics
     total_mse_norm, total_mae_norm, num_samples = 0.0, 0.0, 0
     channel_mse_norm, channel_mae_norm, channel_counts = None, None, None
@@ -42,6 +106,9 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
     # Denormalized metrics
     total_mse_denorm, total_mae_denorm = 0.0, 0.0
     channel_mse_denorm, channel_mae_denorm = None, None
+    
+    # Track skipped samples when filtering is enabled
+    skipped_samples = 0
     
     # Check if scaler is available and fitted for denormalization
     has_scaler = False
@@ -139,6 +206,30 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
                     channel_mse_denorm = [0.0] * C
                     channel_mae_denorm = [0.0] * C
                     channel_counts = [0] * C
+                
+                # For channel-wise, filter at sample level (if any channel has NaN, filter entire sample)
+                if filter_nan_samples:
+                    # Compute per-sample losses across all channels
+                    # Check if any channel has NaN for each sample
+                    sample_has_nan = torch.zeros(prediction.size(0), dtype=torch.bool, device=device)
+                    for k in range(prediction.shape[2]):
+                        mse_per_sample, mae_per_sample = _compute_per_sample_losses(
+                            prediction[:, :, k], batch_y[:, :, k]
+                        )
+                        sample_has_nan |= (torch.isnan(mse_per_sample) | torch.isnan(mae_per_sample))
+                    
+                    valid_mask = ~sample_has_nan
+                    num_valid = valid_mask.sum().item()
+                    skipped_samples += (prediction.size(0) - num_valid)
+                    
+                    if num_valid == 0:
+                        # All samples filtered, skip this batch
+                        continue
+                    
+                    # Filter to valid samples
+                    prediction = prediction[valid_mask]
+                    batch_y = batch_y[valid_mask]
+                
                 for k in range(prediction.shape[2]):
                     # Normalized metrics
                     mse_loss_norm = torch.nn.MSELoss()(prediction[:, :, k], batch_y[:, :, k])
@@ -165,18 +256,44 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
                     channel_counts[k] += batch_y.size(0)
             else:
                 # Normalized metrics
-                mse_loss_norm = torch.nn.MSELoss()(prediction, batch_y)
-                mae_loss_norm = torch.nn.L1Loss()(prediction, batch_y)
-                total_mae_norm += mae_loss_norm.item() * batch_y.size(0)
-                total_mse_norm += mse_loss_norm.item() * batch_y.size(0)
+                prediction_valid = None
+                batch_y_valid = None
+                num_valid = batch_y.size(0)  # Default: all samples valid
+                
+                if filter_nan_samples:
+                    # Compute per-sample losses and filter NaN samples
+                    mse_per_sample, mae_per_sample = _compute_per_sample_losses(prediction, batch_y)
+                    prediction_valid, batch_y_valid, valid_mask, num_valid, num_skipped_batch = _filter_nan_samples(
+                        prediction, batch_y, mse_per_sample, mae_per_sample
+                    )
+                    skipped_samples += num_skipped_batch
+                    
+                    if num_valid > 0:
+                        # Compute losses on valid samples only
+                        mse_loss_norm = torch.nn.MSELoss()(prediction_valid, batch_y_valid)
+                        mae_loss_norm = torch.nn.L1Loss()(prediction_valid, batch_y_valid)
+                        total_mae_norm += mae_loss_norm.item() * num_valid
+                        total_mse_norm += mse_loss_norm.item() * num_valid
+                        num_samples += num_valid
+                else:
+                    # Standard batch-averaged losses (current behavior)
+                    mse_loss_norm = torch.nn.MSELoss()(prediction, batch_y)
+                    mae_loss_norm = torch.nn.L1Loss()(prediction, batch_y)
+                    total_mae_norm += mae_loss_norm.item() * batch_y.size(0)
+                    total_mse_norm += mse_loss_norm.item() * batch_y.size(0)
+                    num_samples += batch_y.size(0)
                 
                 # Denormalized metrics
-                if has_scaler:
+                if has_scaler and num_valid > 0:
                     try:
+                        # Use filtered predictions/targets if filtering is enabled
+                        pred_for_denorm = prediction_valid if filter_nan_samples else prediction
+                        target_for_denorm = batch_y_valid if filter_nan_samples else batch_y
+                        
                         # Reshape for scaler: (batch, seq, features) -> (batch*seq, features)
-                        batch_size, seq_len, num_features = prediction.shape
-                        pred_flat = prediction.cpu().numpy().reshape(-1, num_features)
-                        target_flat = batch_y.cpu().numpy().reshape(-1, num_features)
+                        batch_size, seq_len, num_features = pred_for_denorm.shape
+                        pred_flat = pred_for_denorm.cpu().numpy().reshape(-1, num_features)
+                        target_flat = target_for_denorm.cpu().numpy().reshape(-1, num_features)
                         
                         # Denormalize - scaler expects (n_samples, n_features)
                         pred_denorm = scaler.inverse_transform(pred_flat)
@@ -185,16 +302,31 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
                         # Convert back to tensors and compute metrics
                         pred_denorm_tensor = torch.tensor(pred_denorm, device=device, dtype=torch.float32).reshape(batch_size, seq_len, num_features)
                         target_denorm_tensor = torch.tensor(target_denorm, device=device, dtype=torch.float32).reshape(batch_size, seq_len, num_features)
-                        mse_loss_denorm = torch.nn.MSELoss()(pred_denorm_tensor, target_denorm_tensor)
-                        mae_loss_denorm = torch.nn.L1Loss()(pred_denorm_tensor, target_denorm_tensor)
-                        total_mse_denorm += mse_loss_denorm.item() * batch_y.size(0)
-                        total_mae_denorm += mae_loss_denorm.item() * batch_y.size(0)
+                        
+                        if filter_nan_samples:
+                            # Check for NaN in denormalized losses too
+                            mse_denorm_per_sample, mae_denorm_per_sample = _compute_per_sample_losses(
+                                pred_denorm_tensor, target_denorm_tensor
+                            )
+                            pred_denorm_valid, target_denorm_valid, _, num_valid_denorm, _ = _filter_nan_samples(
+                                pred_denorm_tensor, target_denorm_tensor, 
+                                mse_denorm_per_sample, mae_denorm_per_sample
+                            )
+                            
+                            if num_valid_denorm > 0:
+                                mse_loss_denorm = torch.nn.MSELoss()(pred_denorm_valid, target_denorm_valid)
+                                mae_loss_denorm = torch.nn.L1Loss()(pred_denorm_valid, target_denorm_valid)
+                                total_mse_denorm += mse_loss_denorm.item() * num_valid_denorm
+                                total_mae_denorm += mae_loss_denorm.item() * num_valid_denorm
+                        else:
+                            mse_loss_denorm = torch.nn.MSELoss()(pred_denorm_tensor, target_denorm_tensor)
+                            mae_loss_denorm = torch.nn.L1Loss()(pred_denorm_tensor, target_denorm_tensor)
+                            total_mse_denorm += mse_loss_denorm.item() * batch_size
+                            total_mae_denorm += mae_loss_denorm.item() * batch_size
                     except Exception:
                         # Scaler not fitted or error during inverse transform
                         has_scaler = False  # Disable for remaining batches
                         pass
-                
-                num_samples += batch_y.size(0)
 
     if channel_wise:
         return channel_mse_norm, channel_mae_norm, channel_mse_denorm, channel_mae_denorm, channel_counts
@@ -203,7 +335,7 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
 
 
 def _evaluate_single_entity(entity_name, entity_loader, dataset, split_name, filtered_samples,
-                            model, checkpoint_config, device, channel_wise):
+                            model, checkpoint_config, device, channel_wise, filter_nan_samples=False):
     """
     Evaluate a single entity and return its metrics.
     
@@ -217,6 +349,7 @@ def _evaluate_single_entity(entity_name, entity_loader, dataset, split_name, fil
         checkpoint_config: Checkpoint configuration
         device: PyTorch device
         channel_wise: Whether to compute channel-wise metrics
+        filter_nan_samples: If True, filter out individual samples with NaN losses
         
     Returns:
         tuple: (entity_name, mse_norm, mae_norm, mse_denorm, mae_denorm, num_samples)
@@ -240,7 +373,7 @@ def _evaluate_single_entity(entity_name, entity_loader, dataset, split_name, fil
     
     # Run evaluation for this entity
     result = evaluate_full_dataset(entity_loader, model, checkpoint_config, device, indexes, 
-                                  channel_wise, dataset=entity_dataset)
+                                  channel_wise, dataset=entity_dataset, filter_nan_samples=filter_nan_samples)
     
     if not channel_wise:
         mse_norm, mae_norm, mse_denorm, mae_denorm, num_samples = result
@@ -593,11 +726,13 @@ def _run_evaluation_loop(loaders_dict, datasets_dict, model, checkpoint_config, 
             
             # Evaluate each entity and collect metrics (single loop, no duplication)
             if not eval_config.channel_wise:
+                filter_nan_samples = getattr(eval_config, 'filter_nan_samples', False)
                 entity_metrics = []
                 for entity_name, entity_loader in loader.items():
                     entity_result = _evaluate_single_entity(
                         entity_name, entity_loader, dataset, split_name, filtered_samples,
-                        model, checkpoint_config, device, eval_config.channel_wise
+                        model, checkpoint_config, device, eval_config.channel_wise,
+                        filter_nan_samples=filter_nan_samples
                     )
                     entity_metrics.append(entity_result)
                 
@@ -632,8 +767,9 @@ def _run_evaluation_loop(loaders_dict, datasets_dict, model, checkpoint_config, 
             print("[Info] Using all samples for testing.")
         
         # Run evaluation
+        filter_nan_samples = getattr(eval_config, 'filter_nan_samples', False)
         result = evaluate_full_dataset(loader, model, checkpoint_config, device, indexes, 
-                                      eval_config.channel_wise, dataset=dataset)
+                                      eval_config.channel_wise, dataset=dataset, filter_nan_samples=filter_nan_samples)
         
         # Process results for single loader
         if eval_config.channel_wise:

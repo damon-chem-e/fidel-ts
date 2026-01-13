@@ -283,7 +283,7 @@ suite:
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         evaluation:
-          nan_aware_aggregation: true  # Exclude entities with NaN metrics from aggregation
+          filter_nan_samples: true  # Filter out samples with NaN losses
         wandb:
           tags: ["lynx_film_raw", "time_mmd_socialgood"]
         experiment:
