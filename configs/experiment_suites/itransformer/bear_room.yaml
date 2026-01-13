@@ -1,0 +1,44 @@
+# Experiment Suite: iTransformer on Bear_room
+# Description: Train iTransformer on Bear_room with same context/horizon as lynx_film_raw
+# Usage: python -m cli.suite run configs/experiment_suites/itransformer/bear_room.yaml
+
+suite:
+  name: "itransformer_bear_room"
+  description: "Train iTransformer model on Bear_room dataset with 1-day context, 12-hour prediction"
+  tags: ["itransformer", "pytorch", "fidel-ts", "bear_room"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/itransformer/bear_room"
+    
+  # Experiments in this suite
+  experiments:
+    - name: "itransformer_bear_room"
+      description: "iTransformer on Bear_room with 1-day context, 12-hour prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+          config_path: "model_configs/general/iTransformer.yaml"
+        data:
+          name: "Bear_room"
+          # Match original iTransformer bash script data config
+          config_path: "data_configs/Bear_room/fullBear.yaml"
+        training:
+          # Match lynx_film_raw Bear_room input/output lengths
+          input_len: 288      # 1 day at 5-min intervals
+          output_len: 144     # 12 hours at 5-min intervals (second smallest horizon)
+          batch_size: 128     # From original iTransformer bash script
+          learning_rate: 5.0e-4  # From original fork defaults (run_lightning.py)
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["itransformer", "bear_room"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/itransformer/bear_room"
+

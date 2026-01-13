@@ -1,0 +1,44 @@
+# Experiment Suite: iTransformer on Canada_photovoltaics_plants
+# Description: Train iTransformer on Canada_photovoltaics_plants with same context/horizon as lynx_film_raw
+# Usage: python -m cli.suite run configs/experiment_suites/itransformer/canada_photovoltaics.yaml
+
+suite:
+  name: "itransformer_canada_photovoltaics"
+  description: "Train iTransformer model on Canada_photovoltaics_plants dataset with 15-day context, 1-week prediction"
+  tags: ["itransformer", "pytorch", "fidel-ts", "canada_photovoltaics"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/itransformer/canada_photovoltaics"
+    
+  # Experiments in this suite
+  experiments:
+    - name: "itransformer_canada_photovoltaics"
+      description: "iTransformer on Canada_photovoltaics_plants with 15-day context, 1-week prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+          config_path: "model_configs/general/iTransformer.yaml"
+        data:
+          name: "Canada_photovoltaics_plants"
+          # Match original iTransformer bash script data config
+          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP.yaml"
+        training:
+          # Match lynx_film_raw Canada_photovoltaics input/output lengths
+          input_len: 360      # 15 days at hourly intervals
+          output_len: 168     # 1 week at hourly intervals (second smallest horizon)
+          batch_size: 512     # From original iTransformer bash script
+          learning_rate: 5.0e-4  # From original fork defaults (run_lightning.py)
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["itransformer", "canada_photovoltaics"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/itransformer/canada_photovoltaics"
+

@@ -1,0 +1,44 @@
+# Experiment Suite: iTransformer on California_ISO
+# Description: Train iTransformer on California_ISO with same context/horizon as lynx_film_raw
+# Usage: python -m cli.suite run configs/experiment_suites/itransformer/california_iso.yaml
+
+suite:
+  name: "itransformer_california_iso"
+  description: "Train iTransformer model on California_ISO dataset with 15-day context, 1-week prediction"
+  tags: ["itransformer", "pytorch", "fidel-ts", "california_iso"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/itransformer/california_iso"
+    
+  # Experiments in this suite
+  experiments:
+    - name: "itransformer_california_iso"
+      description: "iTransformer on California_ISO with 15-day context, 1-week prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "iTransformer"
+          config_path: "model_configs/general/iTransformer.yaml"
+        data:
+          name: "California_ISO"
+          # Match original iTransformer bash script data config
+          config_path: "data_configs/California_ISO/fullCAISO_H.yaml"
+        training:
+          # Match lynx_film_raw California_ISO input/output lengths
+          input_len: 360      # 15 days at hourly intervals
+          output_len: 168     # 1 week at hourly intervals (second smallest horizon)
+          batch_size: 256     # From original iTransformer bash script
+          learning_rate: 5.0e-4  # From original fork defaults (run_lightning.py)
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["itransformer", "california_iso"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/itransformer/california_iso"
+
