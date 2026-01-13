@@ -1562,3 +1562,902 @@ loss = forecast_loss - lambda_H * entropy_regularization(gate_alphas)
 - [Multimodal Alignment and Fusion: A Survey](https://arxiv.org/abs/2411.17040) - Recent survey on fusion methods
 - [Entropy-Gated Contrastive Fusion (AECF)](https://arxiv.org/abs/2505.15417) - Entropy regularization for robust fusion
 - [Pre-gating and Contextual Attention Gate](https://www.sciencedirect.com/science/article/pii/S0893608024004775) - Two-stage gating for filtering uninformative interactions
+
+---
+---
+
+# Part III: Unified Architecture Design — `lynx_film_enhanced`
+
+## Refinements Based on Discussion
+
+### Correction to Option 10
+
+The original Option 10 only considered freezing LayerNorm parameters from the pre-trained unimodal model. However, the optimal LayerNorm parameters depend on the attention and FFN computations that precede them. Therefore:
+
+**Corrected Option 10 requires:**
+- Frozen unimodal pathway: **FFN + Attention + LayerNorm** (all frozen from pre-trained checkpoint)
+- Learned text pathway: **New FFN + New Attention + FiLM-modulated LayerNorm** (all learned)
+- Learned mixing gate $\alpha$ to combine pathway outputs
+
+This makes Option 10 a true "parallel expert" architecture rather than just parallel affine transforms.
+
+### Clarification of Option 9 vs Option 10
+
+| Aspect | Option 9 (Shared Backbone) | Option 10 (Parallel Experts) |
+|--------|---------------------------|------------------------------|
+| FFN weights | Shared (learned) | Separate (frozen unimodal + learned text) |
+| Attention weights | Shared (learned) | Separate (frozen unimodal + learned text) |
+| LayerNorm | Separate paths (base vs FiLM) | Separate paths (frozen unimodal vs FiLM) |
+| Parameters | Fewer (shared backbone) | More (two full pathways) |
+| Pre-training | Not required | Requires unimodal checkpoint |
+| Expressiveness | Moderate | High |
+| Data efficiency | Better for low data | Better with more data |
+
+### Refined Gate Options
+
+For Option 9, the gate variants are:
+
+**9a. Global Static Gate:**
+$$\alpha = \sigma(\alpha_{\text{raw}}) \quad \text{single scalar, same for all samples/channels}$$
+
+**9b. Channel-wise Static Gate:**
+$$\alpha_c = \sigma(\alpha_{\text{raw},c}) \quad \text{per channel, same for all samples}$$
+
+**9c. Cross-Modal Conditioned Gate (NEW):**
+$$\alpha = \sigma(g(x, T))$$
+
+Where $g$ is conditioned on **both** time series $x$ **and** text $T$. This allows the gate to learn:
+- When text is "trash" (uninformative) → lower $\alpha$
+- When text is relevant → higher $\alpha$
+- When time series patterns suggest text won't help → lower $\alpha$
+
+### Mixing Type Options
+
+**Interpolative (convex combination):**
+$$z_{\text{final}} = \alpha \odot z_{\text{text}} + (1 - \alpha) \odot z_{\text{base}}$$
+
+**Additive (residual):**
+$$z_{\text{final}} = z_{\text{base}} + \alpha \odot z_{\text{text}}$$
+
+Or equivalently with explicit residual:
+$$z_{\text{final}} = z_{\text{base}} + \alpha \odot (z_{\text{text}} - z_{\text{base}})$$
+
+Note: The additive formulation allows the output to go beyond the convex hull of the two pathways.
+
+---
+
+## Unified Architecture: `lynx_film_enhanced`
+
+### Configuration Space
+
+The unified model has three orthogonal configuration axes:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    LYNX_FILM_ENHANCED CONFIGURATION SPACE               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  AXIS 1: Pathway Type                                                   │
+│  ─────────────────────                                                  │
+│  ┌─────────────────────────┐    ┌─────────────────────────┐            │
+│  │  "shared" (Option 9)    │    │  "parallel" (Option 10) │            │
+│  │                         │    │                         │            │
+│  │  - Shared FFN           │    │  - Frozen unimodal FFN  │            │
+│  │  - Shared Attention     │    │  - Frozen unimodal Attn │            │
+│  │  - Separate LayerNorms  │    │  - Learned text FFN     │            │
+│  │  - Both paths learned   │    │  - Learned text Attn    │            │
+│  │                         │    │  - Separate LayerNorms  │            │
+│  │  Good for: low data     │    │  Good for: more data    │            │
+│  └─────────────────────────┘    └─────────────────────────┘            │
+│                                                                         │
+│  AXIS 2: Gate Type                                                      │
+│  ─────────────────                                                      │
+│  ┌───────────────┐ ┌───────────────┐ ┌─────────────────────────┐       │
+│  │  "global"     │ │  "channel"    │ │  "conditional"          │       │
+│  │  (9a)         │ │  (9b)         │ │  (9c)                   │       │
+│  │               │ │               │ │                         │       │
+│  │  α ∈ ℝ       │ │  α ∈ ℝ^C     │ │  α = g(x, T)            │       │
+│  │  1 param      │ │  C params     │ │  MLP on pooled x, T    │       │
+│  │               │ │               │ │                         │       │
+│  │  Simplest     │ │  Per-variable │ │  Sample-adaptive       │       │
+│  └───────────────┘ └───────────────┘ └─────────────────────────┘       │
+│                                                                         │
+│  AXIS 3: Mixing Type                                                    │
+│  ───────────────────                                                    │
+│  ┌─────────────────────────┐    ┌─────────────────────────┐            │
+│  │  "interpolative"        │    │  "additive"             │            │
+│  │                         │    │                         │            │
+│  │  z = α·z_text           │    │  z = z_base + α·z_text  │            │
+│  │    + (1-α)·z_base       │    │                         │            │
+│  │                         │    │  OR                     │            │
+│  │  Bounded output         │    │  z = z_base             │            │
+│  │  (convex combination)   │    │    + α·(z_text - z_base)│            │
+│  │                         │    │                         │            │
+│  │                         │    │  Unbounded output       │            │
+│  │                         │    │  (residual correction)  │            │
+│  └─────────────────────────┘    └─────────────────────────┘            │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Full Configuration Matrix
+
+| Config | Pathway | Gate | Mixing | Use Case |
+|--------|---------|------|--------|----------|
+| A1 | shared | global | interpolative | Simplest, low data baseline |
+| A2 | shared | global | additive | Low data, residual style |
+| B1 | shared | channel | interpolative | Per-variable text reliance |
+| B2 | shared | channel | additive | Per-variable residual |
+| C1 | shared | conditional | interpolative | Adaptive, low-med data |
+| C2 | shared | conditional | additive | Adaptive residual |
+| D1 | parallel | global | interpolative | Pre-trained + simple gate |
+| D2 | parallel | global | additive | Pre-trained + residual |
+| E1 | parallel | channel | interpolative | Pre-trained + per-variable |
+| E2 | parallel | channel | additive | Pre-trained + per-var residual |
+| F1 | parallel | conditional | interpolative | Full expressiveness |
+| F2 | parallel | conditional | additive | Maximum flexibility |
+
+---
+
+## Detailed Architecture Diagrams
+
+### Option 9: Shared Backbone Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│          SHARED BACKBONE ARCHITECTURE (pathway_type="shared")           │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  Input: z^(ℓ-1)  [B, C, d_model]                                       │
+│              │                                                          │
+│              ▼                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                    SHARED ATTENTION BLOCK                        │   │
+│  │                                                                  │   │
+│  │   h = Attention(z^(ℓ-1)) + z^(ℓ-1)    [SHARED weights]          │   │
+│  │                                                                  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│              │                                                          │
+│              │  h: [B, C, d_model]                                     │
+│              │                                                          │
+│              ▼                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                    LAYER NORM (no affine)                        │   │
+│  │                                                                  │   │
+│  │   h_norm = (h - μ) / σ                                          │   │
+│  │                                                                  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│              │                                                          │
+│              │  h_norm: [B, C, d_model]                                │
+│              │                                                          │
+│       ┌──────┴──────┐                                                  │
+│       │             │                                                   │
+│       ▼             ▼                                                   │
+│  ┌─────────┐   ┌─────────────┐                                        │
+│  │  BASE   │   │    TEXT     │                                        │
+│  │  PATH   │   │    PATH     │                                        │
+│  │         │   │             │                                        │
+│  │ γ_base  │   │ γ_FiLM,β_FiLM│◄── from FiLMGenerator(T)              │
+│  │ β_base  │   │             │                                        │
+│  │[LEARNED]│   │ [LEARNED]   │                                        │
+│  │         │   │             │                                        │
+│  │ z_base= │   │ z_text=     │                                        │
+│  │ γ_base⊙ │   │ (1+γ_FiLM)⊙ │                                        │
+│  │ h_norm  │   │ h_norm      │                                        │
+│  │ +β_base │   │ +β_FiLM     │                                        │
+│  └─────────┘   └─────────────┘                                        │
+│       │             │                                                   │
+│       │ z_base      │ z_text                                           │
+│       │             │                                                   │
+│       └──────┬──────┘                                                  │
+│              │                                                          │
+│              ▼                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                         MIXING                                   │   │
+│  │                                                                  │   │
+│  │   α = Gate(x, T)    ◄── gate_type config                        │   │
+│  │                                                                  │   │
+│  │   if mixing_type == "interpolative":                            │   │
+│  │       z_mix = α ⊙ z_text + (1-α) ⊙ z_base                       │   │
+│  │                                                                  │   │
+│  │   if mixing_type == "additive":                                 │   │
+│  │       z_mix = z_base + α ⊙ z_text                               │   │
+│  │                                                                  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│              │                                                          │
+│              │  z_mix: [B, C, d_model]                                 │
+│              │                                                          │
+│              ▼                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                    SHARED FFN BLOCK                              │   │
+│  │                                                                  │   │
+│  │   f = FFN(z_mix) + z_mix    [SHARED weights]                    │   │
+│  │                                                                  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│              │                                                          │
+│              │  (repeat LayerNorm → split → mix for post-FFN)          │
+│              │                                                          │
+│              ▼                                                          │
+│         z^(ℓ): [B, C, d_model]                                         │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Option 10: Parallel Experts Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│         PARALLEL EXPERTS ARCHITECTURE (pathway_type="parallel")         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  Input: z^(ℓ-1)  [B, C, d_model]                                       │
+│              │                                                          │
+│       ┌──────┴──────────────────────┐                                  │
+│       │                             │                                   │
+│       ▼                             ▼                                   │
+│  ┌─────────────────────┐    ┌─────────────────────┐                   │
+│  │   UNIMODAL EXPERT   │    │     TEXT EXPERT     │                   │
+│  │      [FROZEN]       │    │     [LEARNED]       │                   │
+│  │                     │    │                     │                   │
+│  │  ┌───────────────┐  │    │  ┌───────────────┐  │                   │
+│  │  │  Attention    │  │    │  │  Attention    │  │                   │
+│  │  │  [frozen]     │  │    │  │  [learned]    │  │                   │
+│  │  └───────────────┘  │    │  └───────────────┘  │                   │
+│  │         │           │    │         │           │                   │
+│  │         ▼           │    │         ▼           │                   │
+│  │  ┌───────────────┐  │    │  ┌───────────────┐  │                   │
+│  │  │  LayerNorm    │  │    │  │  FiLM LN      │  │◄── FiLMGen(T)    │
+│  │  │  [frozen]     │  │    │  │  [learned]    │  │                   │
+│  │  └───────────────┘  │    │  └───────────────┘  │                   │
+│  │         │           │    │         │           │                   │
+│  │         ▼           │    │         ▼           │                   │
+│  │  ┌───────────────┐  │    │  ┌───────────────┐  │                   │
+│  │  │     FFN       │  │    │  │     FFN       │  │                   │
+│  │  │  [frozen]     │  │    │  │  [learned]    │  │                   │
+│  │  └───────────────┘  │    │  └───────────────┘  │                   │
+│  │         │           │    │         │           │                   │
+│  │         ▼           │    │         ▼           │                   │
+│  │  ┌───────────────┐  │    │  ┌───────────────┐  │                   │
+│  │  │  LayerNorm    │  │    │  │  FiLM LN      │  │◄── FiLMGen(T)    │
+│  │  │  [frozen]     │  │    │  │  [learned]    │  │                   │
+│  │  └───────────────┘  │    │  └───────────────┘  │                   │
+│  │         │           │    │         │           │                   │
+│  └─────────┼───────────┘    └─────────┼───────────┘                   │
+│            │                          │                                │
+│            │ z_uni                    │ z_text                         │
+│            │                          │                                │
+│            └────────────┬─────────────┘                                │
+│                         │                                              │
+│                         ▼                                              │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                         MIXING                                   │   │
+│  │                                                                  │   │
+│  │   α = Gate(x, T)    ◄── gate_type config                        │   │
+│  │                                                                  │   │
+│  │   if mixing_type == "interpolative":                            │   │
+│  │       z^(ℓ) = α ⊙ z_text + (1-α) ⊙ z_uni                        │   │
+│  │                                                                  │   │
+│  │   if mixing_type == "additive":                                 │   │
+│  │       z^(ℓ) = z_uni + α ⊙ z_text                                │   │
+│  │                                                                  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                         │                                              │
+│                         ▼                                              │
+│                    z^(ℓ): [B, C, d_model]                             │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Gate Implementations
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         GATE IMPLEMENTATIONS                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  gate_type = "global"                                                   │
+│  ─────────────────────                                                  │
+│                                                                         │
+│      α_raw ∈ ℝ  (nn.Parameter, init=0.0)                               │
+│                                                                         │
+│      α = σ(α_raw)  →  scalar, broadcast to [B, C, d]                   │
+│                                                                         │
+│      Params: 1                                                          │
+│                                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  gate_type = "channel"                                                  │
+│  ──────────────────────                                                 │
+│                                                                         │
+│      α_raw ∈ ℝ^C  (nn.Parameter, init=zeros)                           │
+│                                                                         │
+│      α = σ(α_raw)  →  [C], broadcast to [B, C, d]                      │
+│                                                                         │
+│      Params: C (number of channels)                                     │
+│                                                                         │
+│      Note: C may vary by dataset. Options:                             │
+│        - Set C to max expected channels, mask unused                   │
+│        - Use channel embeddings → MLP → gate                           │
+│        - Initialize per dataset                                         │
+│                                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  gate_type = "conditional"                                              │
+│  ──────────────────────────                                             │
+│                                                                         │
+│      Inputs:                                                            │
+│        x: [B, seq_len, C]      (time series)                           │
+│        T: [B, C, L, d_text]    (text embeddings)                       │
+│                                                                         │
+│      Pooling:                                                           │
+│        x_pool = mean(x, dim=seq_len)     →  [B, C]                     │
+│        T_pool = mean(T, dim=(L, d_text)) →  [B, C]                     │
+│                                                                         │
+│      Gate network:                                                      │
+│        concat = [x_pool; T_pool]  →  [B, C, 2]                         │
+│        α_logit = MLP(concat)      →  [B, C]                            │
+│        α = σ(α_logit)             →  [B, C]                            │
+│                                                                         │
+│      MLP architecture:                                                  │
+│        Linear(2, hidden) → ReLU → Linear(hidden, 1)                    │
+│        Applied per-channel (or shared across channels)                 │
+│                                                                         │
+│      Params: ~2*hidden + hidden (small)                                │
+│                                                                         │
+│      Key insight: Can learn to detect "trash text" by learning         │
+│      patterns in T_pool that correlate with poor text quality          │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Implementation Plan: `lynx_film_enhanced`
+
+### File Structure
+
+```
+models/
+├── lynx_film_enhanced.py          # Main model class
+│
+layers/
+├── enhanced_film_layers.py        # Core building blocks
+│   ├── EnhancedEncoderLayer       # Single layer with pathway mixing
+│   ├── GateModule                 # Gate implementations
+│   ├── PathwayMixer               # Interpolative vs additive mixing
+│   └── ParallelExpertBlock        # For pathway_type="parallel"
+│
+model_configs/general/
+├── lynx_film_enhanced.yaml        # Default config
+```
+
+### Configuration Schema
+
+```yaml
+# model_configs/general/lynx_film_enhanced.yaml
+
+# ─────────────────────────────────────────────────────────────────
+# LYNX_FILM_ENHANCED Configuration
+# ─────────────────────────────────────────────────────────────────
+
+# Core architecture (inherited from lynx_film_raw)
+e_layers: 3
+d_model: 256
+d_ff: 1024
+n_heads: 4
+dropout: 0.3
+text_dim: 256
+cross_layers: 3
+self_layers: 3
+
+# ─────────────────────────────────────────────────────────────────
+# ENHANCED OPTIONS
+# ─────────────────────────────────────────────────────────────────
+
+# AXIS 1: Pathway type
+# - "shared": Shared FFN/Attention, separate LayerNorms (Option 9)
+# - "parallel": Frozen unimodal + learned text pathways (Option 10)
+pathway_type: "shared"
+
+# For pathway_type="parallel", path to pre-trained unimodal checkpoint
+unimodal_checkpoint: null  # Required if pathway_type="parallel"
+
+# AXIS 2: Gate type
+# - "global": Single scalar gate for all samples/channels
+# - "channel": Per-channel static gate
+# - "conditional": MLP gate conditioned on x and T
+gate_type: "global"
+
+# Gate configuration (for conditional gate)
+gate_hidden_dim: 32  # MLP hidden dimension
+gate_init_bias: 0.0  # Bias toward text (positive) or base (negative)
+
+# AXIS 3: Mixing type
+# - "interpolative": z = α*z_text + (1-α)*z_base
+# - "additive": z = z_base + α*z_text
+mixing_type: "interpolative"
+
+# ─────────────────────────────────────────────────────────────────
+# RECOMMENDED CONFIGURATIONS
+# ─────────────────────────────────────────────────────────────────
+#
+# Low data, simple:
+#   pathway_type: "shared"
+#   gate_type: "global"
+#   mixing_type: "interpolative"
+#
+# Low data, per-variable control:
+#   pathway_type: "shared"
+#   gate_type: "channel"
+#   mixing_type: "interpolative"
+#
+# Adaptive (learns when text is trash):
+#   pathway_type: "shared"
+#   gate_type: "conditional"
+#   mixing_type: "interpolative"
+#
+# With pre-trained unimodal (more data):
+#   pathway_type: "parallel"
+#   gate_type: "conditional"
+#   mixing_type: "interpolative"
+#   unimodal_checkpoint: "/path/to/checkpoint.pt"
+#
+# ─────────────────────────────────────────────────────────────────
+```
+
+### Core Classes
+
+#### 1. GateModule
+
+```python
+class GateModule(nn.Module):
+    """
+    Computes mixing gate α based on gate_type.
+
+    Args:
+        gate_type: "global" | "channel" | "conditional"
+        num_channels: Number of channels (for "channel" gate)
+        d_model: Model dimension
+        text_dim: Text embedding dimension
+        hidden_dim: MLP hidden dimension (for "conditional")
+        init_bias: Initialization bias for gate logits
+    """
+
+    def __init__(self, gate_type, num_channels=None, d_model=256,
+                 text_dim=256, hidden_dim=32, init_bias=0.0):
+        super().__init__()
+        self.gate_type = gate_type
+
+        if gate_type == "global":
+            self.gate_raw = nn.Parameter(torch.tensor(init_bias))
+
+        elif gate_type == "channel":
+            assert num_channels is not None
+            self.gate_raw = nn.Parameter(torch.full((num_channels,), init_bias))
+
+        elif gate_type == "conditional":
+            # Input: concatenated pooled x and T
+            # x_pool: [B, C] (temporal mean)
+            # T_pool: [B, C] (mean over seq and text_dim)
+            # We process per-channel, so input dim = 2 (x_pool[c], T_pool[c])
+            self.gate_mlp = nn.Sequential(
+                nn.Linear(2, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, 1)
+            )
+            # Initialize bias
+            self.gate_mlp[-1].bias.data.fill_(init_bias)
+        else:
+            raise ValueError(f"Unknown gate_type: {gate_type}")
+
+    def forward(self, x=None, text_emb=None):
+        """
+        Args:
+            x: [B, seq_len, C] time series (for conditional gate)
+            text_emb: [B, C, L, text_dim] text embeddings (for conditional gate)
+
+        Returns:
+            alpha: [B, C] or broadcastable gate values in [0, 1]
+        """
+        if self.gate_type == "global":
+            return torch.sigmoid(self.gate_raw)  # scalar
+
+        elif self.gate_type == "channel":
+            return torch.sigmoid(self.gate_raw)  # [C]
+
+        elif self.gate_type == "conditional":
+            B, seq_len, C = x.shape
+
+            # Pool time series: [B, seq_len, C] -> [B, C]
+            x_pool = x.mean(dim=1)
+
+            # Pool text: [B, C, L, text_dim] -> [B, C]
+            T_pool = text_emb.mean(dim=(2, 3))
+
+            # Concatenate: [B, C, 2]
+            gate_input = torch.stack([x_pool, T_pool], dim=-1)
+
+            # MLP per channel: [B, C, 2] -> [B, C, 1] -> [B, C]
+            alpha_logit = self.gate_mlp(gate_input).squeeze(-1)
+
+            return torch.sigmoid(alpha_logit)  # [B, C]
+```
+
+#### 2. PathwayMixer
+
+```python
+class PathwayMixer(nn.Module):
+    """
+    Mixes two pathway outputs based on mixing_type.
+
+    Args:
+        mixing_type: "interpolative" | "additive"
+    """
+
+    def __init__(self, mixing_type):
+        super().__init__()
+        self.mixing_type = mixing_type
+
+    def forward(self, z_base, z_text, alpha):
+        """
+        Args:
+            z_base: [B, C, d] base pathway output
+            z_text: [B, C, d] text pathway output
+            alpha: [B, C] or scalar gate value
+
+        Returns:
+            z_mixed: [B, C, d] mixed output
+        """
+        # Expand alpha for broadcasting if needed
+        if alpha.dim() == 0:  # scalar
+            pass  # broadcasts naturally
+        elif alpha.dim() == 1:  # [C]
+            alpha = alpha.unsqueeze(0).unsqueeze(-1)  # [1, C, 1]
+        elif alpha.dim() == 2:  # [B, C]
+            alpha = alpha.unsqueeze(-1)  # [B, C, 1]
+
+        if self.mixing_type == "interpolative":
+            return alpha * z_text + (1 - alpha) * z_base
+        elif self.mixing_type == "additive":
+            return z_base + alpha * z_text
+        else:
+            raise ValueError(f"Unknown mixing_type: {self.mixing_type}")
+```
+
+#### 3. EnhancedEncoderLayer (Shared Pathway)
+
+```python
+class EnhancedEncoderLayerShared(nn.Module):
+    """
+    Encoder layer with shared FFN/Attention and separate LayerNorm pathways.
+
+    This implements the "shared" pathway_type (Option 9).
+    """
+
+    def __init__(self, attention, d_model, d_ff, text_dim, text_seq_len,
+                 gate_module, mixer, dropout=0.1, activation="relu"):
+        super().__init__()
+
+        # Shared components
+        self.attention = attention
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, d_ff),
+            nn.GELU() if activation == "gelu" else nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_ff, d_model),
+            nn.Dropout(dropout)
+        )
+
+        # LayerNorm (no affine - we apply our own)
+        self.norm1 = nn.LayerNorm(d_model, elementwise_affine=False)
+        self.norm2 = nn.LayerNorm(d_model, elementwise_affine=False)
+
+        # Base pathway affine params (post-attention)
+        self.gamma_base_1 = nn.Parameter(torch.ones(d_model))
+        self.beta_base_1 = nn.Parameter(torch.zeros(d_model))
+
+        # Base pathway affine params (post-FFN)
+        self.gamma_base_2 = nn.Parameter(torch.ones(d_model))
+        self.beta_base_2 = nn.Parameter(torch.zeros(d_model))
+
+        # Text pathway: FiLM generator
+        self.film_gen = FiLMGenerator(text_dim, d_model, text_seq_len)
+
+        # Gate and mixer
+        self.gate = gate_module
+        self.mixer = mixer
+
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, text_emb, x_raw=None):
+        """
+        Args:
+            x: [B, C, d_model] input
+            text_emb: [B, C, L, text_dim] text embeddings
+            x_raw: [B, seq_len, C] raw time series (for conditional gate)
+
+        Returns:
+            x: [B, C, d_model] output
+            alpha: gate value (for logging)
+        """
+        # Attention block
+        attn_out, _ = self.attention(x, x, x)
+        h = x + self.dropout(attn_out)
+
+        # LayerNorm (no affine)
+        h_norm = self.norm1(h)
+
+        # Base pathway
+        z_base_1 = self.gamma_base_1 * h_norm + self.beta_base_1
+
+        # Text pathway
+        gamma1, beta1, gamma2, beta2 = self.film_gen(text_emb)
+        z_text_1 = (1 + gamma1) * h_norm + beta1
+
+        # Compute gate
+        alpha = self.gate(x_raw, text_emb)
+
+        # Mix
+        z_mix_1 = self.mixer(z_base_1, z_text_1, alpha)
+
+        # FFN block
+        f = self.ffn(z_mix_1)
+        f = z_mix_1 + f
+
+        # LayerNorm (no affine)
+        f_norm = self.norm2(f)
+
+        # Base pathway
+        z_base_2 = self.gamma_base_2 * f_norm + self.beta_base_2
+
+        # Text pathway
+        z_text_2 = (1 + gamma2) * f_norm + beta2
+
+        # Mix (reuse same alpha)
+        z_mix_2 = self.mixer(z_base_2, z_text_2, alpha)
+
+        return z_mix_2, alpha
+```
+
+#### 4. EnhancedEncoderLayer (Parallel Pathway)
+
+```python
+class EnhancedEncoderLayerParallel(nn.Module):
+    """
+    Encoder layer with parallel frozen unimodal and learned text pathways.
+
+    This implements the "parallel" pathway_type (Option 10).
+    """
+
+    def __init__(self, frozen_layer, d_model, d_ff, text_dim, text_seq_len,
+                 gate_module, mixer, n_heads=4, dropout=0.1, activation="relu"):
+        super().__init__()
+
+        # Frozen unimodal pathway (entire layer)
+        self.frozen_layer = frozen_layer
+        for param in self.frozen_layer.parameters():
+            param.requires_grad = False
+
+        # Learned text pathway (new attention + FFN + FiLM)
+        self.text_attention = AttentionLayer(
+            FullAttention(False, attention_dropout=dropout),
+            d_model, n_heads
+        )
+        self.text_ffn = nn.Sequential(
+            nn.Linear(d_model, d_ff),
+            nn.GELU() if activation == "gelu" else nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_ff, d_model),
+            nn.Dropout(dropout)
+        )
+        self.text_norm1 = nn.LayerNorm(d_model, elementwise_affine=False)
+        self.text_norm2 = nn.LayerNorm(d_model, elementwise_affine=False)
+
+        # FiLM generator for text pathway
+        self.film_gen = FiLMGenerator(text_dim, d_model, text_seq_len)
+
+        # Gate and mixer
+        self.gate = gate_module
+        self.mixer = mixer
+
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, text_emb, x_raw=None):
+        """
+        Args:
+            x: [B, C, d_model] input
+            text_emb: [B, C, L, text_dim] text embeddings
+            x_raw: [B, seq_len, C] raw time series (for conditional gate)
+
+        Returns:
+            z: [B, C, d_model] output
+            alpha: gate value (for logging)
+        """
+        # ═══════════════════════════════════════════════════════════
+        # FROZEN UNIMODAL PATHWAY
+        # ═══════════════════════════════════════════════════════════
+        with torch.no_grad():
+            z_uni, _ = self.frozen_layer(x)
+
+        # ═══════════════════════════════════════════════════════════
+        # LEARNED TEXT PATHWAY
+        # ═══════════════════════════════════════════════════════════
+        # Attention
+        attn_out, _ = self.text_attention(x, x, x)
+        h = x + self.dropout(attn_out)
+        h_norm = self.text_norm1(h)
+
+        # FiLM modulation
+        gamma1, beta1, gamma2, beta2 = self.film_gen(text_emb)
+        z_film_1 = (1 + gamma1) * h_norm + beta1
+
+        # FFN
+        f = self.text_ffn(z_film_1)
+        f = z_film_1 + f
+        f_norm = self.text_norm2(f)
+
+        # FiLM modulation
+        z_text = (1 + gamma2) * f_norm + beta2
+
+        # ═══════════════════════════════════════════════════════════
+        # MIXING
+        # ═══════════════════════════════════════════════════════════
+        alpha = self.gate(x_raw, text_emb)
+        z = self.mixer(z_uni, z_text, alpha)
+
+        return z, alpha
+```
+
+### Model Class
+
+```python
+class Model(nn.Module):
+    """
+    lynx_film_enhanced: Unified architecture with configurable:
+    - pathway_type: "shared" or "parallel"
+    - gate_type: "global", "channel", or "conditional"
+    - mixing_type: "interpolative" or "additive"
+    """
+
+    def __init__(self, configs):
+        super().__init__()
+
+        # Parse configs
+        self.pathway_type = getattr(configs, 'pathway_type', 'shared')
+        self.gate_type = getattr(configs, 'gate_type', 'global')
+        self.mixing_type = getattr(configs, 'mixing_type', 'interpolative')
+
+        # ... (standard setup: text_encoder, embedding, etc.)
+
+        # Create gate module
+        self.gate = GateModule(
+            gate_type=self.gate_type,
+            num_channels=getattr(configs, 'enc_in', None),
+            d_model=configs.d_model,
+            text_dim=configs.text_dim,
+            hidden_dim=getattr(configs, 'gate_hidden_dim', 32),
+            init_bias=getattr(configs, 'gate_init_bias', 0.0)
+        )
+
+        # Create mixer
+        self.mixer = PathwayMixer(self.mixing_type)
+
+        # Create encoder layers
+        if self.pathway_type == "shared":
+            self.layers = nn.ModuleList([
+                EnhancedEncoderLayerShared(
+                    attention=...,
+                    d_model=configs.d_model,
+                    d_ff=configs.d_ff,
+                    text_dim=configs.text_dim,
+                    text_seq_len=self.text_seq_len,
+                    gate_module=self.gate,
+                    mixer=self.mixer,
+                    dropout=configs.dropout
+                )
+                for _ in range(configs.e_layers)
+            ])
+        elif self.pathway_type == "parallel":
+            # Load pre-trained unimodal
+            unimodal = self._load_unimodal(configs.unimodal_checkpoint)
+            self.layers = nn.ModuleList([
+                EnhancedEncoderLayerParallel(
+                    frozen_layer=unimodal.encoder.layers[i],
+                    d_model=configs.d_model,
+                    d_ff=configs.d_ff,
+                    text_dim=configs.text_dim,
+                    text_seq_len=self.text_seq_len,
+                    gate_module=self.gate,
+                    mixer=self.mixer,
+                    n_heads=configs.n_heads,
+                    dropout=configs.dropout
+                )
+                for i in range(configs.e_layers)
+            ])
+
+    def forward(self, x, text_emb, ...):
+        # ... (standard preprocessing)
+
+        # Store gate values for logging
+        alphas = []
+
+        # Encode
+        z = self.embedding(x)
+        for layer in self.layers:
+            z, alpha = layer(z, text_emb, x_raw=x)
+            alphas.append(alpha)
+
+        # ... (projection, denormalization)
+
+        # Optionally return alphas for analysis
+        return output, alphas
+```
+
+---
+
+## Ablation Study Plan
+
+### Recommended Experiment Order
+
+1. **Baseline comparisons:**
+   - lynx_film_raw (current)
+   - lynx_film (current, residual)
+
+2. **Shared pathway ablations (Option 9):**
+   - Config A1: shared + global + interpolative
+   - Config B1: shared + channel + interpolative
+   - Config C1: shared + conditional + interpolative
+   - Config C2: shared + conditional + additive
+
+3. **Parallel pathway ablations (Option 10):**
+   - Config D1: parallel + global + interpolative
+   - Config F1: parallel + conditional + interpolative
+   - Config F2: parallel + conditional + additive
+
+4. **Cross-dataset validation:**
+   - Test best configs on text-helpful datasets
+   - Test best configs on text-harmful datasets
+   - Measure gap to unimodal on each
+
+### Metrics to Track
+
+1. **Forecast accuracy**: MSE, MAE on test set
+2. **Gate values**: Mean $\alpha$ per channel, per sample
+3. **Relative to unimodal**: % improvement or degradation
+4. **Relative to lynx_film_raw**: Where does enhancement help/hurt?
+
+### Logging
+
+```python
+# During training, log:
+wandb.log({
+    "alpha_mean": alpha.mean().item(),
+    "alpha_std": alpha.std().item(),
+    "alpha_min": alpha.min().item(),
+    "alpha_max": alpha.max().item(),
+    # Per-channel if available
+    "alpha_per_channel": alpha.mean(dim=0).tolist() if alpha.dim() > 1 else None,
+})
+```
+
+---
+
+## Summary
+
+The `lynx_film_enhanced` model provides a unified architecture with three configuration axes:
+
+| Axis | Options | Trade-off |
+|------|---------|-----------|
+| **Pathway** | shared / parallel | Parameters vs expressiveness |
+| **Gate** | global / channel / conditional | Simplicity vs adaptivity |
+| **Mixing** | interpolative / additive | Bounded vs unbounded |
+
+Key design decisions:
+- **Shared pathway** (Option 9): Efficient, good for low data
+- **Parallel pathway** (Option 10): Uses pre-trained unimodal, requires more data
+- **Conditional gate** conditioned on **both x and T**: Can learn when text is "trash"
+- **Interpolative vs additive mixing**: Interpolative is safer, additive is more expressive
+
+Deferred for later:
+- Option 11 (uncertainty-weighted): Useful when we have text quality measures
+- Option 13 (entropy regularization): Useful for high-data scenarios to prevent mode collapse
