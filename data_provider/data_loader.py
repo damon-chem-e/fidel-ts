@@ -16,6 +16,7 @@ from embedder import FidelTSEmbeddingLoader, FidelTSPathResolver
 from typing import Optional, Dict, Any
 from utils.timefeatures import time_features
 from rich.console import Console
+from data_provider.profiling import DataloaderProfiler, timed_operation
 
 warnings.filterwarnings('ignore')
 
@@ -295,48 +296,52 @@ class Universal_Dataset(Dataset):
     def __getitem__(self, index):
         """
         Retrieves a single data sample with all associated modalities.
-        
+
         Constructs a complete training/inference sample containing time series data,
         timestamps, and corresponding heterogeneous cross-modal information. Handles
         both preloaded and on-demand heterogeneous data loading based on configuration.
-        
+
         Args:
             index (int): Sample index in the dataset
-        
+
         Returns:
             tuple: Complete data sample containing:
                 - seq_x: Input time series sequence (seq_len, features)
-                - seq_y: Target time series sequence (pred_len, features)  
+                - seq_y: Target time series sequence (pred_len, features)
                 - x_time, y_time: Corresponding timestamps
                 - x_hetero, y_hetero: Heterogeneous data (text, events, etc.)
                 - hetero_x_time, hetero_y_time: Heterogeneous data timestamps
                 - hetero_general: General heterogeneous information
                 - hetero_channel: Channel-specific heterogeneous information
         """
-        
-        s_begin = index
-        s_end = s_begin + self.seq_len
-        r_begin = s_end
-        r_end = r_begin + self.pred_len
-        seq_x = self.data[s_begin:s_end]
-        seq_y = self.data[r_begin:r_end]
-        x_time = self.timestamp[s_begin:s_end]
-        y_time = self.timestamp[r_begin:r_end]
-        
-        # Generate deterministic sample_id: entity_id|timestamp_start|sequence_index
-        # timestamp_start is the first timestamp in the input sequence
-        timestamp_start = x_time[0] if len(x_time) > 0 else 0
-        sequence_index = index
-        
-        # Format timestamp as string (it's already an int64 from __read_data__)
-        timestamp_str = str(timestamp_start)
-        
-        # Generate sample_id with format: entity_id|timestamp|sequence_index
-        if self.entity_id is not None:
-            sample_id = f"{self.entity_id}|{timestamp_str}|{sequence_index}"
-        else:
-            # Fallback if entity_id not provided (backward compatibility)
-            sample_id = f"unknown|{timestamp_str}|{sequence_index}"
+
+        # Array slicing for time series data
+        with timed_operation("ts_array_slicing"):
+            s_begin = index
+            s_end = s_begin + self.seq_len
+            r_begin = s_end
+            r_end = r_begin + self.pred_len
+            seq_x = self.data[s_begin:s_end]
+            seq_y = self.data[r_begin:r_end]
+            x_time = self.timestamp[s_begin:s_end]
+            y_time = self.timestamp[r_begin:r_end]
+
+        # Sample ID generation
+        with timed_operation("sample_id_generation"):
+            # Generate deterministic sample_id: entity_id|timestamp_start|sequence_index
+            # timestamp_start is the first timestamp in the input sequence
+            timestamp_start = x_time[0] if len(x_time) > 0 else 0
+            sequence_index = index
+
+            # Format timestamp as string (it's already an int64 from __read_data__)
+            timestamp_str = str(timestamp_start)
+
+            # Generate sample_id with format: entity_id|timestamp|sequence_index
+            if self.entity_id is not None:
+                sample_id = f"{self.entity_id}|{timestamp_str}|{sequence_index}"
+            else:
+                # Fallback if entity_id not provided (backward compatibility)
+                sample_id = f"unknown|{timestamp_str}|{sequence_index}"
 
         # Initialize defaults
         x_hetero = np.zeros((1), dtype=np.float32)
@@ -345,54 +350,59 @@ class Universal_Dataset(Dataset):
         hetero_y_time = np.zeros((1), dtype=np.float32)
         hetero_general = np.zeros((1), dtype=np.float32)
         hetero_channel = np.zeros((1), dtype=np.float32)
-        
+
         # Heterogeneous data loading - explicit paths, no fallback
         # Path 1: LLM Embedding Provider (TimeCMA-style models)
         # Path 2: Traditional hetero_data_getter (Fidel-TS, Time-MMD text embeddings)
-        
+
         if self.llm_embedding_provider is not None:
             # LLM embeddings mode: x_hetero comes from precomputed LLM cache
             # Per-sample embeddings go to x_hetero (maps to historical_events in model forward)
-            x_hetero = self.llm_embedding_provider[index]
-            
+            with timed_operation("llm_embedding_lookup"):
+                x_hetero = self.llm_embedding_provider[index]
+
         elif self.preload_hetero:
             # Preloaded hetero mode: all hetero data was loaded at init
-            hetero_general = self.hetero_general
-            hetero_channel = self.hetero_channel
+            with timed_operation("preloaded_hetero_slicing"):
+                hetero_general = self.hetero_general
+                hetero_channel = self.hetero_channel
 
-            if 'x_hetero' in self.custom_input:
-                hetero_x_time = self.hetero_time[s_begin:s_end:self.hetero_stride]
-                x_hetero = self.full_hetero[s_begin:s_end:self.hetero_stride]
-            if 'y_hetero' in self.custom_input:
-                hetero_y_time = self.hetero_time[r_begin:r_end:self.hetero_stride]
-                y_hetero = self.full_hetero[r_begin:r_end:self.hetero_stride]
-            
+                if 'x_hetero' in self.custom_input:
+                    hetero_x_time = self.hetero_time[s_begin:s_end:self.hetero_stride]
+                    x_hetero = self.full_hetero[s_begin:s_end:self.hetero_stride]
+                if 'y_hetero' in self.custom_input:
+                    hetero_y_time = self.hetero_time[r_begin:r_end:self.hetero_stride]
+                    y_hetero = self.full_hetero[r_begin:r_end:self.hetero_stride]
+
         else:
             # On-demand hetero mode: fetch hetero data per sample via getter
             if 'x_hetero' in self.custom_input:
-                x_hetero = self.hetero_data_getter(x_time[::self.hetero_stride])
-                hetero_x_time = x_hetero[0]
-                hetero_general = x_hetero[1]
-                hetero_channel = x_hetero[2]
-                x_hetero = x_hetero[3]
+                with timed_operation("hetero_data_getter_x"):
+                    x_hetero = self.hetero_data_getter(x_time[::self.hetero_stride])
+                    hetero_x_time = x_hetero[0]
+                    hetero_general = x_hetero[1]
+                    hetero_channel = x_hetero[2]
+                    x_hetero = x_hetero[3]
 
             if 'y_hetero' in self.custom_input:
-                y_hetero = self.hetero_data_getter(y_time[::self.hetero_stride])
-                hetero_y_time = y_hetero[0]
-                hetero_general = y_hetero[1]
-                hetero_channel = y_hetero[2]
-                y_hetero = y_hetero[3]
-        
+                with timed_operation("hetero_data_getter_y"):
+                    y_hetero = self.hetero_data_getter(y_time[::self.hetero_stride])
+                    hetero_y_time = y_hetero[0]
+                    hetero_general = y_hetero[1]
+                    hetero_channel = y_hetero[2]
+                    y_hetero = y_hetero[3]
+
         # Generate time features if enabled (for FEDformer and similar models)
         # Return empty arrays instead of None to avoid collate issues
         if self.generate_time_features:
-            x_time_features = time_features(x_time, freq=self.time_feature_freq)
-            y_time_features = time_features(y_time, freq=self.time_feature_freq)
+            with timed_operation("time_features_generation"):
+                x_time_features = time_features(x_time, freq=self.time_feature_freq)
+                y_time_features = time_features(y_time, freq=self.time_feature_freq)
         else:
             # Return empty arrays instead of None to avoid PyTorch collate errors
             x_time_features = np.array([]).astype(np.float32)
             y_time_features = np.array([]).astype(np.float32)
-        
+
         # Return sample_id as first element for consistent sample tracking across models
         # still return everything for compatibility, but unwanted set as 0 for efficiency
         return sample_id, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel, x_time_features, y_time_features
@@ -897,31 +907,36 @@ class Heterogeneous_Dataset(Dataset):
 
         if self.hetero_type == 'all_for_one':
             # Match times
-            matched_times = self.time_matcher(timestamp)
+            with timed_operation("hetero_time_matching"):
+                matched_times = self.time_matcher(timestamp)
 
             # Check downtime
-            if len(downtime_ranges) == 0:
-                is_downtime = np.zeros(len(matched_times), dtype=bool)
-            else:  
-                is_downtime = self.downtime_checker(matched_times, downtime_ranges)
+            with timed_operation("hetero_downtime_check"):
+                if len(downtime_ranges) == 0:
+                    is_downtime = np.zeros(len(matched_times), dtype=bool)
+                else:
+                    is_downtime = self.downtime_checker(matched_times, downtime_ranges)
 
             if self.output_format == 'embedding':
-                matched_dynamic = self.dynamic_data.loc[matched_times]['time'].values
-                # Normalize embedding shapes to (1, embedding_dim) before batching
-                # This ensures compatibility with downtime concatenation logic
-                normalized_embeddings = [self._normalize_embedding_shape(self.embeddings[time]) for time in matched_dynamic]
-                output_dynamic_ = np.array(normalized_embeddings, dtype=np.float32)  # Shape: (batch, 1, embedding_dim)
-                
-                # Normalize downtime_prompt to (1, embedding_dim)
-                downtime_prompt_norm = self._normalize_embedding_shape(downtime_prompt)
-                
-                # Downtime data: shape (batch, 1, embedding_dim)
-                downtime_data_ = np.array([downtime_prompt_norm if is_down else np.zeros_like(downtime_prompt_norm) 
-                                        for is_down in is_downtime], dtype=np.float32)
-                
-                # Concatenate dynamic embeddings and downtime indicators along num_items dimension
-                # Final shape: (batch, 2, embedding_dim) where 2 = num_items (dynamic + downtime)
-                output_dynamic = np.concatenate([output_dynamic_, downtime_data_], axis=1)
+                with timed_operation("hetero_embedding_lookup"):
+                    matched_dynamic = self.dynamic_data.loc[matched_times]['time'].values
+                    # Normalize embedding shapes to (1, embedding_dim) before batching
+                    # This ensures compatibility with downtime concatenation logic
+                    normalized_embeddings = [self._normalize_embedding_shape(self.embeddings[time]) for time in matched_dynamic]
+
+                with timed_operation("hetero_array_construction"):
+                    output_dynamic_ = np.array(normalized_embeddings, dtype=np.float32)  # Shape: (batch, 1, embedding_dim)
+
+                    # Normalize downtime_prompt to (1, embedding_dim)
+                    downtime_prompt_norm = self._normalize_embedding_shape(downtime_prompt)
+
+                    # Downtime data: shape (batch, 1, embedding_dim)
+                    downtime_data_ = np.array([downtime_prompt_norm if is_down else np.zeros_like(downtime_prompt_norm)
+                                            for is_down in is_downtime], dtype=np.float32)
+
+                    # Concatenate dynamic embeddings and downtime indicators along num_items dimension
+                    # Final shape: (batch, 2, embedding_dim) where 2 = num_items (dynamic + downtime)
+                    output_dynamic = np.concatenate([output_dynamic_, downtime_data_], axis=1)
 
                 if self.noise > 0:
                     output_dynamic = self.__addnoise__(output_dynamic)
@@ -969,32 +984,38 @@ class Heterogeneous_Dataset(Dataset):
 
         elif self.hetero_type == 'each_subset':
             # Match times using the correct id
-            matched_times = self.time_matcher(timestamp, id)
+            with timed_operation("hetero_time_matching"):
+                matched_times = self.time_matcher(timestamp, id)
 
-            if len(downtime_ranges) == 0:
-                is_downtime = np.zeros(len(matched_times), dtype=bool)
-            else:  
-                is_downtime = self.downtime_checker(matched_times, downtime_ranges)
+            with timed_operation("hetero_downtime_check"):
+                if len(downtime_ranges) == 0:
+                    is_downtime = np.zeros(len(matched_times), dtype=bool)
+                else:
+                    is_downtime = self.downtime_checker(matched_times, downtime_ranges)
 
             if self.output_format == 'embedding':
-                # Get the matched dynamic data for the specific subset id
-                matched_dynamic = self.dynamic_data[id].loc[matched_times]['time'].values
-                id_specific_embeddings = self.embeddings[id]
-                # Normalize embedding shapes to (1, embedding_dim) before batching
-                # This ensures compatibility with downtime concatenation logic
-                normalized_embeddings = [self._normalize_embedding_shape(id_specific_embeddings[time]) for time in matched_dynamic]
-                output_dynamic_ = np.array(normalized_embeddings, dtype=np.float32)  # Shape: (batch, 1, embedding_dim)
-                
-                # Normalize downtime_prompt to (1, embedding_dim)
-                downtime_prompt_norm = self._normalize_embedding_shape(downtime_prompt)
-                
-                # Downtime data: shape (batch, 1, embedding_dim)
-                downtime_data_ = np.array([downtime_prompt_norm if is_down else np.zeros_like(downtime_prompt_norm) 
-                                        for is_down in is_downtime], dtype=np.float32)
-                
-                # Concatenate dynamic embeddings and downtime indicators along num_items dimension
-                # Final shape: (batch, 2, embedding_dim) where 2 = num_items (dynamic + downtime)
-                output_dynamic = np.concatenate([output_dynamic_, downtime_data_], axis=1)
+                with timed_operation("hetero_embedding_lookup"):
+                    # Get the matched dynamic data for the specific subset id
+                    matched_dynamic = self.dynamic_data[id].loc[matched_times]['time'].values
+                    id_specific_embeddings = self.embeddings[id]
+                    # Normalize embedding shapes to (1, embedding_dim) before batching
+                    # This ensures compatibility with downtime concatenation logic
+                    normalized_embeddings = [self._normalize_embedding_shape(id_specific_embeddings[time]) for time in matched_dynamic]
+
+                with timed_operation("hetero_array_construction"):
+                    output_dynamic_ = np.array(normalized_embeddings, dtype=np.float32)  # Shape: (batch, 1, embedding_dim)
+
+                    # Normalize downtime_prompt to (1, embedding_dim)
+                    downtime_prompt_norm = self._normalize_embedding_shape(downtime_prompt)
+
+                    # Downtime data: shape (batch, 1, embedding_dim)
+                    downtime_data_ = np.array([downtime_prompt_norm if is_down else np.zeros_like(downtime_prompt_norm)
+                                            for is_down in is_downtime], dtype=np.float32)
+
+                    # Concatenate dynamic embeddings and downtime indicators along num_items dimension
+                    # Final shape: (batch, 2, embedding_dim) where 2 = num_items (dynamic + downtime)
+                    output_dynamic = np.concatenate([output_dynamic_, downtime_data_], axis=1)
+
                 if self.noise > 0:
                     output_dynamic = self.__addnoise__(output_dynamic)
             else:

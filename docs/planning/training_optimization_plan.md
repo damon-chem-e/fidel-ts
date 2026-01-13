@@ -116,14 +116,80 @@ nsys profile -o training_profile python -m cli.suite run configs/experiment_suit
 | Memory copy time (CPU→GPU) | torch.profiler | Should be minimal with pin_memory |
 | Worker process overhead | py-spy | Fork/IPC overhead |
 
-### 1.3 Profiling Script Location
+### 1.3 Profiling Commands (IMPLEMENTED)
 
-Create `scripts/profile_training.py`:
-```python
-"""
-Comprehensive profiling script for training pipeline.
-Run: python scripts/profile_training.py --config configs/experiment_suites/lynx_film/canada_photovoltaics.yaml
-"""
+The profiling infrastructure has been implemented. Use these commands to identify bottlenecks:
+
+```bash
+# Basic profiling - profiles __getitem__ and DataLoader throughput
+python scripts/profile_dataloader.py configs/experiment_suites/lynx_film/canada_photovoltaics.yaml
+
+# Profile with more samples for accurate statistics
+python scripts/profile_dataloader.py configs/experiment_suites/lynx_film/canada_photovoltaics.yaml \
+    --num-samples 10000 \
+    --num-batches 200
+
+# Save results to JSON for analysis
+python scripts/profile_dataloader.py configs/experiment_suites/lynx_film/canada_photovoltaics.yaml \
+    --output results/profiling/canada_photovoltaics_profile.json
+
+# Profile worker scaling (tests num_workers=0,1,2,4,8)
+python scripts/profile_dataloader.py configs/experiment_suites/lynx_film/canada_photovoltaics.yaml \
+    --worker-scaling \
+    --max-workers 6
+
+# Skip __getitem__ profiling, only measure DataLoader throughput
+python scripts/profile_dataloader.py configs/experiment_suites/lynx_film/canada_photovoltaics.yaml \
+    --skip-getitem
+
+# Profile specific experiment from suite
+python scripts/profile_dataloader.py configs/experiment_suites/lynx_film/canada_photovoltaics.yaml \
+    --experiment "lynx_film_canada_photovoltaics"
+```
+
+**Profiled Operations:**
+
+The profiler measures the following operations in `__getitem__`:
+- `ts_array_slicing` - Time series array slicing (seq_x, seq_y, timestamps)
+- `sample_id_generation` - Generating deterministic sample IDs
+- `hetero_data_getter_x` - Fetching heterogeneous data for input sequence
+- `hetero_data_getter_y` - Fetching heterogeneous data for output sequence
+- `time_features_generation` - Generating time features (if enabled)
+- `llm_embedding_lookup` - LLM embedding lookup (if using TimeCMA-style models)
+- `preloaded_hetero_slicing` - Slicing preloaded hetero data (if preload_hetero=True)
+
+Within `get_hetero_data`:
+- `hetero_time_matching` - Temporal matching (pd.searchsorted)
+- `hetero_downtime_check` - Checking downtime ranges
+- `hetero_embedding_lookup` - Dictionary lookups + shape normalization
+- `hetero_array_construction` - np.array and np.concatenate operations
+
+**Expected Output:**
+
+```
+================================================================================
+DATALOADER PROFILING SUMMARY
+================================================================================
+Total samples processed: 5,000
+Total elapsed time: 12.34 seconds
+Avg throughput: 405.2 samples/sec
+
+Operation                           Count       Total (ms)     %   Mean (μs)     P95 (μs)
+-----------------------------------------------------------------------------------------------
+hetero_time_matching                 5000          4523.1  45.2%       904.6      1234.5
+hetero_embedding_lookup              5000          2845.2  28.4%       569.0       789.2
+hetero_array_construction            5000          1523.4  15.2%       304.7       423.1
+...
+-----------------------------------------------------------------------------------------------
+TOTAL                                            10012.3
+
+Per-sample overhead: 2002.5 μs
+
+TOP BOTTLENECKS (by total time):
+  1. hetero_time_matching: 4523.1ms (45.2%) - 904.6μs/call
+  2. hetero_embedding_lookup: 2845.2ms (28.4%) - 569.0μs/call
+  ...
+================================================================================
 ```
 
 ---
@@ -999,10 +1065,11 @@ Trade-off: 113 GB disk → 10-100x training speedup
 ### 4.10 Implementation Priority
 
 ```
-PHASE 1 (High Impact, Low Effort):
-├── [ ] Add profiling instrumentation to __getitem__
-├── [ ] Benchmark current per-operation timing
-└── [ ] Document actual bottleneck percentages
+PHASE 1 (High Impact, Low Effort) - IMPLEMENTED:
+├── [x] Add profiling instrumentation to __getitem__ (data_provider/data_loader.py)
+├── [x] Create profiling module (data_provider/profiling.py)
+├── [x] Create profiling CLI script (scripts/profile_dataloader.py)
+└── [ ] Run profiling and document actual bottleneck percentages
 
 PHASE 2 (Core Implementation):
 ├── [ ] Implement TensorCacheGenerator class (data_provider/tensor_cache.py)
