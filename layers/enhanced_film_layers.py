@@ -36,14 +36,17 @@ class GateModule(nn.Module):
     Gate Types:
         - "global": Single scalar gate for all samples/channels (1 param)
         - "channel": Per-channel static gate (C params, lazy-initialized if C unknown)
-        - "conditional": MLP gate conditioned on x and T (sample-adaptive)
+        - "conditional": Attention-based gate conditioned on x and T (sample-adaptive)
+          Uses self-attention to pool temporal/sequence dimensions before computing gate.
     
     Args:
         gate_type: One of "global", "channel", or "conditional"
         num_channels: Number of channels (optional for "channel" gate - can be inferred)
-        d_model: Model dimension (for "conditional" gate pooling)
-        text_dim: Text embedding dimension (for "conditional" gate)
-        hidden_dim: MLP hidden dimension for "conditional" gate
+        d_model: Model dimension (unused currently, kept for API compatibility)
+        text_dim: Text embedding dimension (for "conditional" gate attention pooling)
+        hidden_dim: Hidden dimension for conditional gate's attention and MLP layers.
+                    Default: 32. Controls expressiveness vs parameter count.
+                    Recommended: 32-64 for most cases, increase for complex datasets.
         init_bias: Initialization bias for gate logits (0 = balanced, + = favor text)
     """
     
@@ -60,6 +63,8 @@ class GateModule(nn.Module):
         self.gate_type = gate_type
         self.num_channels = num_channels
         self.init_bias = init_bias
+        self.hidden_dim = hidden_dim
+        self.text_dim = text_dim
         self._channel_gate_initialized = False
         
         if gate_type == "global":
@@ -77,9 +82,32 @@ class GateModule(nn.Module):
                 self.register_parameter('gate_raw', None)
             
         elif gate_type == "conditional":
-            # Conditional gate: MLP that takes pooled x and T as input
-            # Input: concatenated pooled x [B, C] and pooled T [B, C] -> [B, C, 2]
-            # We process per-channel, so input dim = 2 (x_pool[c], T_pool[c])
+            # ═══════════════════════════════════════════════════════════════════
+            # CONDITIONAL GATE WITH ATTENTION-BASED POOLING
+            # ═══════════════════════════════════════════════════════════════════
+            # Instead of simple mean pooling, we use self-attention to aggregate
+            # temporal information, then project to a scalar per channel.
+            #
+            # Time series path: x [B, seq_len, C] -> self-attend -> project -> [B, C]
+            # Text path: T [B, C, L, text_dim] -> self-attend -> project -> [B, C]
+            # Combined: [B, C, 2] -> MLP -> [B, C] gate values
+            # ═══════════════════════════════════════════════════════════════════
+            
+            # Attention pooling for time series (along temporal dimension)
+            # We use a learned query to attend over the sequence
+            self.ts_query = nn.Parameter(torch.randn(1, 1, hidden_dim))  # [1, 1, hidden_dim]
+            self.ts_key_proj = nn.Linear(1, hidden_dim)  # Project scalar per timestep to hidden_dim
+            self.ts_value_proj = nn.Linear(1, hidden_dim)
+            self.ts_output_proj = nn.Linear(hidden_dim, 1)  # Project back to scalar
+            
+            # Attention pooling for text (along sequence dimension L)
+            self.text_query = nn.Parameter(torch.randn(1, 1, hidden_dim))  # [1, 1, hidden_dim]
+            self.text_key_proj = nn.Linear(text_dim, hidden_dim)
+            self.text_value_proj = nn.Linear(text_dim, hidden_dim)
+            self.text_output_proj = nn.Linear(hidden_dim, 1)
+            
+            # Final MLP to combine pooled representations
+            # Input: [x_pooled, T_pooled] per channel -> 2 scalars
             self.gate_mlp = nn.Sequential(
                 nn.Linear(2, hidden_dim),
                 nn.ReLU(),
@@ -87,6 +115,7 @@ class GateModule(nn.Module):
             )
             # Initialize bias to favor balanced mixing initially
             self.gate_mlp[-1].bias.data.fill_(init_bias)
+            
         else:
             raise ValueError(f"Unknown gate_type: {gate_type}. Must be 'global', 'channel', or 'conditional'")
     
@@ -134,12 +163,59 @@ class GateModule(nn.Module):
             # x: [B, seq_len, C]
             B, seq_len, C = x.shape
             
-            # Pool time series: [B, seq_len, C] -> [B, C] (temporal mean)
-            x_pool = x.mean(dim=1)
+            # ═══════════════════════════════════════════════════════════════════
+            # ATTENTION-BASED POOLING FOR TIME SERIES
+            # ═══════════════════════════════════════════════════════════════════
+            # x: [B, seq_len, C] -> process per channel
+            # Reshape to [B*C, seq_len, 1] to process each channel independently
+            x_reshaped = x.permute(0, 2, 1).reshape(B * C, seq_len, 1)  # [B*C, seq_len, 1]
             
-            # Pool text: [B, C, L, text_dim] -> [B, C] (mean over seq and text_dim)
-            T_pool = text_emb.mean(dim=(2, 3))
+            # Project to key/value: [B*C, seq_len, hidden_dim]
+            ts_keys = self.ts_key_proj(x_reshaped)  # [B*C, seq_len, hidden_dim]
+            ts_values = self.ts_value_proj(x_reshaped)  # [B*C, seq_len, hidden_dim]
             
+            # Expand query for batch: [1, 1, hidden_dim] -> [B*C, 1, hidden_dim]
+            ts_query = self.ts_query.expand(B * C, -1, -1)
+            
+            # Attention: [B*C, 1, hidden_dim] @ [B*C, hidden_dim, seq_len] -> [B*C, 1, seq_len]
+            attn_scores = torch.bmm(ts_query, ts_keys.transpose(1, 2)) / (self.hidden_dim ** 0.5)
+            attn_weights = F.softmax(attn_scores, dim=-1)  # [B*C, 1, seq_len]
+            
+            # Weighted sum: [B*C, 1, seq_len] @ [B*C, seq_len, hidden_dim] -> [B*C, 1, hidden_dim]
+            ts_attended = torch.bmm(attn_weights, ts_values)  # [B*C, 1, hidden_dim]
+            
+            # Project to scalar and reshape: [B*C, 1, hidden_dim] -> [B*C, 1] -> [B, C]
+            x_pool = self.ts_output_proj(ts_attended).squeeze(-1).reshape(B, C)  # [B, C]
+            
+            # ═══════════════════════════════════════════════════════════════════
+            # ATTENTION-BASED POOLING FOR TEXT
+            # ═══════════════════════════════════════════════════════════════════
+            # text_emb: [B, C, L, text_dim] -> process per channel
+            _, _, L, text_dim = text_emb.shape
+            
+            # Reshape to [B*C, L, text_dim]
+            text_reshaped = text_emb.reshape(B * C, L, text_dim)
+            
+            # Project to key/value: [B*C, L, hidden_dim]
+            text_keys = self.text_key_proj(text_reshaped)  # [B*C, L, hidden_dim]
+            text_values = self.text_value_proj(text_reshaped)  # [B*C, L, hidden_dim]
+            
+            # Expand query for batch: [1, 1, hidden_dim] -> [B*C, 1, hidden_dim]
+            text_query = self.text_query.expand(B * C, -1, -1)
+            
+            # Attention: [B*C, 1, hidden_dim] @ [B*C, hidden_dim, L] -> [B*C, 1, L]
+            text_attn_scores = torch.bmm(text_query, text_keys.transpose(1, 2)) / (self.hidden_dim ** 0.5)
+            text_attn_weights = F.softmax(text_attn_scores, dim=-1)  # [B*C, 1, L]
+            
+            # Weighted sum: [B*C, 1, L] @ [B*C, L, hidden_dim] -> [B*C, 1, hidden_dim]
+            text_attended = torch.bmm(text_attn_weights, text_values)  # [B*C, 1, hidden_dim]
+            
+            # Project to scalar and reshape: [B*C, 1, hidden_dim] -> [B*C, 1] -> [B, C]
+            T_pool = self.text_output_proj(text_attended).squeeze(-1).reshape(B, C)  # [B, C]
+            
+            # ═══════════════════════════════════════════════════════════════════
+            # COMBINE AND COMPUTE GATE
+            # ═══════════════════════════════════════════════════════════════════
             # Concatenate: [B, C, 2]
             gate_input = torch.stack([x_pool, T_pool], dim=-1)
             
@@ -228,6 +304,29 @@ class EnhancedEncoderLayerShared(nn.Module):
         5. FFN + residual
         6. LayerNorm (no affine)
         7. Split, gate, and mix again
+    
+    Design Note - elementwise_affine=False:
+    =======================================
+    We use LayerNorm with `elementwise_affine=False` which means the LayerNorm
+    only performs mean-centering and variance-scaling WITHOUT its own learnable
+    γ (scale) and β (shift) parameters.
+    
+    Instead, we provide SEPARATE affine parameters for each pathway:
+    - Base pathway: Learned γ_base, β_base (standard affine transform)
+    - Text pathway: FiLM-generated (1+γ_FiLM), β_FiLM (text-conditioned)
+    
+    This differs from FiLM_layers.py's EncoderLayerFilm which uses:
+        LayerNorm (WITH affine) -> then FiLM modulation on top
+    
+    The key difference is architectural:
+    - EncoderLayerFilm: LN(x) = γ_LN * norm(x) + β_LN, then FiLM: (1+γ)·LN(x) + β
+      This means FiLM modulates the ALREADY-AFFINE-TRANSFORMED output.
+    - EnhancedEncoderLayerShared: norm(x), then EITHER γ_base·norm(x)+β_base 
+      OR (1+γ_FiLM)·norm(x)+β_FiLM, then gate-mix the two.
+      This gives TRUE parallel pathways with independent affine transforms.
+    
+    The latter design allows the base pathway to learn its own optimal affine
+    transform, while the text pathway learns a different text-conditioned one.
     
     Args:
         attention: Attention layer module

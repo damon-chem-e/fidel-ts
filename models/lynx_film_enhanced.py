@@ -40,7 +40,6 @@ Reference:
 
 from torch import nn
 import torch
-import copy
 import numpy as np
 from layers.TGTSF_torch import text_encoder
 from layers.enhanced_film_layers import (
@@ -104,7 +103,7 @@ class Model(nn.Module):
                 "Provide path to pre-trained unimodal model checkpoint."
             )
         
-        print(f'[ info ] LYNX-FiLM-enhanced configuration:')
+        print('[ info ] LYNX-FiLM-enhanced configuration:')
         print(f'         - pathway_type: {self.pathway_type}')
         print(f'         - gate_type: {self.gate_type}')
         print(f'         - mixing_type: {self.mixing_type}')
@@ -286,11 +285,50 @@ class Model(nn.Module):
         """
         Load encoder layers from a pre-trained unimodal checkpoint.
         
+        This method extracts encoder layers from a checkpoint saved by this repository's
+        training pipeline. It expects the checkpoint to contain an iTransformer-style
+        model with encoder layers stored under specific keys.
+        
+        Expected Checkpoint Structure:
+        ==============================
+        The checkpoint should be a dict with one of these keys containing the state_dict:
+            - 'model_state_dict' (default from this repo's training)
+            - 'state_dict' (alternative format)
+            - Or the checkpoint itself IS the state_dict
+        
+        Expected State Dict Keys for Encoder Layers:
+        =============================================
+        For each layer i (0-indexed), we expect keys like:
+            encoder.attn_layers.{i}.attention.inner_attention.* 
+            encoder.attn_layers.{i}.attention.query_projection.*
+            encoder.attn_layers.{i}.attention.key_projection.*
+            encoder.attn_layers.{i}.attention.value_projection.*
+            encoder.attn_layers.{i}.attention.out_projection.*
+            encoder.attn_layers.{i}.conv1.weight, encoder.attn_layers.{i}.conv1.bias
+            encoder.attn_layers.{i}.conv2.weight, encoder.attn_layers.{i}.conv2.bias
+            encoder.attn_layers.{i}.norm1.weight, encoder.attn_layers.{i}.norm1.bias
+            encoder.attn_layers.{i}.norm2.weight, encoder.attn_layers.{i}.norm2.bias
+        
+        This structure comes from layers/Transformer_EncDec.py's EncoderLayer class,
+        which uses Conv1d for the FFN (conv1, conv2) and standard LayerNorm (norm1, norm2).
+        
+        Parameters That MUST Match Between Checkpoint and This Config:
+        ==============================================================
+            d_model     - Must match for attention projections and FFN layers
+            d_ff        - Must match for FFN (conv1 out_channels, conv2 in_channels)
+            n_heads     - Must match for attention head dimension
+            e_layers    - Checkpoint must have >= e_layers layers
+            activation  - Should match for consistent behavior (relu or gelu)
+        
         Args:
-            checkpoint_path: Path to the checkpoint file
+            checkpoint_path: Path to the checkpoint file (.pt or .pth)
         
         Returns:
-            List of encoder layers from the checkpoint
+            List of EncoderLayer modules with weights loaded from checkpoint
+        
+        Raises:
+            FileNotFoundError: If checkpoint_path doesn't exist
+            RuntimeError: If state_dict structure doesn't match expected format
         """
         print(f'[ info ] Loading unimodal checkpoint from: {checkpoint_path}')
         
@@ -300,17 +338,29 @@ class Model(nn.Module):
         # Extract state dict (handle different checkpoint formats)
         if 'model_state_dict' in checkpoint:
             state_dict = checkpoint['model_state_dict']
+            print('         - Found model_state_dict key in checkpoint')
         elif 'state_dict' in checkpoint:
             state_dict = checkpoint['state_dict']
+            print('         - Found state_dict key in checkpoint')
         else:
             state_dict = checkpoint
+            print('         - Using checkpoint directly as state_dict')
+        
+        # Print some diagnostic info about the state dict
+        encoder_keys = [k for k in state_dict.keys() if k.startswith('encoder.attn_layers')]
+        if encoder_keys:
+            print(f'         - Found {len(encoder_keys)} encoder layer keys in checkpoint')
+        else:
+            print('         - WARNING: No encoder.attn_layers.* keys found!')
+            print(f'         - Available top-level keys: {list(state_dict.keys())[:10]}...')
         
         # Create encoder layers with matching architecture
         from layers.Transformer_EncDec import EncoderLayer
         
         layers = []
         for i in range(self.e_layers):
-            # Create layer with same architecture
+            # Create layer with same architecture as checkpoint
+            # The architecture MUST match for weight loading to work
             attention = AttentionLayer(
                 FullAttention(False, attention_dropout=self.dropout),
                 self.d_model, self.n_heads
@@ -332,10 +382,17 @@ class Model(nn.Module):
                     layer_state[new_key] = value
             
             if layer_state:
-                layer.load_state_dict(layer_state, strict=False)
-                print(f'         - Loaded layer {i} from checkpoint')
+                # Load with strict=False to allow partial loading (in case of minor mismatches)
+                missing, unexpected = layer.load_state_dict(layer_state, strict=False)
+                if missing:
+                    print(f'         - Layer {i}: Loaded, but missing keys: {missing}')
+                elif unexpected:
+                    print(f'         - Layer {i}: Loaded, but unexpected keys: {unexpected}')
+                else:
+                    print(f'         - Layer {i}: Successfully loaded all weights')
             else:
-                print(f'         - Warning: No weights found for layer {i}, using random init')
+                print(f'         - WARNING: No weights found for layer {i}, using random init')
+                print(f'           Expected prefix: {layer_prefix}')
             
             layers.append(layer)
         

@@ -25,6 +25,25 @@ pathway_type: "shared"
 
 # For pathway_type="parallel", path to pre-trained unimodal checkpoint
 # Required if pathway_type="parallel", ignored otherwise
+#
+# ┌────────────────────────────────────────────────────────────────────────────┐
+# │ CRITICAL: Parameters that MUST MATCH between checkpoint and this config   │
+# │ when using pathway_type="parallel":                                        │
+# │                                                                            │
+# │   d_model     - Model/embedding dimension (e.g., 256, 512, 1024)          │
+# │   d_ff        - Feed-forward hidden dimension (typically 4*d_model)       │
+# │   n_heads     - Number of attention heads                                  │
+# │   e_layers    - Number of encoder layers                                   │
+# │   activation  - Activation function ("relu" or "gelu")                    │
+# │                                                                            │
+# │ The checkpoint is expected to be from an iTransformer model trained via   │
+# │ this repository, with state_dict keys like:                               │
+# │   encoder.attn_layers.{i}.attention.*                                     │
+# │   encoder.attn_layers.{i}.conv1.*, encoder.attn_layers.{i}.conv2.*       │
+# │   encoder.attn_layers.{i}.norm1.*, encoder.attn_layers.{i}.norm2.*       │
+# │                                                                            │
+# │ If loading fails, check that checkpoint architecture matches this config. │
+# └────────────────────────────────────────────────────────────────────────────┘
 unimodal_checkpoint: null
 
 # AXIS 2: Gate type
@@ -37,7 +56,12 @@ unimodal_checkpoint: null
 gate_type: "global"
 
 # Gate configuration (for conditional gate)
-gate_hidden_dim: 32        # MLP hidden dimension
+# gate_hidden_dim: Controls the hidden dimension for the conditional gate's
+#   attention pooling and final MLP. Higher values = more expressive but more params.
+#   - 32 (default): Good balance for most datasets
+#   - 64: For complex datasets where gate needs more capacity
+#   - 16: For very small datasets to reduce overfitting risk
+gate_hidden_dim: 32
 gate_init_bias: 0.0        # Bias: 0=balanced, +ve=favor text, -ve=favor base
 
 # AXIS 3: Mixing type
