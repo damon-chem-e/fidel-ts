@@ -11,6 +11,8 @@
 
 **Goal**: Achieve 10-100x speedup by amortizing CPU-bound dataloader operations into a preprocessing step, creating GPU-ready tensors that can be loaded with minimal CPU overhead.
 
+**Note**: DataLoader configuration options (`num_workers` and `prefetch_factor`) already exist in the training config (`cli/config/models.py:65-66`), allowing adjustment to available compute resources.
+
 ---
 
 ## Part 1: Bottleneck Identification Plan
@@ -382,18 +384,20 @@ experiment_dir/
 
 ```bash
 # Generate tensor cache for an experiment
-python -m cli.cache generate configs/experiment_suites/lynx_film/canada_photovoltaics.yaml
+python -m cli.tensor_cache generate configs/experiment_suites/lynx_film/canada_photovoltaics.yaml
 
 # Options:
 # --output-dir: Override cache location
-# --num-workers: Parallel processing workers
+# --num-workers: Parallel processing workers (for cache generation, not dataloader)
 # --chunk-size: Samples per chunk (memory management)
 # --force: Overwrite existing cache
 ```
 
+**Note**: The `--num-workers` option here controls parallel processing during cache generation (multiprocessing for sample preprocessing), which is distinct from the DataLoader `num_workers` config that controls parallel data loading during training.
+
 #### B. Cache Generator Module
 
-Create `data_provider/tensor_cache.py`:
+Create `data_provider/tensor_cache.py` and `cli/tensor_cache.py`:
 
 ```python
 """
@@ -605,11 +609,26 @@ class TensorCacheDataset(torch.utils.data.Dataset):
 
 #### A. Config Flag
 
-Add to experiment config:
+Add to `cli/config/models.py` TrainingConfig class:
+```python
+# In TrainingConfig (around line 99)
+use_tensor_cache: bool = Field(
+    default=False,
+    description="Use pre-generated tensor cache for fast data loading"
+)
+tensor_cache_dir: Optional[str] = Field(
+    default=None,
+    description="Path to tensor cache directory (auto-generated in experiment_dir if null)"
+)
+```
+
+Then in experiment config:
 ```yaml
 training:
   use_tensor_cache: true
   tensor_cache_dir: null  # Auto-generated if null
+  num_workers: 8          # Increase for fast cache (default: 0)
+  prefetch_factor: 8      # Increase for fast cache (default: 2)
   # If cache doesn't exist, falls back to regular dataloader
 ```
 
@@ -683,7 +702,7 @@ class Data_Provider:
 
 ### 4.5 Slurm Job for Cache Generation
 
-Create `scripts/slurm/generate_cache.sh`:
+Create `scripts/slurm/generate_tensor_cache.sh`:
 
 ```bash
 #!/bin/bash
@@ -705,12 +724,23 @@ conda activate fidel-ts
 CONFIG_FILE=${1:-"configs/experiment_suites/lynx_film/canada_photovoltaics.yaml"}
 OUTPUT_DIR=${2:-""}
 
-python -m cli.cache generate "$CONFIG_FILE" \
+# Note: --num-workers here is for cache generation parallelism (multiprocessing)
+# This is separate from the DataLoader num_workers in the training config
+python -m cli.tensor_cache generate "$CONFIG_FILE" \
     --num-workers 32 \
     --chunk-size 50000 \
     ${OUTPUT_DIR:+--output-dir "$OUTPUT_DIR"}
 
 echo "Cache generation complete!"
+```
+
+**Usage**:
+```bash
+# Submit cache generation job
+sbatch scripts/slurm/generate_tensor_cache.sh configs/experiment_suites/lynx_film/canada_photovoltaics.yaml
+
+# Then run training with the cache
+python -m cli.suite run configs/experiment_suites/lynx_film/canada_photovoltaics.yaml
 ```
 
 ### 4.6 Flow Diagram
@@ -877,6 +907,19 @@ DataLoader(
 )
 ```
 
+**Existing Configuration Support**: The codebase already supports tuning these parameters via the experiment config:
+
+```yaml
+# configs/experiment_suites/lynx_film/canada_photovoltaics.yaml
+training:
+  num_workers: 8            # Adjust to available vCPUs (default: 0)
+  prefetch_factor: 8        # Increase with fast cache (default: 2)
+  batch_size: 768
+  # ... other settings
+```
+
+These are defined in `cli/config/models.py:65-66` and automatically passed to the DataLoader via `data_factory.py:876,879,889,892`. With the tensor cache making `__getitem__` trivial, increasing both parameters will significantly improve GPU feeding rate.
+
 #### C. NVIDIA DALI Alternative (Advanced)
 
 For maximum performance, consider NVIDIA DALI:
@@ -962,15 +1005,17 @@ PHASE 1 (High Impact, Low Effort):
 └── [ ] Document actual bottleneck percentages
 
 PHASE 2 (Core Implementation):
-├── [ ] Implement TensorCacheGenerator class
-├── [ ] Implement TensorCacheDataset class
-├── [ ] Add cli.cache command
-└── [ ] Add use_tensor_cache config flag
+├── [ ] Implement TensorCacheGenerator class (data_provider/tensor_cache.py)
+├── [ ] Implement TensorCacheDataset class (data_provider/tensor_cache.py)
+├── [ ] Add cli.tensor_cache command module (cli/tensor_cache.py)
+├── [ ] Add use_tensor_cache config flag to TrainingConfig
+└── [ ] Document num_workers/prefetch_factor tuning guidelines for tensor cache
 
 PHASE 3 (Integration & Testing):
 ├── [ ] Modify Data_Provider for cache support
 ├── [ ] Add cache validation logic
-├── [ ] Create Slurm job template
+├── [ ] Create Slurm job template (scripts/slurm/generate_tensor_cache.sh)
+├── [ ] Add tuning guidelines for num_workers/prefetch_factor with tensor cache
 └── [ ] Benchmark end-to-end speedup
 
 PHASE 4 (Optimization):
@@ -1049,9 +1094,50 @@ For 50-epoch training: 50 × 25 min = 1250 minutes = 20.8 hours saved
 
 ---
 
-## Appendix B: Profiling Code Snippets
+## Appendix B: DataLoader Tuning Guidelines
 
-### B.1 Quick DataLoader Benchmark
+### B.1 Tuning num_workers and prefetch_factor
+
+With tensor cache making `__getitem__` nearly instant (<1 μs), DataLoader configuration becomes critical:
+
+#### Without Tensor Cache (Current - CPU-bound __getitem__)
+```yaml
+training:
+  num_workers: 0-4         # More workers don't help - still CPU-bound
+  prefetch_factor: 2       # Limited benefit
+```
+
+#### With Tensor Cache (Optimized - Fast __getitem__)
+```yaml
+training:
+  num_workers: 4-16        # Scale with available vCPUs
+  prefetch_factor: 4-16    # Increase to keep workers busy
+  batch_size: 768          # May increase further with better feeding
+```
+
+#### Tuning Strategy
+
+1. **Start Conservative**: `num_workers=4, prefetch_factor=4`
+2. **Monitor GPU Utilization**: Use `nvidia-smi dmon -s u`
+3. **Increase if GPU Underutilized**: Increment both by 2-4
+4. **Watch for Diminishing Returns**: Beyond ~16 workers, benefit plateaus
+5. **Memory Considerations**: Each worker holds `prefetch_factor × batch_size` in memory
+
+#### Example Configurations by Hardware
+
+| Hardware | vCPUs | Recommended num_workers | Recommended prefetch_factor |
+|----------|-------|-------------------------|----------------------------|
+| RTX 5000 Ada + 6 vCPU | 6 | 4-6 | 4-8 |
+| A100 + 16 vCPU | 16 | 8-12 | 8-16 |
+| H100 + 32 vCPU | 32 | 12-16 | 8-16 |
+
+**Key Insight**: With tensor cache, you're no longer CPU-bound on computation, but you may become I/O bound on memory-mapped file access. More workers help parallelize disk I/O.
+
+---
+
+## Appendix C: Profiling Code Snippets
+
+### C.1 Quick DataLoader Benchmark
 
 ```python
 # scripts/benchmark_dataloader.py
@@ -1076,7 +1162,7 @@ def benchmark_dataloader(data_provider, num_batches=100):
     print(f"Throughput: {num_batches/sum(times):.1f} batches/sec")
 ```
 
-### B.2 Per-Sample Operation Timing
+### C.2 Per-Sample Operation Timing
 
 ```python
 # Add to data_loader.py for detailed profiling
