@@ -11,6 +11,32 @@
 
 ---
 
+## Priority Summary
+
+### High Compute Priorities
+- (1) iTransformer pretraining on fidel-ts
+- (2) TGTSF loss curves on fidel-ts
+- (3) Other benchmarks on fidel-ts (leret, timecma, time-llm, zhanghanbest-patchtst, zhanghanbest-dlinear, mmtsflib-fedformer)
+- (4) lynx_film_raw initial on fidel-ts
+- (5) lynx_film on fidel-ts (after pretraining complete)
+- (6) lynx_film_enhanced select configurations on fidel-ts (after testing, low compute ablations, and itransformer pretraining complete)
+- (7) mmvision best configuration of lynx film enhanced or lynx film raw
+
+### Low Compute Priorities
+- (1) itransformer pretraining on time mmd and ttc [training complete, evaluation pending]
+- (2) lynx_film on time mmd and ttc [complete]
+- (3) lynx_film_enhanced ablations on time mmd and ttc [pending]
+
+---
+
+## Current Work
+
+> - tensor_cache -> speed ups on high compute
+> - lynx_film_enhanced working -> low compute -> analysis
+> - eval and tables on low compute -> analysis
+
+---
+
 ## High Priority Experiments
 
 ### Priority 1: iTransformer Pretraining (Baselines)
@@ -19,20 +45,21 @@
 **Purpose:** Unimodal baselines needed for all datasets before multimodal comparisons
 
 #### Fidel-TS Datasets
-| Dataset | Status | Suite ID | Experiment ID | Location | Compute |
-|---------|--------|----------|---------------|----------|---------|
-| Canada Photovoltaics | ✅ Complete | `itransformer_canada_photovoltaics_20260113_101629` | `20260113-101629_d36af4d594fb` | `output/itransformer_canada_photovoltaics_20260113_101629/` | RunPod (pod:canada) |
-| Germany Renewable | 🟡 Running | - | - | - | RunPod (pod:germany) |
-| NYC Traffic Speed | ⏳ Pending | - | - | - | RunPod (pod:nyc_traffic) |
-| California ISO | ⏳ Pending | - | - | - | RunPod (pod:caiso) |
-| Bear Room | ⏳ Pending | - | - | - | RunPod (pod:bear_room) |
-| Jena Atmospheric Physics | ⏳ Pending | - | - | - | RunPod (pod:jena) |
+| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|---------|--------|----------|---------------|------|--------|---------|
+| Canada Photovoltaics | ✅ Complete | `itransformer_canada_photovoltaics_20260113_101629` | `20260113-101629_d36af4d594fb` | - | - | RunPod (pod:canada) |
+| Germany Renewable | 🟡 Running | - | - | - | - | RunPod (pod:germany) |
+| NYC Traffic Speed | ⏳ Pending | - | - | - | - | RunPod (pod:nyc_traffic) |
+| California ISO | ⏳ Pending | - | - | - | - | RunPod (pod:caiso) |
+| Bear Room | ⏳ Pending | - | - | - | - | RunPod (pod:bear_room) |
+| Jena Atmospheric Physics | ⏳ Pending | - | - | - | - | RunPod (pod:jena) |
 
 #### Time MMD & TTC
-| Dataset | Status | Suite ID | Experiment ID | Location | Compute |
-|---------|--------|----------|---------------|----------|---------|
-| Time MMD & TTC | ✅ Complete | - | - | - | MIT (engaging) |
-| Evaluation | ⏳ Pending | - | - | - | - |
+| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|---------|--------|----------|---------------|------|--------|---------|
+| Time MMD & TTC | ✅ Complete | `itransformer_time_mmd_ttc_20260113_111324` | - | ✅ | - | MIT (engaging) |
+
+**Note:** Evaluation log at `context/logs/itransformer_time_mmd_ttc_evaluation.log` (should be moved to `configs/experiment_suites/itransformer/time_mmd_ttc.eval`)
 
 ---
 
@@ -41,9 +68,14 @@
 **Status:** ⏳ Pending  
 **Purpose:** Generate loss curves for comparison with other multimodal methods
 
-| Dataset | Status | Suite ID | Experiment ID | Location | Compute |
-|---------|--------|----------|---------------|----------|---------|
-| All Fidel-TS | ⏳ Pending | - | - | - | RunPod (A40 x 6) |
+| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|---------|--------|----------|---------------|------|--------|---------|
+| Canada Photovoltaics | ⏳ Pending | - | - | - | - | RunPod (pod:canada) |
+| Germany Renewable | ⏳ Pending | - | - | - | - | RunPod (pod:germany) |
+| NYC Traffic Speed | ⏳ Pending | - | - | - | - | RunPod (pod:nyc_traffic) |
+| California ISO | ⏳ Pending | - | - | - | - | RunPod (pod:caiso) |
+| Bear Room | ⏳ Pending | - | - | - | - | RunPod (pod:bear_room) |
+| Jena Atmospheric Physics | ⏳ Pending | - | - | - | - | RunPod (pod:jena) |
 
 ---
 
@@ -53,27 +85,37 @@
 **Purpose:** Compare against other multimodal methods
 
 #### Time-LLM
-| Dataset | Status | Suite ID | Experiment ID | Location | Compute |
-|---------|--------|----------|---------------|----------|---------|
-| California ISO | ✅ Complete | `timellm_california_iso_20260112_141144` | `20260112-141144_a05ebe165526` | `output/timellm_california_iso_20260112_141144/` | MIT Sloan (A100) |
-| NYC Traffic Speed | 🟡 Running | `timellm_nyc_traffic_speed_20260112_185045` | - | - | MIT Sloan (A100) |
-| Canada Photovoltaics | ⏳ Pending | - | - | - | MIT Sloan (A100) |
-| Germany Renewable | ⏳ Pending | - | - | - | MIT Sloan (A100) |
-| Bear Room | ⏳ Pending | - | - | - | MIT Sloan (A100) |
-| Jena Atmospheric Physics | ⏳ Pending | - | - | - | MIT Sloan (A100) |
+| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|---------|--------|----------|---------------|------|--------|---------|
+| California ISO | ✅ Complete | `timellm_california_iso_20260112_141144` | `20260112-141144_a05ebe165526` | - | - | MIT Sloan (A100) |
+| NYC Traffic Speed | 🟡 Running | `timellm_nyc_traffic_speed_20260112_185045` | - | - | - | MIT Sloan (A100) |
+| Canada Photovoltaics | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
+| Germany Renewable | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
+| Bear Room | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
+| Jena Atmospheric Physics | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
 
 #### TimeCMA
-| Dataset | Status | Suite ID | Experiment ID | Location | Compute |
-|---------|--------|----------|---------------|----------|---------|
-| Time MMD & TTC | ✅ Complete | - | - | - | MIT Sloan (A100) |
-| Bear Room | ✅ Complete | - | - | - | MIT Sloan (A100) |
-| California ISO | 🟡 Running (OOM issues) | - | - | - | MIT Sloan (A100) |
-| Other Fidel-TS | ⏳ Pending | - | - | - | MIT Sloan (A100) |
+| Dataset | Status | LLM Embed | Suite ID | Experiment ID | Eval | Tables | Compute |
+|---------|--------|-----------|----------|---------------|------|--------|---------|
+| Time MMD & TTC | ⏳ Pending | ✅ Complete | - | - | - | - | MIT Sloan (A100) |
+| Bear Room | ⏳ Pending | ✅ Complete | - | - | - | - | MIT Sloan (A100) |
+| California ISO | ⏳ Pending | 🟡 In Progress (OOM) | - | - | - | - | MIT Sloan (A100) |
+| Canada Photovoltaics | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
+| Germany Renewable | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
+| NYC Traffic Speed | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
+| Jena Atmospheric Physics | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
+
+**Note:** TimeCMA has two steps: (1) LLM embedding generation, (2) model training. Suite ID and training status are all pending for Fidel-TS datasets.
 
 #### LeRet
-| Dataset | Status | Suite ID | Experiment ID | Location | Compute |
-|---------|--------|----------|---------------|----------|---------|
-| All Fidel-TS | ⏳ Pending | - | - | - | RunPod (RTX 4000 Ada x 5) |
+| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|---------|--------|----------|---------------|------|--------|---------|
+| Canada Photovoltaics | ⏳ Pending | - | - | - | - | RunPod (pod:canada) |
+| Germany Renewable | ⏳ Pending | - | - | - | - | RunPod (pod:germany) |
+| NYC Traffic Speed | ⏳ Pending | - | - | - | - | RunPod (pod:nyc_traffic) |
+| California ISO | ⏳ Pending | - | - | - | - | RunPod (pod:caiso) |
+| Bear Room | ⏳ Pending | - | - | - | - | RunPod (pod:bear_room) |
+| Jena Atmospheric Physics | ⏳ Pending | - | - | - | - | RunPod (pod:jena) |
 
 #### Other Benchmarks (Pending Experimentation)
 - **ZhangHanBest-PatchTST**: ⏳ Pending (needs experimentation setup)
@@ -88,19 +130,19 @@
 **Purpose:** Initial runs before hyperparameter tuning complete
 
 #### Hyperparameter Sweep (NYC Traffic)
-| Status | Suite ID | Experiment ID | Location | Compute |
-|--------|----------|---------------|----------|---------|
-| 🟡 Running | `sweep_v2dy5lr5` | - | - | MIT Preemptable (L40s x 4) |
+| Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|--------|----------|---------------|------|--------|---------|
+| 🟡 Running | `sweep_v2dy5lr5` | - | - | - | MIT Preemptable (L40s x 4) |
 
 #### Initial Runs (Other Datasets)
-| Dataset | Status | Suite ID | Experiment ID | Location | Compute |
-|---------|--------|----------|---------------|----------|---------|
-| NYC Traffic Speed | ✅ Complete (sweep) | `sweep_v2dy5lr5` | - | - | MIT Preemptable |
-| Canada Photovoltaics | ⏳ Pending | - | - | - | RunPod (L40s x 5) |
-| Germany Renewable | ⏳ Pending | - | - | - | RunPod (L40s x 5) |
-| California ISO | ⏳ Pending | - | - | - | RunPod (L40s x 5) |
-| Bear Room | ⏳ Pending | - | - | - | RunPod (L40s x 5) |
-| Jena Atmospheric Physics | ⏳ Pending | - | - | - | RunPod (L40s x 5) |
+| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|---------|--------|----------|---------------|------|--------|---------|
+| NYC Traffic Speed | ⏳ Pending | - | - | - | - | RunPod (pod:nyc_traffic) |
+| Canada Photovoltaics | ⏳ Pending | - | - | - | - | RunPod (pod:canada) |
+| Germany Renewable | ⏳ Pending | - | - | - | - | RunPod (pod:germany) |
+| California ISO | ⏳ Pending | - | - | - | - | RunPod (pod:caiso) |
+| Bear Room | ⏳ Pending | - | - | - | - | RunPod (pod:bear_room) |
+| Jena Atmospheric Physics | ⏳ Pending | - | - | - | - | RunPod (pod:jena) |
 
 ---
 
@@ -109,14 +151,14 @@
 **Status:** 🟡 In Progress  
 **Purpose:** Compare with residual learning (Point C)
 
-| Dataset | Status | Suite ID | Experiment ID | Location | Compute |
-|---------|--------|----------|---------------|----------|---------|
-| Canada Photovoltaics | ✅ Complete | - | - | - | RunPod |
-| Germany Renewable | ⏳ Pending (testing tensor_cache) | - | - | - | RunPod |
-| NYC Traffic Speed | ⏳ Pending | - | - | - | RunPod |
-| California ISO | ⏳ Pending | - | - | - | RunPod |
-| Bear Room | ⏳ Pending | - | - | - | RunPod |
-| Jena Atmospheric Physics | ⏳ Pending | - | - | - | RunPod |
+| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|---------|--------|----------|---------------|------|--------|---------|
+| Canada Photovoltaics | ✅ Complete | `lynx_film_canada_photovoltaics_20260113_105228` | `20260113-105229_286069803489` | - | - | RunPod (pod:canada) |
+| Germany Renewable | ⏳ Pending (testing tensor_cache) | - | - | - | - | RunPod (pod:germany) |
+| NYC Traffic Speed | ⏳ Pending | - | - | - | - | RunPod (pod:nyc_traffic) |
+| California ISO | ⏳ Pending | - | - | - | - | RunPod (pod:caiso) |
+| Bear Room | ⏳ Pending | - | - | - | - | RunPod (pod:bear_room) |
+| Jena Atmospheric Physics | ⏳ Pending | - | - | - | - | RunPod (pod:jena) |
 
 **Note:** Requires iTransformer pretraining to complete first.
 
@@ -132,9 +174,9 @@
 - ✅ Low compute ablations complete
 - ✅ iTransformer pretraining complete
 
-| Configuration | Status | Suite ID | Experiment ID | Location | Compute |
-|---------------|--------|----------|---------------|----------|---------|
-| TBD | ⏳ Pending | - | - | - | TBD (x6 x nconfigurations) |
+| Configuration | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|---------------|--------|----------|---------------|------|--------|---------|
+| TBD | ⏳ Pending | - | - | - | - | TBD (x6 x nconfigurations) |
 
 ---
 
@@ -147,13 +189,13 @@
 - ✅ Lynx Film Enhanced configurations tested
 - ✅ Best configuration identified
 
-| Status | Suite ID | Experiment ID | Location | Compute |
-|--------|----------|---------------|----------|---------|
-| ⏳ Pending | - | - | - | TBD (x1) |
+| Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|--------|----------|---------------|------|--------|---------|
+| ⏳ Pending | - | - | - | - | TBD (x1) |
 
 ---
 
-## Low Priority Experiments
+## Low Compute Experiments
 
 ### Quick Runs on Time MMD & TTC
 
@@ -161,25 +203,24 @@
 **Purpose:** Validate multimodal performance on smaller datasets (Point B)
 
 #### iTransformer Pretraining
-| Dataset | Status | Suite ID | Experiment ID | Location | Compute |
-|---------|--------|----------|---------------|----------|---------|
-| Time MMD & TTC | ✅ Complete | - | - | - | MIT (engaging) |
+| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|---------|--------|----------|---------------|------|--------|---------|
+| Time MMD & TTC | ✅ Complete | `itransformer_time_mmd_ttc_20260113_111324` | - | ✅ | - | MIT (engaging) |
 
 #### Lynx Film
-| Dataset | Status | Suite ID | Experiment ID | Location | Compute |
-|---------|--------|----------|---------------|----------|---------|
-| Time MMD & TTC | 🟡 Running | - | - | - | MIT Normal GPU (L40s) |
+| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|---------|--------|----------|---------------|------|--------|---------|
+| Time MMD & TTC | ✅ Complete | `lynx_film_time_mmd_ttc_20260113_120342` | - | - | - | MIT Normal GPU (L40s) |
 
 #### Lynx Film Raw
-| Dataset | Status | Suite ID | Experiment ID | Location | Compute |
-|---------|--------|----------|---------------|----------|---------|
-| Time MMD & TTC | ✅ Complete | `lynx_film_raw_time_mmd_ttc_20260112_165034` | - | `output/lynx_film_raw_time_mmd_ttc_20260112_165034/` | MIT Normal GPU |
-| Evaluation | ✅ Complete | - | - | `context/logs/lynx_film_raw_time_mmd_ttc_evaluation.log` | - |
+| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|---------|--------|----------|---------------|------|--------|---------|
+| Time MMD & TTC | ✅ Complete | `lynx_film_raw_time_mmd_ttc_20260112_165034` | - | ✅ | - | MIT Normal GPU |
 
 #### Lynx Film Enhanced Ablations
-| Status | Suite ID | Experiment ID | Location | Compute |
-|--------|----------|---------------|----------|---------|
-| ⏳ Pending | - | - | - | MIT Normal GPU (L40s) |
+| Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|--------|----------|---------------|------|--------|---------|
+| ⏳ Pending | - | - | - | - | MIT Normal GPU (L40s) |
 
 ---
 
@@ -198,7 +239,7 @@
 
 ---
 
-## Completed Test Suites
+## Legacy Completed Test Suites
 
 | Suite ID | Method | Description | Results |
 |----------|--------|-------------|---------|
@@ -218,17 +259,13 @@
 |----------|------------|--------|
 | MIT Preemptable (L40s x 4) | Lynx Film Raw sweep (NYC Traffic) | 🟡 Running |
 | MIT Sloan (A100) | Time-LLM on Fidel-TS | 🟡 Running |
-| MIT Sloan (A100) | TimeCMA on Fidel-TS | 🟡 Running |
-| RunPod (L4 x 6) | iTransformer pretraining on Fidel-TS | ⏳ Need to spin up |
-| RunPod (A40 x 6) | TGTSF on Fidel-TS | ⏳ Pending |
-| RunPod (RTX 4000 Ada x 5) | LeRet on Fidel-TS | ⏳ Pending |
-| RunPod (L40s x 5) | Lynx Film Raw initial on Fidel-TS | ⏳ Pending |
-| TBD | Lynx Film on Fidel-TS | ⏳ Pending |
-| TBD | Lynx Film Enhanced configurations | ⏳ Pending |
-| TBD | ZhangHanBest-PatchTST | ⏳ Pending |
-| TBD | ZhangHanBest-DLinear | ⏳ Pending |
-| TBD | MMTSFLib-FedFormer | ⏳ Pending |
-| TBD | MMVision best configuration | ⏳ Pending |
+| MIT Sloan (A100) | TimeCMA on Fidel-TS | ❌ Crashed |
+| RunPod-Canada | iTransformer pretraining, TGTSF, LeRet, Lynx Film Raw, Lynx Film | ⏳ Pending |
+| RunPod-Germany | iTransformer pretraining, TGTSF, LeRet, Lynx Film Raw, Lynx Film | ⏳ Pending |
+| RunPod-NYC Traffic | iTransformer pretraining, TGTSF, LeRet, Lynx Film Raw, Lynx Film | ⏳ Pending |
+| RunPod-CAISO | iTransformer pretraining, TGTSF, LeRet, Lynx Film Raw, Lynx Film | ⏳ Pending |
+| RunPod-Bear Room | iTransformer pretraining, TGTSF, LeRet, Lynx Film Raw, Lynx Film | ⏳ Pending |
+| RunPod-Jena | iTransformer pretraining, TGTSF, LeRet, Lynx Film Raw, Lynx Film | ⏳ Pending |
 
 ### Low Compute Resources
 
@@ -253,6 +290,10 @@
 
 ### Experiment Workflow
 - When running experiments (not sweeps): Init only first manually, then put requeue on preemptable with resumption-id and resume-suite-id in configs before submitting sbatch job
+
+### Evaluation Log Pattern
+- Evaluation logs should be moved from `context/logs/` to `configs/experiment_suites/<method>/<dataset>.eval`
+- Example: `context/logs/itransformer_time_mmd_ttc_evaluation.log` → `configs/experiment_suites/itransformer/time_mmd_ttc.eval`
 
 ### Known Issues
 - **TimeCMA on CAISO**: OOM issues, reduced chunk size to 50k from 500k (flag might not be working, may need to adjust actual config)
