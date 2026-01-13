@@ -165,6 +165,12 @@ class Data_Provider(object):
         self.llm_embedding_config = getattr(args, 'llm_embedding', None)
         self._llm_embedding_providers: Dict[str, Any] = {}  # Cache providers per split
 
+        # Tensor cache for fast data loading
+        self.use_tensor_cache = getattr(args, 'use_tensor_cache', False)
+        self.tensor_cache_dir = self._resolve_tensor_cache_dir()
+        self._tensor_cache_validated = False  # Track if validation was done
+        self._tensor_cache_valid = False  # Result of validation
+
     def _get_llm_embedding_provider(self, flag: str):
         """
         Get or create LLM embedding provider for a split.
@@ -255,6 +261,135 @@ class Data_Provider(object):
             'base_data_path': getattr(self.args, 'base_data_path', './data/'),
             'model_config_overrides': getattr(self.args, 'model_config_overrides', {}),
         }
+
+    def _resolve_tensor_cache_dir(self) -> Optional[str]:
+        """
+        Resolve tensor cache directory path.
+
+        If tensor_cache_dir is explicitly set in config, use it.
+        Otherwise, auto-generate based on dataset root_path and config hash.
+
+        The auto-generated path follows the pattern:
+            {dataset_root_path}/../tensor_cache/{config_hash}/
+
+        This co-locates caches with dataset data and enables automatic reuse
+        when the same config hash is encountered again.
+
+        Returns:
+            Path to tensor cache directory, or None if not using tensor cache
+        """
+        if not self.use_tensor_cache:
+            return None
+
+        # Check if explicitly set in args
+        explicit_dir = getattr(self.args, 'tensor_cache_dir', None)
+        if explicit_dir is not None:
+            return explicit_dir
+
+        # Auto-generate path based on dataset location and config hash
+        # Cache lives alongside dataset: data/<dataset>/tensor_cache/<hash>/
+        from data_provider.tensor_cache import compute_config_hash
+
+        # Build config dict for hash computation
+        config = self._build_tensor_cache_config()
+        config_hash = compute_config_hash(config)
+
+        # Get dataset root path (e.g., data/fidel-ts/germany_renewable/time_series/)
+        # Cache goes in parent: data/fidel-ts/germany_renewable/tensor_cache/<hash>/
+        root_path = self.dataset_config.root_path
+        dataset_dir = os.path.dirname(root_path.rstrip('/\\'))
+
+        cache_dir = os.path.join(dataset_dir, 'tensor_cache', config_hash)
+        return cache_dir
+
+    def _build_tensor_cache_config(self) -> dict:
+        """
+        Build config dict for tensor cache hash computation.
+
+        These are the parameters that affect cache validity - if any change,
+        the cache must be regenerated.
+
+        Returns:
+            Dict of config parameters for hash computation
+        """
+        return {
+            'input_len': getattr(self.args, 'input_len', None),
+            'output_len': getattr(self.args, 'output_len', None),
+            'scale': getattr(self.args, 'scale', True),
+            'truncate_train_for_purge': getattr(self.args, 'truncate_train_for_purge', False),
+            'downsample': getattr(self.args, 'downsample', None),
+            'data_name': getattr(self.dataset_config, 'name', 'unknown'),
+            'hetero_stride': getattr(self.args.model_config, 'stride', 1) if hasattr(self.args, 'model_config') else 1,
+            'hetero_type': self.dataset_config.hetero_info.get('hetero_type') if self.dataset_config.get('hetero_info') else None,
+            'missing_value_strategy': self.dataset_config.get('missing_value_strategy', 'none'),
+            'split_info': str(self.dataset_config.get('split_info', '')),
+        }
+
+    def _validate_tensor_cache(self) -> bool:
+        """
+        Validate that tensor cache exists and matches current config.
+
+        Performs validation once and caches the result.
+
+        Returns:
+            True if cache is valid and can be used, False otherwise
+
+        Raises:
+            FileNotFoundError: If use_tensor_cache is True but cache is invalid
+        """
+        # Only validate once
+        if self._tensor_cache_validated:
+            return self._tensor_cache_valid
+
+        self._tensor_cache_validated = True
+
+        if not self.use_tensor_cache or self.tensor_cache_dir is None:
+            self._tensor_cache_valid = False
+            return False
+
+        # Build config dict for validation (same as used for hash)
+        from data_provider.tensor_cache import validate_cache
+
+        config = self._build_tensor_cache_config()
+        is_valid, message = validate_cache(self.tensor_cache_dir, config)
+
+        if not is_valid:
+            raise FileNotFoundError(
+                f"Tensor cache requested but invalid: {message}\n"
+                f"Cache directory: {self.tensor_cache_dir}\n\n"
+                f"Generate the cache with:\n"
+                f"  python -m cli.tensor_cache generate <config.yaml>\n\n"
+                f"Or disable tensor cache by setting:\n"
+                f"  training.use_tensor_cache: false"
+            )
+
+        self._tensor_cache_valid = True
+        print(f"[ info ] Using tensor cache from: {self.tensor_cache_dir}")
+        return True
+
+    def _get_tensor_cache_dataloader(self, flag: str, shuffle: bool, drop_last: bool):
+        """
+        Get a DataLoader from tensor cache.
+
+        Args:
+            flag: Data split ('train', 'val', 'test')
+            shuffle: Whether to shuffle the data
+            drop_last: Whether to drop the last incomplete batch
+
+        Returns:
+            DataLoader configured for tensor cache
+        """
+        from data_provider.tensor_cache import get_tensor_cache_dataloader
+
+        return get_tensor_cache_dataloader(
+            cache_dir=self.tensor_cache_dir,
+            flag=flag,
+            batch_size=self.batch_size,
+            num_workers=self.args.num_workers,
+            prefetch_factor=self.args.prefetch_factor,
+            shuffle=shuffle,
+            preload_to_ram=False  # Memory-mapped is usually best
+        )
 
     def get_spliter(self):
         """
@@ -641,17 +776,36 @@ class Data_Provider(object):
     def get_train(self, return_type='loader'):
         """
         Creates and returns training data in the specified format.
-        
+
         Args:
             return_type (str): Format of returned data. Options:
                 - 'set': Returns dataset objects only
-                - 'loader': Returns DataLoader objects only  
+                - 'loader': Returns DataLoader objects only
                 - 'both': Returns tuple of (dataset, dataloader)
-        
+
         Returns:
             Dataset/DataLoader/tuple: Training data in requested format
+
+        Note:
+            If use_tensor_cache is True and cache is valid, returns tensor cache
+            dataloader instead of computing from scratch. The 'set' return type
+            is not supported with tensor cache (will raise ValueError).
         """
         assert return_type in ['set', 'loader', 'both'], 'return type not supported, only support set, loader, both'
+
+        # Check if tensor cache should be used
+        if self.use_tensor_cache and self._validate_tensor_cache():
+            if return_type == 'set':
+                raise ValueError(
+                    "return_type='set' is not supported with tensor cache. "
+                    "Use 'loader' instead, or disable tensor cache."
+                )
+            loader = self._get_tensor_cache_dataloader('train', shuffle=True, drop_last=True)
+            if return_type == 'loader':
+                return loader
+            else:  # 'both' - return None for dataset since we don't have it
+                return None, loader
+
         self.train_dataset=self.get_datasets('train')
         if return_type == 'set':
             return self.train_dataset
@@ -663,16 +817,33 @@ class Data_Provider(object):
     def get_val(self, return_type='loader'):
         """
         Creates and returns validation data in the specified format.
-        
+
         Args:
             return_type (str): Format of returned data. Options:
                 - 'set': Returns dataset objects only
-                - 'loader': Returns DataLoader objects only  
+                - 'loader': Returns DataLoader objects only
                 - 'both': Returns tuple of (dataset, dataloader)
-        
+
         Returns:
             Dataset/DataLoader/tuple: Validation data in requested format
+
+        Note:
+            If use_tensor_cache is True and cache is valid, returns tensor cache
+            dataloader instead of computing from scratch.
         """
+        # Check if tensor cache should be used
+        if self.use_tensor_cache and self._validate_tensor_cache():
+            if return_type == 'set':
+                raise ValueError(
+                    "return_type='set' is not supported with tensor cache. "
+                    "Use 'loader' instead, or disable tensor cache."
+                )
+            loader = self._get_tensor_cache_dataloader('val', shuffle=False, drop_last=False)
+            if return_type == 'loader':
+                return loader
+            else:  # 'both'
+                return None, loader
+
         self.val_dataset = self.get_datasets('val')
         if return_type == 'set':
             return self.val_dataset
@@ -685,16 +856,33 @@ class Data_Provider(object):
     def get_test(self, return_type='loader'):
         """
         Creates and returns test data in the specified format.
-        
+
         Args:
             return_type (str): Format of returned data. Options:
                 - 'set': Returns dataset objects only
-                - 'loader': Returns DataLoader objects only  
+                - 'loader': Returns DataLoader objects only
                 - 'both': Returns tuple of (dataset, dataloader)
-        
+
         Returns:
             Dataset/DataLoader/tuple: Test data in requested format
+
+        Note:
+            If use_tensor_cache is True and cache is valid, returns tensor cache
+            dataloader instead of computing from scratch.
         """
+        # Check if tensor cache should be used
+        if self.use_tensor_cache and self._validate_tensor_cache():
+            if return_type == 'set':
+                raise ValueError(
+                    "return_type='set' is not supported with tensor cache. "
+                    "Use 'loader' instead, or disable tensor cache."
+                )
+            loader = self._get_tensor_cache_dataloader('test', shuffle=False, drop_last=False)
+            if return_type == 'loader':
+                return loader
+            else:  # 'both'
+                return None, loader
+
         self.test_dataset = self.get_datasets('test')
         if return_type == 'set':
             return self.test_dataset

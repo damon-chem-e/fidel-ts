@@ -68,7 +68,11 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     args.track_per_sample = config.training.track_per_sample
     args.evaluate_test_during_training = config.training.evaluate_test_during_training
     args.truncate_train_for_purge = config.training.truncate_train_for_purge
-    
+
+    # Tensor cache for fast data loading
+    args.use_tensor_cache = getattr(config.training, 'use_tensor_cache', False)
+    args.tensor_cache_dir = getattr(config.training, 'tensor_cache_dir', None)
+
     # PyTorch Compile (PyTorch 2.0+) - optional, defaults to False for backward compatibility
     args.torch_compile = getattr(config.training, 'torch_compile', False)
     args.compile_mode = getattr(config.training, 'compile_mode', 'reduce-overhead')

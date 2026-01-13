@@ -98,7 +98,24 @@ class TrainingConfig(BaseModel):
             "See docs/train_val_test_purge_period_issue.md for details."
         )
     )
-    
+
+    # Tensor cache for fast data loading
+    use_tensor_cache: bool = Field(
+        default=False,
+        description=(
+            "If True, use pre-generated tensor cache for ultra-fast data loading. "
+            "Cache must be generated first with: python -m cli.tensor_cache generate <config>. "
+            "See context/performance_optimization/training_optimization_plan.md for details."
+        )
+    )
+    tensor_cache_dir: Optional[str] = Field(
+        default=None,
+        description=(
+            "Path to tensor cache directory. If None, auto-generated based on dataset and task config. "
+            "Default location: ./tensor_cache/{data_name}_{input_len}_{output_len}/"
+        )
+    )
+
     # LeRet-specific two-stage training configuration
     leret: Optional[LeRetTrainingConfig] = Field(
         default=None,
