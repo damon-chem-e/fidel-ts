@@ -14,6 +14,9 @@ suite:
     parallel: false
     continue_on_error: false
     log_dir: "./logs/suites/itransformer/time_mmd_ttc"
+  
+  # Resume configuration (suite-level)
+  resume_suite_id: "itransformer_time_mmd_ttc_20260113_111324"
     
   # Experiments in this suite
   experiments:
@@ -46,6 +49,8 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/itransformer/time_mmd_ttc"
+        # Resume configuration (experiment-level)
+        resume_experiment_id: "20260113-111324_7d386ba4708c"
     
     # Climate: context=24, prediction=6
     - name: "itransformer_timemmd_climate"
@@ -72,6 +77,8 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/itransformer/time_mmd_ttc"
+        # Resume configuration (experiment-level)
+        resume_experiment_id: "20260113-111337_1a30b00e94e3"
     
     # Economy: context=24, prediction=6
     - name: "itransformer_timemmd_economy"
@@ -98,6 +105,8 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/itransformer/time_mmd_ttc"
+        # Resume configuration (experiment-level)
+        resume_experiment_id: "20260113-111345_fc4133a7d35a"
     
     # Energy: context=24, prediction=12
     - name: "itransformer_timemmd_energy"
@@ -124,6 +133,8 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/itransformer/time_mmd_ttc"
+        # Resume configuration (experiment-level)
+        resume_experiment_id: "20260113-111347_e620a7dd8e8c"
     
     # Environment: context=24, prediction=48
     - name: "itransformer_timemmd_environment"
@@ -150,6 +161,8 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/itransformer/time_mmd_ttc"
+        # Resume configuration (experiment-level)
+        resume_experiment_id: "20260113-111350_70fcc6977944"
     
     # Health (Public_Health): context=24, prediction=12
     - name: "itransformer_timemmd_health"
@@ -176,6 +189,8 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/itransformer/time_mmd_ttc"
+        # Resume configuration (experiment-level)
+        resume_experiment_id: "20260113-111351_be72e6a68d06"
     
     # Socialgood: context=24, prediction=6
     - name: "itransformer_timemmd_socialgood"
@@ -202,6 +217,8 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/itransformer/time_mmd_ttc"
+        # Resume configuration (experiment-level)
+        resume_experiment_id: "20260113-111352_3f18c86242c1"
     
     # Traffic: context=24, prediction=6
     - name: "itransformer_timemmd_traffic"
@@ -228,6 +245,8 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/itransformer/time_mmd_ttc"
+        # Resume configuration (experiment-level)
+        resume_experiment_id: "20260113-111355_699118a11fac"
     
     # ===========================================
     # TTC Datasets (Kim et al., 2024)
@@ -258,6 +277,8 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/itransformer/time_mmd_ttc"
+        # Resume configuration (experiment-level)
+        resume_experiment_id: "20260113-111359_dfdb7276c5e3"
     
     # Medical: context=7, prediction=7
     - name: "itransformer_ttc_medical"
@@ -287,3 +308,5 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/itransformer/time_mmd_ttc"
+        # Resume configuration (experiment-level)
+        resume_experiment_id: "20260113-111401_2749fc3e8ccc"
