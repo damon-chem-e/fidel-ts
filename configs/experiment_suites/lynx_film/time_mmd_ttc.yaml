@@ -40,10 +40,8 @@ suite:
           e_layers: 2       # Match iTransformer e_layers
           n_heads: 8        # Match iTransformer n_heads
           input_text_dim: 768  # Keep time_mmd specific override
-          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
-          # Note: iTransformer pretrained models may not exist for Time MMD datasets
-          # Expected path format: outputs/suites/itransformer/{dataset}/{experiment_id}/checkpoints/best_checkpoint.pth
-          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+          # Pretrained iTransformer checkpoint from itransformer_time_mmd_ttc suite
+          pretrained_model_path: "output/itransformer_time_mmd_ttc_20260113_111324/20260113-111324_7d386ba4708c/checkpoints/best_checkpoint.pth"
         data:
           name: "time_mmd_agriculture"
           config_path: "data_configs/time_mmd/Algriculture/config.yaml"
@@ -83,9 +81,8 @@ suite:
           e_layers: 2       # Match iTransformer e_layers
           n_heads: 8        # Match iTransformer n_heads
           input_text_dim: 768  # Keep time_mmd specific override
-          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
-          # Note: iTransformer pretrained models may not exist for Time MMD datasets
-          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+          # Pretrained iTransformer checkpoint from itransformer_time_mmd_ttc suite
+          pretrained_model_path: "output/itransformer_time_mmd_ttc_20260113_111324/20260113-111337_1a30b00e94e3/checkpoints/best_checkpoint.pth"
         data:
           name: "time_mmd_climate"
           config_path: "data_configs/time_mmd/Climate/config.yaml"
@@ -125,9 +122,8 @@ suite:
           e_layers: 2       # Match iTransformer e_layers
           n_heads: 8        # Match iTransformer n_heads
           input_text_dim: 768  # Keep time_mmd specific override
-          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
-          # Note: iTransformer pretrained models may not exist for Time MMD datasets
-          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+          # Pretrained iTransformer checkpoint from itransformer_time_mmd_ttc suite
+          pretrained_model_path: "output/itransformer_time_mmd_ttc_20260113_111324/20260113-111345_fc4133a7d35a/checkpoints/best_checkpoint.pth"
         data:
           name: "time_mmd_economy"
           config_path: "data_configs/time_mmd/Economy/config.yaml"
@@ -167,9 +163,8 @@ suite:
           e_layers: 2       # Match iTransformer e_layers
           n_heads: 8        # Match iTransformer n_heads
           input_text_dim: 768  # Keep time_mmd specific override
-          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
-          # Note: iTransformer pretrained models may not exist for Time MMD datasets
-          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+          # Pretrained iTransformer checkpoint from itransformer_time_mmd_ttc suite
+          pretrained_model_path: "output/itransformer_time_mmd_ttc_20260113_111324/20260113-111347_e620a7dd8e8c/checkpoints/best_checkpoint.pth"
         data:
           name: "time_mmd_energy"
           config_path: "data_configs/time_mmd/Energy/config.yaml"
@@ -209,9 +204,8 @@ suite:
           e_layers: 2       # Match iTransformer e_layers
           n_heads: 8        # Match iTransformer n_heads
           input_text_dim: 768  # Keep time_mmd specific override
-          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
-          # Note: iTransformer pretrained models may not exist for Time MMD datasets
-          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+          # Pretrained iTransformer checkpoint from itransformer_time_mmd_ttc suite
+          pretrained_model_path: "output/itransformer_time_mmd_ttc_20260113_111324/20260113-111350_70fcc6977944/checkpoints/best_checkpoint.pth"
         data:
           name: "time_mmd_environment"
           config_path: "data_configs/time_mmd/Environment/config.yaml"
@@ -251,9 +245,8 @@ suite:
           e_layers: 2       # Match iTransformer e_layers
           n_heads: 8        # Match iTransformer n_heads
           input_text_dim: 768  # Keep time_mmd specific override
-          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
-          # Note: iTransformer pretrained models may not exist for Time MMD datasets
-          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+          # Pretrained iTransformer checkpoint from itransformer_time_mmd_ttc suite
+          pretrained_model_path: "output/itransformer_time_mmd_ttc_20260113_111324/20260113-111351_be72e6a68d06/checkpoints/best_checkpoint.pth"
         data:
           name: "time_mmd_health"
           config_path: "data_configs/time_mmd/Public_Health/config.yaml"
@@ -293,9 +286,8 @@ suite:
           e_layers: 2       # Match iTransformer e_layers
           n_heads: 8        # Match iTransformer n_heads
           input_text_dim: 768  # Keep time_mmd specific override
-          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
-          # Note: iTransformer pretrained models may not exist for Time MMD datasets
-          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+          # Pretrained iTransformer checkpoint from itransformer_time_mmd_ttc suite
+          pretrained_model_path: "output/itransformer_time_mmd_ttc_20260113_111324/20260113-111352_3f18c86242c1/checkpoints/best_checkpoint.pth"
         data:
           name: "time_mmd_socialgood"
           config_path: "data_configs/time_mmd/SocialGood/config.yaml"
@@ -337,9 +329,8 @@ suite:
           e_layers: 2       # Match iTransformer e_layers
           n_heads: 8        # Match iTransformer n_heads
           input_text_dim: 768  # Keep time_mmd specific override
-          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
-          # Note: iTransformer pretrained models may not exist for Time MMD datasets
-          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+          # Pretrained iTransformer checkpoint from itransformer_time_mmd_ttc suite
+          pretrained_model_path: "output/itransformer_time_mmd_ttc_20260113_111324/20260113-111355_699118a11fac/checkpoints/best_checkpoint.pth"
         data:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
@@ -383,9 +374,8 @@ suite:
           e_layers: 2       # Match iTransformer e_layers
           n_heads: 8        # Match iTransformer n_heads
           input_text_dim: 768  # Keep ttc specific override
-          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
-          # Note: iTransformer pretrained models may not exist for TTC datasets
-          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+          # Pretrained iTransformer checkpoint from itransformer_time_mmd_ttc suite
+          pretrained_model_path: "output/itransformer_time_mmd_ttc_20260113_111324/20260113-111359_dfdb7276c5e3/checkpoints/best_checkpoint.pth"
         data:
           name: "ttc_weather"
           config_path: "data_configs/ttc/climate/config.yaml"
@@ -425,9 +415,8 @@ suite:
           e_layers: 2       # Match iTransformer e_layers
           n_heads: 8        # Match iTransformer n_heads
           input_text_dim: 768  # Keep ttc specific override
-          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
-          # Note: iTransformer pretrained models may not exist for TTC datasets
-          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+          # Pretrained iTransformer checkpoint from itransformer_time_mmd_ttc suite
+          pretrained_model_path: "output/itransformer_time_mmd_ttc_20260113_111324/20260113-111401_2749fc3e8ccc/checkpoints/best_checkpoint.pth"
         data:
           name: "ttc_medical"
           config_path: "data_configs/ttc/medical/config.yaml"
