@@ -1,0 +1,213 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Experiment Suite: lynx_film_enhanced Ablation Test
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Description: Single-epoch test suite for lynx_film_enhanced ablations on Time MMD Traffic
+# Purpose: Quick validation of all configuration variants before full training
+#
+# Ablation Configurations Tested:
+#   1. Baseline: lynx_film_raw (current best, for comparison)
+#   2. Config A1: shared + global + interpolative (simplest enhanced)
+#   3. Config B1: shared + channel + interpolative (per-variable gates)
+#   4. Config C1: shared + conditional + interpolative (sample-adaptive)
+#   5. Config C2: shared + conditional + additive (residual mixing)
+#
+# Dataset: Time MMD Traffic (small, fast training)
+# Epochs: 1 (test run only)
+#
+# Usage: python -m cli.suite run configs/experiment_suites/lynx_film_enhanced_test.yaml
+#
+# Reference: docs/planning/learned_text_regularization_options.md Part III
+# ═══════════════════════════════════════════════════════════════════════════════
+
+suite:
+  name: "lynx_film_enhanced_test"
+  description: "Single-epoch ablation test for lynx_film_enhanced on Time MMD Traffic"
+  tags: ["lynx_film_enhanced", "ablation", "pytorch", "test", "time_mmd", "traffic"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/lynx_film_enhanced_test"
+    
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Experiments
+  # ═══════════════════════════════════════════════════════════════════════════
+  experiments:
+    
+    # ─────────────────────────────────────────────────────────────────────────
+    # CONFIG A1: shared + global + interpolative (simplest enhanced)
+    # ─────────────────────────────────────────────────────────────────────────
+    - name: "config_A1_shared_global_interpolative"
+      description: "Config A1: shared pathway, global gate, interpolative mixing"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_enhanced"
+          config_path: "model_configs/general/lynx_film_enhanced.yaml"
+        model_config_overrides:
+          # Core architecture (match baseline)
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          # Enhanced options
+          pathway_type: "shared"
+          gate_type: "global"
+          mixing_type: "interpolative"
+          gate_hidden_dim: 32
+          gate_init_bias: 0.0
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 1               # Single epoch for quick test
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+        wandb:
+          tags: ["lynx_film_enhanced_ablation", "config_A1", "shared", "global", "interpolative", "time_mmd_traffic"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_enhanced_test"
+    
+    # ─────────────────────────────────────────────────────────────────────────
+    # CONFIG B1: shared + channel + interpolative (per-variable gates)
+    # ─────────────────────────────────────────────────────────────────────────
+    - name: "config_B1_shared_channel_interpolative"
+      description: "Config B1: shared pathway, channel gate, interpolative mixing"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_enhanced"
+          config_path: "model_configs/general/lynx_film_enhanced.yaml"
+        model_config_overrides:
+          # Core architecture (match baseline)
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          # Enhanced options
+          pathway_type: "shared"
+          gate_type: "channel"
+          mixing_type: "interpolative"
+          gate_hidden_dim: 32
+          gate_init_bias: 0.0
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 1               # Single epoch for quick test
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+        wandb:
+          tags: ["lynx_film_enhanced_ablation", "config_B1", "shared", "channel", "interpolative", "time_mmd_traffic"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_enhanced_test"
+    
+    # ─────────────────────────────────────────────────────────────────────────
+    # CONFIG C1: shared + conditional + interpolative (sample-adaptive)
+    # ─────────────────────────────────────────────────────────────────────────
+    - name: "config_C1_shared_conditional_interpolative"
+      description: "Config C1: shared pathway, conditional gate, interpolative mixing"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_enhanced"
+          config_path: "model_configs/general/lynx_film_enhanced.yaml"
+        model_config_overrides:
+          # Core architecture (match baseline)
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          # Enhanced options
+          pathway_type: "shared"
+          gate_type: "conditional"
+          mixing_type: "interpolative"
+          gate_hidden_dim: 32
+          gate_init_bias: 0.0
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 1               # Single epoch for quick test
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+        wandb:
+          tags: ["lynx_film_enhanced_ablation", "config_C1", "shared", "conditional", "interpolative", "time_mmd_traffic"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_enhanced_test"
+    
+    # ─────────────────────────────────────────────────────────────────────────
+    # CONFIG C2: shared + conditional + additive (residual mixing)
+    # ─────────────────────────────────────────────────────────────────────────
+    - name: "config_C2_shared_conditional_additive"
+      description: "Config C2: shared pathway, conditional gate, additive mixing"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_enhanced"
+          config_path: "model_configs/general/lynx_film_enhanced.yaml"
+        model_config_overrides:
+          # Core architecture (match baseline)
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          # Enhanced options
+          pathway_type: "shared"
+          gate_type: "conditional"
+          mixing_type: "additive"
+          gate_hidden_dim: 32
+          gate_init_bias: 0.0
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 1               # Single epoch for quick test
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+        wandb:
+          tags: ["lynx_film_enhanced_ablation", "config_C2", "shared", "conditional", "additive", "time_mmd_traffic"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_enhanced_test"

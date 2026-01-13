@@ -1,0 +1,120 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# lynx_film_enhanced Model Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Unified architecture with configurable pathway, gate, and mixing types.
+# Extends lynx_film_raw with dual-pathway architecture and gated mixing.
+#
+# See docs/planning/learned_text_regularization_options.md Part III for design.
+# ─────────────────────────────────────────────────────────────────────────────
+
+model: lynx_film_enhanced
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ENHANCED OPTIONS (3 configuration axes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# AXIS 1: Pathway type
+# - "shared": Shared FFN/Attention, separate LayerNorms (Option 9)
+#   - Fewer parameters, good for low data scenarios
+#   - Both base and text pathways learn from scratch
+# - "parallel": Frozen unimodal + learned text pathways (Option 10)
+#   - Requires pre-trained unimodal checkpoint
+#   - More expressive, better with more data
+pathway_type: "shared"
+
+# For pathway_type="parallel", path to pre-trained unimodal checkpoint
+# Required if pathway_type="parallel", ignored otherwise
+unimodal_checkpoint: null
+
+# AXIS 2: Gate type
+# - "global": Single scalar gate for all samples/channels (1 param)
+#   - Simplest, learns single text reliance weight
+# - "channel": Per-channel static gate (C params)
+#   - Per-variable text reliance
+# - "conditional": MLP gate conditioned on x and T
+#   - Sample-adaptive, can learn when text is "trash"
+gate_type: "global"
+
+# Gate configuration (for conditional gate)
+gate_hidden_dim: 32        # MLP hidden dimension
+gate_init_bias: 0.0        # Bias: 0=balanced, +ve=favor text, -ve=favor base
+
+# AXIS 3: Mixing type
+# - "interpolative": z = α*z_text + (1-α)*z_base (convex combination)
+#   - Bounded output, safer
+# - "additive": z = z_base + α*z_text (residual)
+#   - Unbounded, more expressive
+mixing_type: "interpolative"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CORE ARCHITECTURE (same as lynx_film_raw)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Model Parameters
+individual: False
+enc_in: 1
+e_layers: 3                # Number of encoder layers
+n_heads: 4                 # Attention heads
+d_model: 256               # Model dimension
+d_ff: 1024                 # Feed forward dimension (typically 4*d_model)
+dropout: 0.3
+activation: "gelu"
+output_attention: False
+use_norm: False            # Normalization handled externally (via revin)
+factor: 1                  # Attention factor
+
+# Text Encoder Parameters (for generating text embeddings)
+cross_layers: 3
+self_layers: 3
+text_dim: 256              # Dimension of text embeddings
+
+# Normalization
+revin: True                # Use RevIN normalization (recommended)
+# use_norm: False          # Alternative: iTransformer normalization
+
+# Patching
+patch_len: 6
+stride: 3
+hetero_align_stride: True
+
+# Task
+task: TGTSF
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RECOMMENDED CONFIGURATIONS
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Config A1 - Low data, simplest (DEFAULT):
+#   pathway_type: "shared"
+#   gate_type: "global"
+#   mixing_type: "interpolative"
+#
+# Config B1 - Per-variable text reliance:
+#   pathway_type: "shared"
+#   gate_type: "channel"
+#   mixing_type: "interpolative"
+#
+# Config C1 - Adaptive (learns when text is trash):
+#   pathway_type: "shared"
+#   gate_type: "conditional"
+#   mixing_type: "interpolative"
+#
+# Config C2 - Adaptive with residual mixing:
+#   pathway_type: "shared"
+#   gate_type: "conditional"
+#   mixing_type: "additive"
+#
+# Config D1 - With pre-trained unimodal:
+#   pathway_type: "parallel"
+#   gate_type: "global"
+#   mixing_type: "interpolative"
+#   unimodal_checkpoint: "/path/to/checkpoint.pt"
+#
+# Config F1 - Maximum expressiveness:
+#   pathway_type: "parallel"
+#   gate_type: "conditional"
+#   mixing_type: "interpolative"
+#   unimodal_checkpoint: "/path/to/checkpoint.pt"
+#
+# ─────────────────────────────────────────────────────────────────────────────
