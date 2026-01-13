@@ -33,6 +33,7 @@ suite:
           d_ff: 128         # Match iTransformer d_ff
           e_layers: 2       # Match iTransformer e_layers
           n_heads: 8        # Match iTransformer n_heads
+          input_text_dim: 768  # Text embedding dimension for FiLM modulation
           # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
           # Expected path format: outputs/suites/itransformer/jena_atmospheric/{experiment_id}/checkpoints/best_checkpoint.pth
           pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/jena_atmospheric/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"

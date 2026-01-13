@@ -26,6 +26,8 @@ suite:
         model:
           name: "lynx_film_raw"
           config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Text embedding dimension for FiLM modulation
         data:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"

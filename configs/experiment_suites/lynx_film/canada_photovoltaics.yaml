@@ -33,6 +33,7 @@ suite:
           d_ff: 128         # Match iTransformer d_ff
           e_layers: 2       # Match iTransformer e_layers
           n_heads: 8        # Match iTransformer n_heads
+          input_text_dim: 768  # Text embedding dimension for FiLM modulation
           pretrained_model_path: "output/itransformer_canada_photovoltaics_20260113_101629/20260113-101629_d36af4d594fb/checkpoints/best_checkpoint.pth"
         data:
           name: "Canada_photovoltaics_plants"
