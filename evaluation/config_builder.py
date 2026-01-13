@@ -187,6 +187,9 @@ def build_evaluation_config_from_experiment_config(
     # These can be specified in the experiment config under 'evaluation' key
     config_dict = config.model_dump()
     evaluation_options = config_dict.get('evaluation', {})
+    # Handle case where evaluation key exists but is None
+    if evaluation_options is None:
+        evaluation_options = {}
     
     # 8. Build evaluation config
     eval_config = dotdict({
@@ -205,8 +208,9 @@ def build_evaluation_config_from_experiment_config(
     })
     
     # 9. Merge evaluation options (e.g., nan_aware_aggregation, channel_wise, etc.)
-    for key, value in evaluation_options.items():
-        if value is not None:  # Only override if value is explicitly set
-            eval_config[key] = value
+    if isinstance(evaluation_options, dict):
+        for key, value in evaluation_options.items():
+            if value is not None:  # Only override if value is explicitly set
+                eval_config[key] = value
     
     return eval_config
