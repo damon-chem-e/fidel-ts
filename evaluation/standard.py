@@ -95,13 +95,30 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
             if config.task == 'TSF':
                 prediction = model(x=batch_x)
             elif config.task == 'TGTSF':
+                # Convert y_hetero (news) to tensor
                 if not isinstance(y_hetero, torch.Tensor):
                     y_hetero = torch.as_tensor(y_hetero, dtype=torch.float32)
                 y_hetero = y_hetero.to(device)
+                
+                # Convert hetero_channel to tensor
                 if not isinstance(hetero_channel, torch.Tensor):
                     hetero_channel = torch.as_tensor(hetero_channel, dtype=torch.float32)
                 hetero_channel = hetero_channel.to(device)
-                prediction = model(x=batch_x, news=y_hetero, channel_description=hetero_channel)
+                
+                # IMPORTANT: Also pass x_hetero (historical_events) for models that use timestamp_semantics
+                # Models like LYNX internally select between news and historical_events based on timestamp_semantics
+                # - timestamp_semantics='t_about': uses news (y_hetero)
+                # - timestamp_semantics='t_known': uses historical_events (x_hetero)
+                if x_hetero is not None:
+                    if not isinstance(x_hetero, torch.Tensor):
+                        x_hetero = torch.as_tensor(x_hetero, dtype=torch.float32)
+                    x_hetero = x_hetero.to(device)
+                    # Pass both news and historical_events - let model decide which to use
+                    prediction = model(x=batch_x, news=y_hetero, channel_description=hetero_channel, 
+                                     historical_events=x_hetero)
+                else:
+                    # Standard TGTSF: only pass news
+                    prediction = model(x=batch_x, news=y_hetero, channel_description=hetero_channel)
             elif config.task == 'MTSF':
                 if not isinstance(x_hetero, torch.Tensor):
                     x_hetero = torch.as_tensor(x_hetero, dtype=torch.float32)

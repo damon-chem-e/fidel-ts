@@ -74,7 +74,12 @@ def _forward_step_standalone(iter_data, model, config, device):
         prediction = model(x=batch_x)
     elif config.task == 'TGTSF':
         # Text-guided time series forecasting
-        prediction = model(x=batch_x, news=batch_y_hetero, channel_description=hetero_channel)
+        # IMPORTANT: Pass both news (y_hetero) and historical_events (x_hetero) for models that use timestamp_semantics
+        # Models like LYNX internally select between them based on timestamp_semantics:
+        # - timestamp_semantics='t_about': uses news (y_hetero)
+        # - timestamp_semantics='t_known': uses historical_events (x_hetero)
+        prediction = model(x=batch_x, news=batch_y_hetero, channel_description=hetero_channel,
+                          historical_events=batch_x_hetero)
     elif config.task == 'MTSF':
         # Multimodal time series forecasting
         prediction = model(x=batch_x, historical_events=batch_x_hetero)

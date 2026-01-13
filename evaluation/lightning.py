@@ -43,14 +43,36 @@ def run_test(loader, model, config, device, indexes, channel_wise):
         if indexes is not None and i not in indexes:
             continue
         with torch.no_grad():
-            batch_x, batch_y, _, _, _, y_hetero, _, _, _, hetero_channel = iter_data
+            # Unpack batch: sample_id, seq_x, seq_y, x_time, y_time, x_hetero, y_hetero,
+            # hetero_x_time, hetero_y_time, hetero_general, hetero_channel, x_time_features, y_time_features
+            _, batch_x, batch_y, _, _, x_hetero, y_hetero, _, _, _, hetero_channel, _, _ = iter_data
 
             batch_x = torch.tensor(batch_x).to(device)
             batch_y = torch.tensor(batch_y).to(device)
-            y_hetero = torch.tensor(y_hetero).to(device)
-            hetero_channel = torch.tensor(hetero_channel).to(device)
-
-            prediction = model(x=batch_x) if config.task == 'TSF' else model(x=batch_x, news=y_hetero, channel_description=hetero_channel)
+            
+            if config.task == 'TSF':
+                prediction = model(x=batch_x)
+            elif config.task == 'TGTSF':
+                y_hetero = torch.tensor(y_hetero).to(device)
+                hetero_channel = torch.tensor(hetero_channel).to(device)
+                
+                # IMPORTANT: Also pass x_hetero (historical_events) for models that use timestamp_semantics
+                # Models like LYNX internally select between news and historical_events based on timestamp_semantics
+                if x_hetero is not None:
+                    x_hetero = torch.tensor(x_hetero).to(device)
+                    # Pass both news and historical_events - let model decide which to use
+                    prediction = model(x=batch_x, news=y_hetero, channel_description=hetero_channel,
+                                     historical_events=x_hetero)
+                else:
+                    # Standard TGTSF: only pass news
+                    prediction = model(x=batch_x, news=y_hetero, channel_description=hetero_channel)
+            elif config.task == 'MTSF':
+                x_hetero = torch.tensor(x_hetero).to(device)
+                prediction = model(x=batch_x, historical_events=x_hetero)
+            else:
+                # Default to TSF
+                prediction = model(x=batch_x)
+                
             prediction = prediction[:, -config.output_len:, :]  # [B, L, C]
 
             if channel_wise:
