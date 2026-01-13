@@ -145,7 +145,8 @@ class EarlyStopping:
         Save the model checkpoint when validation loss improves.
         
         This method saves the model's state dictionary to a checkpoint file
-        when a new best validation loss is achieved.
+        when a new best validation loss is achieved. Handles torch.compile
+        by saving the underlying model's state_dict (without _orig_mod prefix).
         
         Args:
             val_loss (float): Current validation loss that represents an improvement.
@@ -160,7 +161,26 @@ class EarlyStopping:
         """
         if self.verbose:
             print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
-        torch.save(model.state_dict(), path + '/' + 'checkpoint.pth')
+        
+        # Handle torch.compile: access underlying model to save state_dict without _orig_mod prefix
+        # This ensures checkpoints are consistent regardless of compilation status
+        # First check if model is wrapped in DataParallel
+        if hasattr(model, 'module'):
+            # Model wrapped in DataParallel
+            if hasattr(model.module, '_orig_mod'):
+                # DataParallel + compiled - access underlying model
+                state_dict = model.module._orig_mod.state_dict()
+            else:
+                # DataParallel but not compiled - save underlying module
+                state_dict = model.module.state_dict()
+        elif hasattr(model, '_orig_mod'):
+            # Model is compiled (not DataParallel) - save underlying model's state_dict
+            state_dict = model._orig_mod.state_dict()
+        else:
+            # Model not compiled and not DataParallel - save normally
+            state_dict = model.state_dict()
+        
+        torch.save(state_dict, path + '/' + 'checkpoint.pth')
         self.val_loss_min = val_loss
 
 

@@ -653,11 +653,34 @@ class Experiment(Exp_Basic):
                     # Try loading directly (for Lightning checkpoints converted to PyTorch format)
                     state_dict = checkpoint
                 
-                # Handle torch.compile checkpoints (state dict keys have "_orig_mod." prefix)
-                # Check if this is a compiled model checkpoint
-                if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
+                # Handle torch.compile checkpoint loading
+                # Check if model is compiled and adjust checkpoint keys accordingly
+                is_data_parallel = hasattr(self.model, 'module')
+                model_is_compiled = hasattr(self.model, '_orig_mod') or (
+                    is_data_parallel and hasattr(self.model.module, '_orig_mod')
+                )
+                checkpoint_has_prefix = any(
+                    key.startswith('_orig_mod.') or key.startswith('module._orig_mod.') 
+                    for key in state_dict.keys()
+                )
+                
+                if checkpoint_has_prefix and not model_is_compiled:
+                    # Checkpoint has prefix but model is not compiled - strip prefix
                     self.exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys")
-                    state_dict = {key.replace('_orig_mod.', ''): value for key in state_dict.keys() for value in [state_dict[key]]}
+                    # Strip both possible prefixes
+                    state_dict = {
+                        key.replace('module._orig_mod.', 'module.' if is_data_parallel else '').replace('_orig_mod.', ''): value 
+                        for key, value in state_dict.items()
+                    }
+                elif not checkpoint_has_prefix and model_is_compiled:
+                    # Checkpoint doesn't have prefix but model is compiled - add appropriate prefix
+                    self.exp_manager.logger.info("Model is compiled but checkpoint lacks prefix - adding appropriate prefix to checkpoint keys")
+                    if is_data_parallel:
+                        # DataParallel + compiled: need 'module._orig_mod.' prefix
+                        state_dict = {f'module._orig_mod.{key}': value for key, value in state_dict.items()}
+                    else:
+                        # Compiled but not DataParallel: need '_orig_mod.' prefix
+                        state_dict = {f'_orig_mod.{key}': value for key, value in state_dict.items()}
                 
                 # Load model state
                 self.model.load_state_dict(state_dict)
@@ -753,19 +776,60 @@ class Experiment(Exp_Basic):
         best_model_path = os.path.join(path, 'checkpoint.pth')
         checkpoint = torch.load(best_model_path)
         
-        # Handle torch.compile checkpoints (state dict keys have "_orig_mod." prefix)
-        # Check if this is a compiled model checkpoint
-        if isinstance(checkpoint, dict) and any(key.startswith('_orig_mod.') for key in checkpoint.keys()):
+        # Handle torch.compile checkpoint loading
+        # Check if model is compiled and adjust checkpoint keys accordingly
+        is_data_parallel = hasattr(self.model, 'module')
+        model_is_compiled = hasattr(self.model, '_orig_mod') or (
+            is_data_parallel and hasattr(self.model.module, '_orig_mod')
+        )
+        checkpoint_has_prefix = isinstance(checkpoint, dict) and any(
+            key.startswith('_orig_mod.') or key.startswith('module._orig_mod.') for key in checkpoint.keys()
+        )
+        
+        if checkpoint_has_prefix and not model_is_compiled:
+            # Checkpoint has prefix but model is not compiled - strip prefix
             if self.exp_manager:
                 self.exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys")
-            checkpoint = {key.replace('_orig_mod.', ''): value for key in checkpoint.keys() for value in [checkpoint[key]]}
+            # Strip both possible prefixes
+            checkpoint = {
+                key.replace('module._orig_mod.', 'module.' if is_data_parallel else '').replace('_orig_mod.', ''): value 
+                for key, value in checkpoint.items()
+            }
+        elif not checkpoint_has_prefix and model_is_compiled:
+            # Checkpoint doesn't have prefix but model is compiled - add appropriate prefix
+            if self.exp_manager:
+                self.exp_manager.logger.info("Model is compiled but checkpoint lacks prefix - adding appropriate prefix to checkpoint keys")
+            if is_data_parallel:
+                # DataParallel + compiled: need 'module._orig_mod.' prefix
+                checkpoint = {f'module._orig_mod.{key}': value for key, value in checkpoint.items()}
+            else:
+                # Compiled but not DataParallel: need '_orig_mod.' prefix
+                checkpoint = {f'_orig_mod.{key}': value for key, value in checkpoint.items()}
         
         self.model.load_state_dict(checkpoint)
         
         # Save checkpoint to ExperimentManager if available
         if self.exp_manager is not None:
+            # Handle torch.compile: save underlying model's state_dict (without _orig_mod prefix)
+            # This ensures checkpoints are consistent regardless of compilation status
+            # First check if model is wrapped in DataParallel
+            if hasattr(self.model, 'module'):
+                # Model wrapped in DataParallel
+                if hasattr(self.model.module, '_orig_mod'):
+                    # DataParallel + compiled - access underlying model
+                    model_state_dict = self.model.module._orig_mod.state_dict()
+                else:
+                    # DataParallel but not compiled - save underlying module
+                    model_state_dict = self.model.module.state_dict()
+            elif hasattr(self.model, '_orig_mod'):
+                # Model is compiled (not DataParallel) - save underlying model's state_dict
+                model_state_dict = self.model._orig_mod.state_dict()
+            else:
+                # Model not compiled and not DataParallel - save normally
+                model_state_dict = self.model.state_dict()
+            
             checkpoint = {
-                'model_state_dict': self.model.state_dict(),
+                'model_state_dict': model_state_dict,
                 'optimizer_state_dict': model_optim.state_dict(),
                 'epoch': self.args.train_epochs,
                 'train_loss': train_loss,

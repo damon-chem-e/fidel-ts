@@ -28,6 +28,7 @@ suite:
           # Match original iTransformer bash script data config
           config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_H.yaml"
         training:
+          epochs: 30
           # Match lynx_film_raw Jena_Atmospheric_Physics input/output lengths
           input_len: 360      # 15 days at hourly intervals
           output_len: 168     # 1 week at hourly intervals (second smallest horizon)
