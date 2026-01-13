@@ -83,17 +83,29 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
             # hetero_x_time, hetero_y_time, hetero_general, hetero_channel, x_time_features, y_time_features
             sample_ids, batch_x, batch_y, _, _, x_hetero, y_hetero, _, _, _, hetero_channel, _, _ = iter_data
 
-            batch_x = torch.tensor(batch_x).to(device)
-            batch_y = torch.tensor(batch_y).to(device)
+            # Convert to tensors if not already (handles numpy arrays and tensors)
+            if not isinstance(batch_x, torch.Tensor):
+                batch_x = torch.as_tensor(batch_x, dtype=torch.float32)
+            batch_x = batch_x.to(device)
+            
+            if not isinstance(batch_y, torch.Tensor):
+                batch_y = torch.as_tensor(batch_y, dtype=torch.float32)
+            batch_y = batch_y.to(device)
             
             if config.task == 'TSF':
                 prediction = model(x=batch_x)
             elif config.task == 'TGTSF':
-                y_hetero = torch.tensor(y_hetero).to(device)
-                hetero_channel = torch.tensor(hetero_channel).to(device)
+                if not isinstance(y_hetero, torch.Tensor):
+                    y_hetero = torch.as_tensor(y_hetero, dtype=torch.float32)
+                y_hetero = y_hetero.to(device)
+                if not isinstance(hetero_channel, torch.Tensor):
+                    hetero_channel = torch.as_tensor(hetero_channel, dtype=torch.float32)
+                hetero_channel = hetero_channel.to(device)
                 prediction = model(x=batch_x, news=y_hetero, channel_description=hetero_channel)
             elif config.task == 'MTSF':
-                x_hetero = torch.tensor(x_hetero).to(device)
+                if not isinstance(x_hetero, torch.Tensor):
+                    x_hetero = torch.as_tensor(x_hetero, dtype=torch.float32)
+                x_hetero = x_hetero.to(device)
                 prediction = model(x=batch_x, historical_events=x_hetero)
             else:
                 # todo
@@ -297,7 +309,16 @@ def _load_checkpoint_config(experiment_dir, eval_config, config):
         else:
             raise FileNotFoundError(f"Data config not found: {data_config_path}")
     
-    # Use provided data_config override if available
+    # CRITICAL: Apply data_config overrides from experiment config
+    # These overrides (e.g., timemmd_text_output) were used during training
+    # and must be applied to ensure the data is loaded in the same format
+    data_config_overrides = checkpoint_config_dict.get('data_config', {})
+    if data_config_overrides:
+        print(f"[Info] Applying data_config overrides: {data_config_overrides}")
+        for key, value in data_config_overrides.items():
+            checkpoint_config.data_config[key] = value
+    
+    # Use provided data_config override if available (CLI override takes precedence)
     if hasattr(config, 'data_config') and config.data_config:
         checkpoint_config.data_config = dotdict(yaml.safe_load(open(config.data_config, 'r')))
     

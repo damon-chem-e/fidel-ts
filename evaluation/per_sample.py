@@ -491,6 +491,16 @@ def _load_checkpoint_config(ckpt_path, eval_config, config):
         
         # Merge model_config overrides from experiment_config.yaml
         _merge_model_config_overrides(checkpoint_config, config_dict)
+        
+        # Merge data_config overrides from experiment_config.yaml
+        # These overrides (e.g., timemmd_text_output) were used during training
+        data_config_overrides = config_dict.get('data_config', {})
+        if data_config_overrides:
+            print(f"[Info] Applying data_config overrides: {data_config_overrides}")
+            if not isinstance(checkpoint_config.data_config, dotdict):
+                checkpoint_config.data_config = dotdict(checkpoint_config.data_config) if checkpoint_config.data_config else dotdict({})
+            for key, value in data_config_overrides.items():
+                checkpoint_config.data_config[key] = value
     else:
         # Legacy format: args.json
         checkpoint_config = _load_legacy_config(ckpt_path)

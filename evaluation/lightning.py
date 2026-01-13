@@ -243,6 +243,15 @@ def evaluate(config):
                     checkpoint_config.data_config = dotdict(yaml.safe_load(f))
             else:
                 raise FileNotFoundError(f"Data config not found: {data_config_path}")
+        
+        # CRITICAL: Apply data_config overrides from experiment config
+        # These overrides (e.g., timemmd_text_output) were used during training
+        # and must be applied to ensure the data is loaded in the same format
+        data_config_overrides = checkpoint_config_dict.get('data_config', {})
+        if data_config_overrides:
+            print(f"[Info] Applying data_config overrides: {data_config_overrides}")
+            for key, value in data_config_overrides.items():
+                checkpoint_config.data_config[key] = value
     else:
         # Legacy format: args.json (flat structure)
         # In legacy format, model_config and data_config are already dictionaries
