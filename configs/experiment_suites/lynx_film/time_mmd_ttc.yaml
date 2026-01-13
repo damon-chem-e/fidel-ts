@@ -1,0 +1,454 @@
+# Experiment Suite: lynx_film on Time MMD and TTC datasets
+# Description: Train lynx_film model on all Time MMD (Liu et al., 2024b) and TTC (Kim et al., 2024) datasets using pretrained iTransformer checkpoints
+# Usage: python -m cli.suite run configs/experiment_suites/lynx_film/time_mmd_ttc.yaml
+# Note: Input/output lens follow Table 4 from the original papers:
+#       - Time MMD datasets use 7:1:2 train/val/test ratio splits
+#       - TTC datasets use 7:1:2 train/val/test ratio splits
+# NOTE: pretrained_model_path contains placeholders that must be filled in before running
+#       Note that iTransformer pretrained models may not exist for all Time MMD/TTC datasets
+
+suite:
+  name: "lynx_film_time_mmd_ttc"
+  description: "Train lynx_film model on all Time MMD and TTC datasets using pretrained iTransformer checkpoints"
+  tags: ["lynx_film", "multimodal", "pytorch", "time_mmd", "ttc", "film"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: false
+    log_dir: "./logs/suites/lynx_film/time_mmd_ttc"
+    
+  # Experiments in this suite
+  experiments:
+    # ===========================================
+    # Time MMD Datasets (Liu et al., 2024b)
+    # ===========================================
+    
+    # Agriculture: context=24, prediction=6
+    - name: "lynx_film_timemmd_agriculture"
+      description: "lynx_film on Time MMD Agriculture dataset using pretrained iTransformer"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film"
+          config_path: "model_configs/general/lynx_film.yaml"
+        model_config_overrides:
+          # Model shape and hparams must match pretrained iTransformer from experiment_suites/itransformer
+          d_model: 128      # Match iTransformer d_model (changed from 1024 to match pretrained model)
+          d_ff: 128         # Match iTransformer d_ff
+          e_layers: 2       # Match iTransformer e_layers
+          n_heads: 8        # Match iTransformer n_heads
+          input_text_dim: 768  # Keep time_mmd specific override
+          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
+          # Note: iTransformer pretrained models may not exist for Time MMD datasets
+          # Expected path format: outputs/suites/itransformer/{dataset}/{experiment_id}/checkpoints/best_checkpoint.pth
+          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+        data:
+          name: "time_mmd_agriculture"
+          config_path: "data_configs/time_mmd/Algriculture/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film", "time_mmd_agriculture"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film/time_mmd_ttc"
+    
+    # Climate: context=24, prediction=6
+    - name: "lynx_film_timemmd_climate"
+      description: "lynx_film on Time MMD Climate dataset using pretrained iTransformer"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film"
+          config_path: "model_configs/general/lynx_film.yaml"
+        model_config_overrides:
+          # Model shape and hparams must match pretrained iTransformer from experiment_suites/itransformer
+          d_model: 128      # Match iTransformer d_model (changed from 1024 to match pretrained model)
+          d_ff: 128         # Match iTransformer d_ff
+          e_layers: 2       # Match iTransformer e_layers
+          n_heads: 8        # Match iTransformer n_heads
+          input_text_dim: 768  # Keep time_mmd specific override
+          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
+          # Note: iTransformer pretrained models may not exist for Time MMD datasets
+          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+        data:
+          name: "time_mmd_climate"
+          config_path: "data_configs/time_mmd/Climate/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film", "time_mmd_climate"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film/time_mmd_ttc"
+    
+    # Economy: context=24, prediction=6
+    - name: "lynx_film_timemmd_economy"
+      description: "lynx_film on Time MMD Economy dataset using pretrained iTransformer"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film"
+          config_path: "model_configs/general/lynx_film.yaml"
+        model_config_overrides:
+          # Model shape and hparams must match pretrained iTransformer from experiment_suites/itransformer
+          d_model: 128      # Match iTransformer d_model (changed from 1024 to match pretrained model)
+          d_ff: 128         # Match iTransformer d_ff
+          e_layers: 2       # Match iTransformer e_layers
+          n_heads: 8        # Match iTransformer n_heads
+          input_text_dim: 768  # Keep time_mmd specific override
+          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
+          # Note: iTransformer pretrained models may not exist for Time MMD datasets
+          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+        data:
+          name: "time_mmd_economy"
+          config_path: "data_configs/time_mmd/Economy/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film", "time_mmd_economy"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film/time_mmd_ttc"
+    
+    # Energy: context=24, prediction=12
+    - name: "lynx_film_timemmd_energy"
+      description: "lynx_film on Time MMD Energy dataset using pretrained iTransformer"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film"
+          config_path: "model_configs/general/lynx_film.yaml"
+        model_config_overrides:
+          # Model shape and hparams must match pretrained iTransformer from experiment_suites/itransformer
+          d_model: 128      # Match iTransformer d_model (changed from 1024 to match pretrained model)
+          d_ff: 128         # Match iTransformer d_ff
+          e_layers: 2       # Match iTransformer e_layers
+          n_heads: 8        # Match iTransformer n_heads
+          input_text_dim: 768  # Keep time_mmd specific override
+          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
+          # Note: iTransformer pretrained models may not exist for Time MMD datasets
+          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+        data:
+          name: "time_mmd_energy"
+          config_path: "data_configs/time_mmd/Energy/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 12      # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film", "time_mmd_energy"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film/time_mmd_ttc"
+    
+    # Environment: context=24, prediction=48
+    - name: "lynx_film_timemmd_environment"
+      description: "lynx_film on Time MMD Environment dataset using pretrained iTransformer"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film"
+          config_path: "model_configs/general/lynx_film.yaml"
+        model_config_overrides:
+          # Model shape and hparams must match pretrained iTransformer from experiment_suites/itransformer
+          d_model: 128      # Match iTransformer d_model (changed from 1024 to match pretrained model)
+          d_ff: 128         # Match iTransformer d_ff
+          e_layers: 2       # Match iTransformer e_layers
+          n_heads: 8        # Match iTransformer n_heads
+          input_text_dim: 768  # Keep time_mmd specific override
+          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
+          # Note: iTransformer pretrained models may not exist for Time MMD datasets
+          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+        data:
+          name: "time_mmd_environment"
+          config_path: "data_configs/time_mmd/Environment/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 48      # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film", "time_mmd_environment"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film/time_mmd_ttc"
+    
+    # Health (Public_Health): context=24, prediction=12
+    - name: "lynx_film_timemmd_health"
+      description: "lynx_film on Time MMD Health dataset using pretrained iTransformer"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film"
+          config_path: "model_configs/general/lynx_film.yaml"
+        model_config_overrides:
+          # Model shape and hparams must match pretrained iTransformer from experiment_suites/itransformer
+          d_model: 128      # Match iTransformer d_model (changed from 1024 to match pretrained model)
+          d_ff: 128         # Match iTransformer d_ff
+          e_layers: 2       # Match iTransformer e_layers
+          n_heads: 8        # Match iTransformer n_heads
+          input_text_dim: 768  # Keep time_mmd specific override
+          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
+          # Note: iTransformer pretrained models may not exist for Time MMD datasets
+          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+        data:
+          name: "time_mmd_health"
+          config_path: "data_configs/time_mmd/Public_Health/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 12      # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film", "time_mmd_health"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film/time_mmd_ttc"
+    
+    # Socialgood: context=24, prediction=6
+    - name: "lynx_film_timemmd_socialgood"
+      description: "lynx_film on Time MMD SocialGood dataset using pretrained iTransformer"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film"
+          config_path: "model_configs/general/lynx_film.yaml"
+        model_config_overrides:
+          # Model shape and hparams must match pretrained iTransformer from experiment_suites/itransformer
+          d_model: 128      # Match iTransformer d_model (changed from 1024 to match pretrained model)
+          d_ff: 128         # Match iTransformer d_ff
+          e_layers: 2       # Match iTransformer e_layers
+          n_heads: 8        # Match iTransformer n_heads
+          input_text_dim: 768  # Keep time_mmd specific override
+          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
+          # Note: iTransformer pretrained models may not exist for Time MMD datasets
+          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+        data:
+          name: "time_mmd_socialgood"
+          config_path: "data_configs/time_mmd/SocialGood/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        evaluation:
+          filter_nan_samples: true  # Filter out samples with NaN losses
+        wandb:
+          tags: ["lynx_film", "time_mmd_socialgood"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film/time_mmd_ttc"
+    
+    # Traffic: context=24, prediction=6
+    - name: "lynx_film_timemmd_traffic"
+      description: "lynx_film on Time MMD Traffic dataset using pretrained iTransformer"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film"
+          config_path: "model_configs/general/lynx_film.yaml"
+        model_config_overrides:
+          # Model shape and hparams must match pretrained iTransformer from experiment_suites/itransformer
+          d_model: 128      # Match iTransformer d_model (changed from 1024 to match pretrained model)
+          d_ff: 128         # Match iTransformer d_ff
+          e_layers: 2       # Match iTransformer e_layers
+          n_heads: 8        # Match iTransformer n_heads
+          input_text_dim: 768  # Keep time_mmd specific override
+          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
+          # Note: iTransformer pretrained models may not exist for Time MMD datasets
+          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film", "time_mmd_traffic"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film/time_mmd_ttc"
+    
+    # ===========================================
+    # TTC Datasets (Kim et al., 2024)
+    # ===========================================
+    
+    # Weather: context=7, prediction=7
+    - name: "lynx_film_ttc_weather"
+      description: "lynx_film on TTC Weather dataset using pretrained iTransformer"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film"
+          config_path: "model_configs/general/lynx_film.yaml"
+        model_config_overrides:
+          # Model shape and hparams must match pretrained iTransformer from experiment_suites/itransformer
+          d_model: 128      # Match iTransformer d_model (changed from 1024 to match pretrained model)
+          d_ff: 128         # Match iTransformer d_ff
+          e_layers: 2       # Match iTransformer e_layers
+          n_heads: 8        # Match iTransformer n_heads
+          input_text_dim: 768  # Keep ttc specific override
+          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
+          # Note: iTransformer pretrained models may not exist for TTC datasets
+          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+        data:
+          name: "ttc_weather"
+          config_path: "data_configs/ttc/climate/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          input_len: 7        # Context length from Table 4
+          output_len: 7       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: false  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film", "ttc_weather"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film/time_mmd_ttc"
+    
+    # Medical: context=7, prediction=7
+    - name: "lynx_film_ttc_medical"
+      description: "lynx_film on TTC Medical dataset using pretrained iTransformer"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film"
+          config_path: "model_configs/general/lynx_film.yaml"
+        model_config_overrides:
+          # Model shape and hparams must match pretrained iTransformer from experiment_suites/itransformer
+          d_model: 128      # Match iTransformer d_model (changed from 1024 to match pretrained model)
+          d_ff: 128         # Match iTransformer d_ff
+          e_layers: 2       # Match iTransformer e_layers
+          n_heads: 8        # Match iTransformer n_heads
+          input_text_dim: 768  # Keep ttc specific override
+          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
+          # Note: iTransformer pretrained models may not exist for TTC datasets
+          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/PLACEHOLDER_DATASET/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+        data:
+          name: "ttc_medical"
+          config_path: "data_configs/ttc/medical/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+          filter_insufficient_entities: true  # Filter out entities without enough data for 7/7 input/output with 70/10/20 split
+          missing_value_strategy: forward_fill_indicators  # Forward fill missing values and create indicator variables
+        training:
+          input_len: 7        # Context length from Table 4
+          output_len: 7       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: false  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film", "ttc_medical"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film/time_mmd_ttc"

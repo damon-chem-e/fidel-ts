@@ -1,0 +1,58 @@
+# Experiment Suite: lynx_film on Bear_room
+# Description: Train lynx_film model on Bear_room dataset using pretrained iTransformer checkpoint
+# Usage: python -m cli.suite run configs/experiment_suites/lynx_film/bear_room.yaml
+# Note: Bear_room uses 5-min sampling (not downsampled per paper)
+#       Input: 288 samples = 1 day, Output: 144 samples = 12 hours (second smallest prediction)
+#       Split points: {Sep. 1, 2020, Oct. 1, 2020}
+# NOTE: pretrained_model_path contains a placeholder that must be filled in before running
+
+suite:
+  name: "lynx_film_bear_room"
+  description: "Train lynx_film model on Bear_room dataset with 1-day context, 12-hour prediction using pretrained iTransformer"
+  tags: ["lynx_film", "multimodal", "pytorch", "fidel-ts", "bear_room", "film"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/lynx_film/bear_room"
+    
+  # Experiments in this suite
+  experiments:
+    - name: "lynx_film_bear_room"
+      description: "lynx_film on Bear_room with 1-day context, 12-hour prediction using pretrained iTransformer"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film"
+          config_path: "model_configs/general/lynx_film.yaml"
+        model_config_overrides:
+          # Model shape and hparams must match pretrained iTransformer from experiment_suites/itransformer
+          d_model: 128      # Match iTransformer d_model
+          d_ff: 128         # Match iTransformer d_ff
+          e_layers: 2       # Match iTransformer e_layers
+          n_heads: 8        # Match iTransformer n_heads
+          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
+          # Expected path format: outputs/suites/itransformer/bear_room/{experiment_id}/checkpoints/best_checkpoint.pth
+          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/bear_room/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+        data:
+          name: "Bear_room"
+          config_path: "data_configs/Bear_room/fullBear_hetero_TGTSF.yaml"
+        training:
+          input_len: 288      # 1 day at 5-min intervals (288 = 24h * 12)
+          output_len: 144     # 12 hours at 5-min intervals (second smallest: {12, 144, 288, 576})
+          batch_size: 768
+          learning_rate: 8.66e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film", "bear_room"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film/bear_room"

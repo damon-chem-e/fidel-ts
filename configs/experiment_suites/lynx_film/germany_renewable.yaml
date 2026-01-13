@@ -1,0 +1,58 @@
+# Experiment Suite: lynx_film on Germany_Renewable_Power_Grid
+# Description: Train lynx_film model on Germany_Renewable_Power_Grid dataset using pretrained iTransformer checkpoint
+# Usage: python -m cli.suite run configs/experiment_suites/lynx_film/germany_renewable.yaml
+# Note: Germany_Renewable_Power_Grid uses hourly sampling (downsampled to -h)
+#       Input: 360 samples = 15 days (half month), Output: 168 samples = 1 week (second smallest)
+#       Split points: {Jan. 1, 2021, Jan. 1, 2022}
+# NOTE: pretrained_model_path contains a placeholder that must be filled in before running
+
+suite:
+  name: "lynx_film_germany_renewable"
+  description: "Train lynx_film model on Germany_Renewable_Power_Grid dataset with 15-day context, 1-week prediction using pretrained iTransformer"
+  tags: ["lynx_film", "multimodal", "pytorch", "fidel-ts", "germany_renewable", "film"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/lynx_film/germany_renewable"
+    
+  # Experiments in this suite
+  experiments:
+    - name: "lynx_film_germany_renewable"
+      description: "lynx_film on Germany_Renewable_Power_Grid with 15-day context, 1-week prediction using pretrained iTransformer"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film"
+          config_path: "model_configs/general/lynx_film.yaml"
+        model_config_overrides:
+          # Model shape and hparams must match pretrained iTransformer from experiment_suites/itransformer
+          d_model: 128      # Match iTransformer d_model
+          d_ff: 128         # Match iTransformer d_ff
+          e_layers: 2       # Match iTransformer e_layers
+          n_heads: 8        # Match iTransformer n_heads
+          # TODO: Fill in pretrained_model_path with actual checkpoint path from itransformer pretraining
+          # Expected path format: outputs/suites/itransformer/germany_renewable/{experiment_id}/checkpoints/best_checkpoint.pth
+          pretrained_model_path: "PLACEHOLDER_FILL_IN_LATER_outputs/suites/itransformer/germany_renewable/PLACEHOLDER_EXPERIMENT_ID/checkpoints/best_checkpoint.pth"
+        data:
+          name: "Germany_Renewable_Power_Grid"
+          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 360      # 15 days at hourly intervals (half month)
+          output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720})
+          batch_size: 768
+          learning_rate: 8.66e-4
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film", "germany_renewable"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film/germany_renewable"
