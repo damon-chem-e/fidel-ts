@@ -2397,7 +2397,7 @@ class Model(nn.Module):
 
 ## Ablation Study Plan
 
-### Recommended Experiment Order
+### Original Suggested Ablation Plan
 
 1. **Baseline comparisons:**
    - lynx_film_raw (current)
@@ -2419,12 +2419,100 @@ class Model(nn.Module):
    - Test best configs on text-harmful datasets
    - Measure gap to unimodal on each
 
+---
+
+### Revised Ablation Plan
+
+**Strategy**: Sequential ablation with controlled variables, starting with fast datasets (Time-MMD, TTC) and moving to larger datasets (Fidel-TS) with focused comparisons.
+
+#### Phase 1: Pathway Type Ablation (Time-MMD & TTC)
+
+**Fixed**: `gate_type="channel"`, `mixing_type="interpolative"`
+
+**Ablate**: `pathway_type`
+
+| Config | pathway_type | gate_type | mixing_type | Description |
+|--------|--------------|-----------|-------------|-------------|
+| **Baseline** | N/A | N/A | N/A | lynx_film_raw (current) |
+| **Baseline** | N/A | N/A | N/A | lynx_film (current, residual) |
+| **B1** | shared | channel | interpolative | Shared backbone with per-channel gates |
+| **E1** | parallel | channel | interpolative | Frozen unimodal + learned text, per-channel gates |
+
+**Outcome**: Identify whether `shared` or `parallel` works better on small/fast datasets.
+
+**Winner**: Let's call it `pathway_type=BEST_PATH`
+
+---
+
+#### Phase 2: Mixing Type Ablation (Time-MMD & TTC)
+
+**Fixed**: `gate_type="channel"`, `pathway_type=BEST_PATH` (from Phase 1)
+
+**Ablate**: `mixing_type`
+
+| Config | pathway_type | gate_type | mixing_type | Description |
+|--------|--------------|-----------|-------------|-------------|
+| **From Phase 1** | BEST_PATH | channel | interpolative | Winner from Phase 1 |
+| **New** | BEST_PATH | channel | additive | Same pathway, additive mixing |
+
+**Outcome**: Identify whether `interpolative` or `additive` mixing works better.
+
+**Winner**: Let's call it `mixing_type=BEST_MIX`
+
+---
+
+#### Phase 3: Gate Type Ablation (Time-MMD & TTC)
+
+**Fixed**: `pathway_type=BEST_PATH` (from Phase 1), `mixing_type=BEST_MIX` (from Phase 2)
+
+**Ablate**: `gate_type`
+
+| Config | pathway_type | gate_type | mixing_type | Description |
+|--------|--------------|-----------|-------------|-------------|
+| **From Phase 2** | BEST_PATH | channel | BEST_MIX | Winner from Phase 2 |
+| **New** | BEST_PATH | conditional | BEST_MIX | Sample-adaptive gate (learns when text is trash) |
+
+**Outcome**: Identify whether per-channel static gates or input-conditioned gates work better.
+
+**Winner**: Let's call this the **optimal configuration for Time-MMD/TTC**.
+
+---
+
+#### Phase 4: Validation on Fidel-TS (Focused)
+
+**Strategy**: Take the optimal configuration from Phase 3 and validate on larger Fidel-TS datasets. Optionally compare against a few key alternatives to confirm findings generalize.
+
+**Experiments**:
+
+1. **Optimal config from Phase 3** (BEST_PATH + BEST_MIX + best gate_type)
+2. **Key alternatives** (if computational budget allows):
+   - lynx_film_raw (baseline)
+   - lynx_film (baseline)
+   - One contrastive config (e.g., if Phase 3 winner was `shared+interpolative+conditional`, test `parallel+additive+channel`)
+
+**Outcome**: Confirm that the optimal configuration from fast datasets generalizes to Fidel-TS, or identify dataset-specific patterns.
+
+---
+
+### Dataset Characteristics
+
+| Dataset | Size | Speed | Text Characteristics |
+|---------|------|-------|----------------------|
+| Time-MMD | Small | Fast | Historical events (x_hetero) |
+| TTC | Small | Fast | Historical events (x_hetero) |
+| Fidel-TS | Large | Slow | Forecasts/schedules (y_hetero) |
+
+**Rationale**: Time-MMD and TTC allow rapid iteration. Fidel-TS provides final validation but is more expensive.
+
+---
+
 ### Metrics to Track
 
 1. **Forecast accuracy**: MSE, MAE on test set
 2. **Gate values**: Mean $\alpha$ per channel, per sample
 3. **Relative to unimodal**: % improvement or degradation
 4. **Relative to lynx_film_raw**: Where does enhancement help/hurt?
+5. **Per-phase comparison**: Track improvement from phase to phase
 
 ### Logging
 
@@ -2439,6 +2527,17 @@ wandb.log({
     "alpha_per_channel": alpha.mean(dim=0).tolist() if alpha.dim() > 1 else None,
 })
 ```
+
+### Expected Timeline
+
+| Phase | Configs to Test | Datasets | Est. Time |
+|-------|----------------|----------|-----------|
+| Phase 1 | 2 new + 2 baselines | Time-MMD, TTC | Fast |
+| Phase 2 | 1 new | Time-MMD, TTC | Fast |
+| Phase 3 | 1 new | Time-MMD, TTC | Fast |
+| Phase 4 | 1-3 configs | Fidel-TS | Slower |
+
+**Total new configs**: 4 on fast datasets, then focused validation on Fidel-TS
 
 ---
 
