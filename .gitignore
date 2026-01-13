@@ -7,6 +7,12 @@ context/temp_prompt.txt
 text_noise_injection/chat.md
 fidel-ts-worktree-lynx.code-workspace
 
+# claude code temporary workspaces
+tmpclaude-*-cwd
+
+# claude local settings
+.claude/settings.local.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
