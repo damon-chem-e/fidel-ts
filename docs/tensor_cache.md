@@ -206,31 +206,61 @@ Output:
 
 ### `generate` - Create Tensor Cache
 
+Processes **all experiments** in a suite, with automatic deduplication by config hash.
+
 ```bash
-python -m cli.tensor_cache generate <config.yaml> [OPTIONS]
+python -m cli.tensor_cache generate <suite_config.yaml> [OPTIONS]
 
 Options:
   --output-dir, -o    Override output directory (default: auto-generated)
-  --experiment, -e    Specific experiment name in suite
+  --filter, -f        Filter experiments by name pattern (case-insensitive)
   --chunk-size        Samples per processing chunk (default: 10000)
   --splits            Comma-separated splits to generate (default: train,val,test)
-  --force, -f         Overwrite existing cache
+  --force             Overwrite existing cache
+  --dry-run           Show what would be generated without generating
 ```
 
-**Automatic cache reuse**: If a valid cache already exists for the config hash, generation is skipped:
+**Examples:**
+```bash
+# Generate caches for ALL experiments in suite
+python -m cli.tensor_cache generate configs/experiment_suites/lynx_film/suite.yaml
+
+# Generate only for experiments matching "germany"
+python -m cli.tensor_cache generate configs/experiment_suites/lynx_film/suite.yaml --filter germany
+
+# Preview what would be generated
+python -m cli.tensor_cache generate configs/experiment_suites/lynx_film/suite.yaml --dry-run
 ```
-Cache already exists and is valid. Skipping regeneration.
-Use --force to regenerate anyway.
+
+**Deduplication**: Experiments with identical config parameters share the same cache:
+```
+Analyzing experiments...
+  ● germany_dlinear: hash=a1b2c3d4 (new)
+  ○ germany_lynx: hash=a1b2c3d4 (same as germany_dlinear)
+  ● canada_dlinear: hash=f9e8d7c6 (new)
+
+Unique caches to generate: 2
 ```
 
 ### `validate` - Check Cache Validity
 
+Validates caches for **all experiments** in a suite.
+
 ```bash
-python -m cli.tensor_cache validate <config.yaml> [OPTIONS]
+python -m cli.tensor_cache validate <suite_config.yaml> [OPTIONS]
 
 Options:
   --cache-dir, -c     Override cache directory (default: auto-resolved)
-  --experiment, -e    Specific experiment name in suite
+  --filter, -f        Filter experiments by name pattern (case-insensitive)
+```
+
+**Examples:**
+```bash
+# Validate caches for all experiments
+python -m cli.tensor_cache validate configs/experiment_suites/lynx_film/suite.yaml
+
+# Validate only for experiments matching pattern
+python -m cli.tensor_cache validate configs/experiment_suites/lynx_film/suite.yaml --filter renewable
 ```
 
 ### `info` - Display Cache Information

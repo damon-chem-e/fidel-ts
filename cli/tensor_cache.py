@@ -21,10 +21,9 @@ import typer
 import yaml
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Tuple
 from rich.console import Console
 from rich.table import Table
-from rich import print as rprint
 
 from utils.tools import dotdict
 from utils.config_utils import merge_configs
@@ -52,36 +51,59 @@ def load_template(template_path: str) -> dict:
         return yaml.safe_load(f) or {}
 
 
-def get_experiment_config(suite_config: dict, experiment_name: str = None) -> dict:
-    """Get a single experiment config from a suite."""
+def get_all_experiments(
+    suite_config: dict,
+    filter_pattern: Optional[str] = None
+) -> List[Tuple[str, dict]]:
+    """
+    Get all experiments from a suite, optionally filtered by name pattern.
+
+    Args:
+        suite_config: Loaded suite configuration dict
+        filter_pattern: Optional case-insensitive substring filter
+
+    Returns:
+        List of (experiment_name, merged_config) tuples
+    """
     suite_info = suite_config.get('suite', {})
     experiments = suite_info.get('experiments', [])
 
     if not experiments:
         raise ValueError("No experiments found in suite config")
 
-    # Find the experiment
-    exp_config = None
-    if experiment_name:
-        for exp in experiments:
-            if exp.get('name') == experiment_name:
-                exp_config = exp
-                break
-        if exp_config is None:
-            available = [e.get('name') for e in experiments]
-            raise ValueError(f"Experiment '{experiment_name}' not found. Available: {available}")
-    else:
-        exp_config = experiments[0]
+    # Filter by enabled flag first
+    experiments = [exp for exp in experiments if exp.get('enabled', True)]
 
-    # Load template and merge with overrides
-    template_path = exp_config.get('template', '')
-    if not template_path:
-        raise ValueError(f"No template specified for experiment '{exp_config.get('name')}'")
+    # Apply name filter if provided
+    if filter_pattern:
+        experiments = [
+            exp for exp in experiments
+            if filter_pattern.lower() in exp.get('name', '').lower()
+        ]
 
-    template = load_template(template_path)
-    overrides = exp_config.get('overrides', {})
+    if not experiments:
+        raise ValueError(f"No experiments match filter '{filter_pattern}'")
 
-    return merge_configs(template, overrides)
+    # Load and merge configs for each experiment
+    result = []
+    for exp in experiments:
+        exp_name = exp.get('name', 'unknown')
+        template_path = exp.get('template', '')
+
+        if not template_path:
+            logger.warning(f"No template specified for experiment '{exp_name}', skipping")
+            continue
+
+        try:
+            template = load_template(template_path)
+            overrides = exp.get('overrides', {})
+            merged_config = merge_configs(template, overrides)
+            result.append((exp_name, merged_config))
+        except Exception as e:
+            logger.warning(f"Error loading config for '{exp_name}': {e}, skipping")
+            continue
+
+    return result
 
 
 def build_args_from_config(config: dict) -> dotdict:
@@ -214,13 +236,14 @@ def resolve_cache_dir(args: dotdict, explicit_dir: Optional[str] = None) -> Path
 def generate(
     config_path: str = typer.Argument(..., help="Path to suite config YAML"),
     output_dir: Optional[str] = typer.Option(None, "--output-dir", "-o", help="Override output directory (default: auto-generated in dataset dir)"),
-    experiment: Optional[str] = typer.Option(None, "--experiment", "-e", help="Specific experiment name"),
+    filter_experiments: Optional[str] = typer.Option(None, "--filter", "-f", help="Filter experiments by name pattern (case-insensitive)"),
     chunk_size: int = typer.Option(10000, "--chunk-size", help="Samples per processing chunk"),
     splits: str = typer.Option("train,val,test", "--splits", help="Comma-separated splits to generate"),
-    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing cache")
+    force: bool = typer.Option(False, "--force", help="Overwrite existing cache"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be generated without generating")
 ):
     """
-    Generate tensor cache for an experiment suite.
+    Generate tensor cache for all experiments in a suite.
 
     This pre-computes all CPU-intensive dataloader operations:
     - Temporal matching
@@ -232,11 +255,17 @@ def generate(
     By default, the cache is stored alongside the dataset data:
         data/<dataset>/tensor_cache/<config_hash>/
 
-    This enables automatic cache reuse when the same config is used again.
+    Experiments with the same config hash share the same cache (deduplication).
 
-    Example:
-        python -m cli.tensor_cache generate configs/experiment_suites/lynx_film/canada_photovoltaics.yaml
+    Examples:
+        # Generate for all experiments in suite
+        python -m cli.tensor_cache generate configs/experiment_suites/lynx_film/suite.yaml
+
+        # Generate only for experiments matching pattern
+        python -m cli.tensor_cache generate configs/experiment_suites/lynx_film/suite.yaml --filter germany
     """
+    from data_provider.tensor_cache import compute_config_hash, validate_cache
+
     config_path = Path(config_path)
 
     if not config_path.exists():
@@ -246,87 +275,120 @@ def generate(
     try:
         # Load suite config
         suite_config = load_suite_config(str(config_path))
+        suite_info = suite_config.get('suite', {})
+        suite_name = suite_info.get('name', 'unknown')
 
-        # Get experiment config
-        exp_config = get_experiment_config(suite_config, experiment)
-        exp_name = exp_config.get('experiment', {}).get('name', 'unknown')
-        console.print(f"[green]Generating tensor cache for: {exp_name}[/green]")
+        # Get all experiments (filtered if requested)
+        experiments = get_all_experiments(suite_config, filter_experiments)
 
-        # Build args
-        exp_args = build_args_from_config(exp_config)
-        console.print(f"Model: {exp_args.model}")
-        console.print(f"Data: {exp_args.data}")
-        console.print(f"Input len: {exp_args.input_len}, Output len: {exp_args.output_len}")
+        console.print(f"\n[bold cyan]Tensor Cache Generation for Suite: {suite_name}[/bold cyan]")
+        console.print(f"  Total experiments: [green]{len(experiments)}[/green]")
+        if filter_experiments:
+            console.print(f"  Filter: [yellow]'{filter_experiments}'[/yellow]")
+        console.print()
 
-        # Determine output directory using hash-based path resolution
-        cache_dir = resolve_cache_dir(exp_args, output_dir)
-        cache_config = build_cache_config(exp_args)
+        # Analyze experiments and group by config hash (deduplication)
+        # Key: config_hash -> Value: (cache_dir, cache_config, exp_args, [experiment_names])
+        cache_groups: Dict[str, Tuple[Path, dict, dotdict, List[str]]] = {}
+        skipped_experiments = []
 
-        from data_provider.tensor_cache import compute_config_hash
-        config_hash = compute_config_hash(cache_config)
+        console.print("[bold]Analyzing experiments...[/bold]")
+        for exp_name, exp_config in experiments:
+            try:
+                exp_args = build_args_from_config(exp_config)
+                cache_config = build_cache_config(exp_args)
+                config_hash = compute_config_hash(cache_config)
+                cache_dir = resolve_cache_dir(exp_args, output_dir)
 
-        console.print(f"Config hash: {config_hash}")
-        console.print(f"Cache directory: {cache_dir}")
+                if config_hash in cache_groups:
+                    # Same hash - add to existing group
+                    cache_groups[config_hash][3].append(exp_name)
+                    console.print(f"  [dim]○[/dim] {exp_name}: hash={config_hash[:8]} (same as {cache_groups[config_hash][3][0]})")
+                else:
+                    # New hash
+                    cache_groups[config_hash] = (cache_dir, cache_config, exp_args, [exp_name])
+                    console.print(f"  [green]●[/green] {exp_name}: hash={config_hash[:8]} (new)")
 
-        # Check for existing cache
-        if cache_dir.exists():
-            if force:
-                console.print(f"[yellow]Overwriting existing cache (--force specified)[/yellow]")
-            else:
-                # Check if cache is valid - if so, skip regeneration
-                from data_provider.tensor_cache import validate_cache
+            except Exception as e:
+                console.print(f"  [yellow]⚠[/yellow] {exp_name}: Error analyzing: {e}")
+                skipped_experiments.append(exp_name)
+                continue
+
+        console.print()
+        console.print(f"[bold]Unique caches to generate: {len(cache_groups)}[/bold]")
+
+        if dry_run:
+            console.print(f"\n[yellow]Dry run - no caches will be generated[/yellow]")
+            for config_hash, (cache_dir, cache_config, _, exp_names) in cache_groups.items():
+                console.print(f"  {config_hash[:8]}: {cache_dir}")
+                console.print(f"    Experiments: {', '.join(exp_names)}")
+            raise typer.Exit(code=0)
+
+        # Generate caches
+        from data_provider.data_factory import Data_Provider
+        from data_provider.tensor_cache import TensorCacheGenerator, TensorCacheMetadata
+
+        split_list = [s.strip() for s in splits.split(',')]
+        generated_count = 0
+        skipped_valid_count = 0
+
+        for i, (config_hash, (cache_dir, cache_config, exp_args, exp_names)) in enumerate(cache_groups.items(), 1):
+            console.print(f"\n[bold cyan]Cache {i}/{len(cache_groups)}: {config_hash[:8]}[/bold cyan]")
+            console.print(f"  Path: {cache_dir}")
+            console.print(f"  Experiments: {', '.join(exp_names)}")
+            console.print(f"  Data: {exp_args.data}, Input: {exp_args.input_len}, Output: {exp_args.output_len}")
+
+            # Check for existing valid cache
+            if cache_dir.exists() and not force:
                 is_valid, message = validate_cache(cache_dir, cache_config)
                 if is_valid:
-                    console.print(f"[green]Cache already exists and is valid. Skipping regeneration.[/green]")
-                    console.print(f"[green]Use --force to regenerate anyway.[/green]")
-                    raise typer.Exit(code=0)
+                    console.print(f"  [green]✓ Cache already valid, skipping[/green]")
+                    skipped_valid_count += 1
+                    continue
                 else:
-                    console.print(f"[yellow]Existing cache is invalid: {message}[/yellow]")
-                    console.print(f"[yellow]Regenerating...[/yellow]")
+                    console.print(f"  [yellow]Cache invalid: {message}, regenerating...[/yellow]")
 
-        # Create Data_Provider
-        from data_provider.data_factory import Data_Provider
-        from data_provider.tensor_cache import TensorCacheGenerator
+            # Generate cache
+            try:
+                console.print(f"  [yellow]Initializing Data_Provider...[/yellow]")
+                data_provider = Data_Provider(exp_args, buffer=not exp_args.disable_buffer, console=console)
 
-        console.print("\n[yellow]Initializing Data_Provider...[/yellow]")
-        data_provider = Data_Provider(exp_args, buffer=not exp_args.disable_buffer, console=console)
+                generator = TensorCacheGenerator(
+                    data_provider=data_provider,
+                    cache_dir=cache_dir,
+                    config=cache_config,
+                    chunk_size=chunk_size,
+                    verbose=True
+                )
 
-        # Create generator
-        generator = TensorCacheGenerator(
-            data_provider=data_provider,
-            cache_dir=cache_dir,
-            config=cache_config,
-            chunk_size=chunk_size,
-            verbose=True
-        )
+                console.print(f"  [yellow]Generating for splits: {split_list}[/yellow]")
+                cache_path = generator.generate(flags=split_list)
 
-        # Parse splits
-        split_list = [s.strip() for s in splits.split(',')]
-        console.print(f"Generating cache for splits: {split_list}")
+                # Show summary for this cache
+                metadata = TensorCacheMetadata.load(cache_path / 'metadata.json')
+                total_samples = sum(
+                    shapes.get('seq_x', [0])[0]
+                    for shapes in metadata.shapes.values()
+                )
+                console.print(f"  [green]✓ Generated: {total_samples:,} total samples[/green]")
+                generated_count += 1
 
-        # Generate cache
-        console.print("\n[yellow]Generating tensor cache...[/yellow]")
-        cache_path = generator.generate(flags=split_list)
+            except Exception as e:
+                console.print(f"  [red]✗ Error: {e}[/red]")
+                import traceback
+                traceback.print_exc()
+                continue
 
-        console.print(f"\n[green]Cache generated successfully at: {cache_path}[/green]")
+        # Final summary
+        console.print(f"\n[bold green]═══ Generation Complete ═══[/bold green]")
+        console.print(f"  Caches generated: {generated_count}")
+        console.print(f"  Caches skipped (already valid): {skipped_valid_count}")
+        console.print(f"  Experiments covered: {sum(len(g[3]) for g in cache_groups.values())}")
+        if skipped_experiments:
+            console.print(f"  Experiments skipped (errors): {len(skipped_experiments)}")
 
-        # Show summary
-        from data_provider.tensor_cache import TensorCacheMetadata
-        metadata = TensorCacheMetadata.load(cache_path / 'metadata.json')
-
-        table = Table(title="Cache Summary")
-        table.add_column("Split", style="cyan")
-        table.add_column("Samples", style="green")
-        table.add_column("seq_x shape", style="yellow")
-
-        for split, shapes in metadata.shapes.items():
-            if 'seq_x' in shapes:
-                samples = shapes['seq_x'][0]
-                shape_str = str(shapes['seq_x'])
-                table.add_row(split, f"{samples:,}", shape_str)
-
-        console.print(table)
-
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f"[red]Error generating cache: {str(e)}[/red]")
         import traceback
@@ -338,12 +400,12 @@ def generate(
 def validate(
     config_path: str = typer.Argument(..., help="Path to suite config YAML"),
     cache_dir: Optional[str] = typer.Option(None, "--cache-dir", "-c", help="Override cache directory (default: auto-resolved)"),
-    experiment: Optional[str] = typer.Option(None, "--experiment", "-e", help="Specific experiment name")
+    filter_experiments: Optional[str] = typer.Option(None, "--filter", "-f", help="Filter experiments by name pattern (case-insensitive)")
 ):
     """
-    Validate that a tensor cache matches the experiment config.
+    Validate tensor caches for all experiments in a suite.
 
-    Checks:
+    Checks for each unique cache:
     - Cache directory exists
     - Metadata is valid
     - Config hash matches (cache is not stale)
@@ -351,9 +413,15 @@ def validate(
     By default, looks for cache at:
         data/<dataset>/tensor_cache/<config_hash>/
 
-    Example:
-        python -m cli.tensor_cache validate configs/experiment_suites/lynx_film/canada_photovoltaics.yaml
+    Examples:
+        # Validate caches for all experiments
+        python -m cli.tensor_cache validate configs/experiment_suites/lynx_film/suite.yaml
+
+        # Validate only for experiments matching pattern
+        python -m cli.tensor_cache validate configs/experiment_suites/lynx_film/suite.yaml --filter germany
     """
+    from data_provider.tensor_cache import compute_config_hash, validate_cache as validate_cache_fn
+
     config_path = Path(config_path)
 
     if not config_path.exists():
@@ -363,30 +431,67 @@ def validate(
     try:
         # Load suite config
         suite_config = load_suite_config(str(config_path))
-        exp_config = get_experiment_config(suite_config, experiment)
-        exp_args = build_args_from_config(exp_config)
+        suite_info = suite_config.get('suite', {})
+        suite_name = suite_info.get('name', 'unknown')
 
-        # Determine cache directory using hash-based path resolution
-        cache_path = resolve_cache_dir(exp_args, cache_dir)
-        cache_config = build_cache_config(exp_args)
+        # Get all experiments (filtered if requested)
+        experiments = get_all_experiments(suite_config, filter_experiments)
 
-        from data_provider.tensor_cache import compute_config_hash
-        config_hash = compute_config_hash(cache_config)
+        console.print(f"\n[bold cyan]Tensor Cache Validation for Suite: {suite_name}[/bold cyan]")
+        console.print(f"  Total experiments: [green]{len(experiments)}[/green]")
+        if filter_experiments:
+            console.print(f"  Filter: [yellow]'{filter_experiments}'[/yellow]")
+        console.print()
 
-        console.print(f"Config hash: {config_hash}")
-        console.print(f"Validating cache at: {cache_path}")
+        # Group by config hash (same as generate)
+        cache_groups: Dict[str, Tuple[Path, dict, List[str]]] = {}
 
-        # Validate
-        from data_provider.tensor_cache import validate_cache
+        for exp_name, exp_config in experiments:
+            try:
+                exp_args = build_args_from_config(exp_config)
+                cache_config = build_cache_config(exp_args)
+                config_hash = compute_config_hash(cache_config)
+                cache_path = resolve_cache_dir(exp_args, cache_dir)
 
-        is_valid, message = validate_cache(cache_path, cache_config)
+                if config_hash not in cache_groups:
+                    cache_groups[config_hash] = (cache_path, cache_config, [exp_name])
+                else:
+                    cache_groups[config_hash][2].append(exp_name)
+            except Exception as e:
+                console.print(f"  [yellow]⚠[/yellow] {exp_name}: Error analyzing: {e}")
+                continue
 
-        if is_valid:
-            console.print(f"[green]Cache is valid: {message}[/green]")
-        else:
-            console.print(f"[red]Cache is invalid: {message}[/red]")
+        # Validate each unique cache
+        valid_count = 0
+        invalid_count = 0
+
+        console.print(f"[bold]Validating {len(cache_groups)} unique caches...[/bold]\n")
+
+        for config_hash, (cache_path, cache_config, exp_names) in cache_groups.items():
+            is_valid, message = validate_cache_fn(cache_path, cache_config)
+
+            if is_valid:
+                console.print(f"  [green]✓[/green] {config_hash[:8]}: Valid")
+                console.print(f"      Path: {cache_path}")
+                console.print(f"      Experiments: {', '.join(exp_names)}")
+                valid_count += 1
+            else:
+                console.print(f"  [red]✗[/red] {config_hash[:8]}: {message}")
+                console.print(f"      Path: {cache_path}")
+                console.print(f"      Experiments: {', '.join(exp_names)}")
+                invalid_count += 1
+
+        # Summary
+        console.print(f"\n[bold]═══ Validation Summary ═══[/bold]")
+        console.print(f"  Valid caches: [green]{valid_count}[/green]")
+        console.print(f"  Invalid/missing caches: [red]{invalid_count}[/red]")
+
+        if invalid_count > 0:
+            console.print(f"\n[yellow]Run 'python -m cli.tensor_cache generate {config_path}' to create missing caches[/yellow]")
             raise typer.Exit(code=1)
 
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f"[red]Error validating cache: {str(e)}[/red]")
         raise typer.Exit(code=1)
