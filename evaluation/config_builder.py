@@ -183,7 +183,12 @@ def build_evaluation_config_from_experiment_config(
     # 6. Handle filtered_samples
     filtered_samples = config.training.filtered_samples
     
-    # 7. Build evaluation config
+    # 7. Read evaluation-specific options from config if present
+    # These can be specified in the experiment config under 'evaluation' key
+    config_dict = config.model_dump()
+    evaluation_options = config_dict.get('evaluation', {})
+    
+    # 8. Build evaluation config
     eval_config = dotdict({
         'model': model_name,
         'data': data_name,
@@ -198,5 +203,10 @@ def build_evaluation_config_from_experiment_config(
         'channel_wise': False,
         'experiment_dir': str(experiment_dir),  # Store for convenience
     })
+    
+    # 9. Merge evaluation options (e.g., nan_aware_aggregation, channel_wise, etc.)
+    for key, value in evaluation_options.items():
+        if value is not None:  # Only override if value is explicitly set
+            eval_config[key] = value
     
     return eval_config
