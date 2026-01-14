@@ -40,6 +40,7 @@ from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
 from data_provider.profiling import DataloaderProfiler, BatchProfiler
 from utils.tools import dotdict
 from utils.config_utils import merge_configs
+from utils.experiment_config_builder import build_experiment_args
 
 
 console = Console()
@@ -61,54 +62,17 @@ def build_args_from_config(config: dict) -> dotdict:
     """
     Build an args object from experiment config.
 
-    This replicates the essential parts of config_to_args from runs/pytorch.py
+    Uses centralized config builder to ensure data_config overrides are applied.
+    This fixes the bug where experiment-level overrides (e.g., timemmd_text_output: embedding)
+    were not being merged into the base data config.
+
+    Args:
+        config: Merged experiment config (template + overrides)
+
+    Returns:
+        Complete args dotdict ready for Data_Provider
     """
-    args = dotdict()
-
-    # Model config
-    args.model = config.get('model', {}).get('name', 'unknown')
-    args.model_config = config.get('model', {}).get('config_path', '')
-
-    # Data config - load the actual data config file
-    data_config_path = config.get('data', {}).get('config_path', '')
-    if data_config_path and Path(data_config_path).exists():
-        with open(data_config_path, 'r') as f:
-            data_config = yaml.safe_load(f)
-        args.data_config = dotdict(data_config)
-    else:
-        args.data_config = dotdict({})
-
-    args.data = config.get('data', {}).get('name', 'unknown')
-
-    # Training config
-    training = config.get('training', {})
-    args.scale = training.get('scale', True)
-    args.disable_buffer = training.get('disable_buffer', False)
-    args.preload_hetero = training.get('preload_hetero', False)
-    args.prefetch_factor = training.get('prefetch_factor', 2)
-    args.noise = training.get('noise', 0.0)
-    args.downsample = training.get('downsample', None)
-    args.num_workers = training.get('num_workers', 0)
-    args.batch_size = training.get('batch_size', 32)
-    args.truncate_train_for_purge = training.get('truncate_train_for_purge', False)
-
-    # Task config
-    args.ahead = training.get('ahead', None)
-    args.output_len = training.get('output_len', 96)
-    args.input_len = training.get('input_len', 336)
-
-    # GPU config
-    device_config = config.get('device', {})
-    args.use_gpu = device_config.get('use_gpu', torch.cuda.is_available())
-    args.gpu = device_config.get('gpu', 0)
-
-    # Load model config if available
-    if args.model_config and Path(args.model_config).exists():
-        with open(args.model_config, 'r') as f:
-            model_config = yaml.safe_load(f)
-        args.model_config = dotdict(model_config)
-
-    return args
+    return build_experiment_args(config, include_gpu=True)
 
 
 def get_experiment_config(suite_config: dict, experiment_name: str = None) -> dict:

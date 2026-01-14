@@ -27,6 +27,10 @@ from rich.table import Table
 
 from utils.tools import dotdict
 from utils.config_utils import merge_configs
+from utils.experiment_config_builder import (
+    build_experiment_args,
+    build_cache_config as build_cache_config_centralized,
+)
 
 app = typer.Typer(help="Generate and manage tensor caches for fast data loading")
 console = Console()
@@ -107,61 +111,27 @@ def get_all_experiments(
 
 
 def build_args_from_config(config: dict) -> dotdict:
-    """Build an args object from experiment config."""
-    import torch
-
-    args = dotdict()
-
-    # Model config
-    args.model = config.get('model', {}).get('name', 'unknown')
-    args.model_config = config.get('model', {}).get('config_path', '')
-
-    # Data config - load the actual data config file
-    data_config_path = config.get('data', {}).get('config_path', '')
-    if data_config_path and Path(data_config_path).exists():
-        with open(data_config_path, 'r') as f:
-            data_config = yaml.safe_load(f)
-        args.data_config = dotdict(data_config)
-    else:
-        args.data_config = dotdict({})
-
-    args.data = config.get('data', {}).get('name', 'unknown')
-
-    # Training config
-    training = config.get('training', {})
-    args.scale = training.get('scale', True)
-    args.disable_buffer = training.get('disable_buffer', False)
-    args.preload_hetero = training.get('preload_hetero', False)
-    args.prefetch_factor = training.get('prefetch_factor', 2)
-    args.noise = training.get('noise', 0.0)
-    args.downsample = training.get('downsample', None)
-    args.num_workers = training.get('num_workers', 0)
-    args.batch_size = training.get('batch_size', 32)
-    args.truncate_train_for_purge = training.get('truncate_train_for_purge', False)
-
-    # Task config
-    args.ahead = training.get('ahead', None)
-    args.output_len = training.get('output_len', 96)
-    args.input_len = training.get('input_len', 336)
-
-    # GPU config
-    device_config = config.get('device', {})
-    args.use_gpu = device_config.get('use_gpu', torch.cuda.is_available())
-    args.gpu = device_config.get('gpu', 0)
-
-    # Load model config if available
-    if args.model_config and Path(args.model_config).exists():
-        with open(args.model_config, 'r') as f:
-            model_config = yaml.safe_load(f)
-        args.model_config = dotdict(model_config)
-
-    return args
+    """
+    Build an args object from experiment config.
+    
+    Uses centralized config builder to ensure data_config overrides are applied.
+    This fixes the bug where experiment-level overrides (e.g., timemmd_text_output: embedding)
+    were not being merged into the base data config.
+    
+    Args:
+        config: Merged experiment config (template + overrides)
+    
+    Returns:
+        Complete args dotdict ready for Data_Provider
+    """
+    return build_experiment_args(config, include_gpu=True)
 
 
 def build_cache_config(args: dotdict) -> dict:
     """
     Build config dict for tensor cache hash computation.
 
+    Uses centralized config builder to ensure cache hash includes all relevant parameters.
     These parameters determine cache uniqueness - if any change, the cache must be regenerated.
 
     Args:
@@ -170,28 +140,7 @@ def build_cache_config(args: dotdict) -> dict:
     Returns:
         Dict of parameters that affect cache validity
     """
-    # Get hetero_stride from model config if available
-    hetero_stride = 1
-    if hasattr(args, 'model_config') and isinstance(args.model_config, dict):
-        hetero_stride = args.model_config.get('stride', 1)
-
-    # Get hetero_type from data config if available
-    hetero_type = None
-    if hasattr(args, 'data_config') and args.data_config.get('hetero_info'):
-        hetero_type = args.data_config.hetero_info.get('hetero_type')
-
-    return {
-        'input_len': args.input_len,
-        'output_len': args.output_len,
-        'scale': args.scale,
-        'truncate_train_for_purge': args.truncate_train_for_purge,
-        'downsample': args.downsample,
-        'data_name': args.data,
-        'hetero_stride': hetero_stride,
-        'hetero_type': hetero_type,
-        'missing_value_strategy': args.data_config.get('missing_value_strategy', 'none') if args.data_config else 'none',
-        'split_info': str(args.data_config.get('split_info', '')) if args.data_config else '',
-    }
+    return build_cache_config_centralized(args)
 
 
 def resolve_cache_dir(args: dotdict, explicit_dir: Optional[str] = None) -> Path:

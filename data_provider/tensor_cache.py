@@ -30,10 +30,13 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, ConcatDataset
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Optional, Tuple, Any, Union, TYPE_CHECKING
 from datetime import datetime
 from tqdm import tqdm
 import warnings
+
+if TYPE_CHECKING:
+    from data_provider.data_factory import Data_Provider
 
 logger = logging.getLogger(__name__)
 

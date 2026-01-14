@@ -9,7 +9,6 @@ import os
 import torch
 import random
 import numpy as np
-import yaml
 from typing import Optional, Dict, Any
 from utils.tools import dotdict
 from utils.task import ahead_task_parser
@@ -17,8 +16,11 @@ from utils.gpu_monitor import gpu_monitoring_context
 from exp.exp_lightning import train_lightning_model
 from cli.config.models import ExperimentConfig
 from exp.manager import ExperimentManager
-from utils.data_path_utils import replace_data_paths
 from utils.config_utils import merge_configs
+from utils.experiment_config_builder import (
+    load_and_merge_data_config,
+    load_and_merge_model_config,
+)
 
 
 def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
@@ -90,30 +92,33 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     # Environment variables
     args.hf_mirror = config.hf_mirror
     
-    # Load model and data configs
-    with open(args.model_config, 'r') as f:
-        model_config = yaml.safe_load(f)
-    
-    # Merge model_config overrides if present.
-    # NOTE: Legacy 'model_config' overrides were removed because 'model_config' is reserved in Pydantic v2.
-    if config.model_config_overrides is not None:
-        model_config = merge_configs(model_config, config.model_config_overrides)
-    
-    args.model_config = dotdict(model_config)
+    # Load model config using centralized loader (handles overrides)
+    args.model_config = load_and_merge_model_config(
+        model_config_path=config.model.config_path,
+        model_config_overrides=config.model_config_overrides
+    )
     
     # Extract model architecture parameters from model config
     # (These are used by model-specific trainers for loss computation)
-    args.patch_len = model_config.get('patch_len', 16)
-    args.stride = model_config.get('stride', 8)
+    args.patch_len = args.model_config.get('patch_len', 16)
+    args.stride = args.model_config.get('stride', 8)
     
-    with open(args.data_config, 'r') as f:
-        data_configs = yaml.safe_load(f)
+    # Extract data_config overrides from ExperimentConfig
+    # Pydantic models with extra="allow" store extra fields in model_extra or model_dump()
+    data_config_overrides = None
+    if hasattr(config, 'model_dump'):
+        config_dict = config.model_dump()
+        if 'data_config' in config_dict and isinstance(config_dict['data_config'], dict):
+            data_config_overrides = config_dict['data_config']
+    elif hasattr(config, 'data_config') and isinstance(config.data_config, dict):
+        data_config_overrides = config.data_config
     
-    # Replace './data' with base_data_path if specified
-    if config.base_data_path:
-        data_configs = replace_data_paths(data_configs, config.base_data_path)
-    
-    args.data_config = dotdict(data_configs)
+    # Load data config using centralized loader (handles overrides and path substitution)
+    args.data_config = load_and_merge_data_config(
+        data_config_path=config.data.config_path,
+        data_config_overrides=data_config_overrides,
+        base_data_path=config.base_data_path
+    )
     
     # Handle ahead task
     if args.ahead is not None:

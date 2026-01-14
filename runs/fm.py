@@ -9,7 +9,6 @@ import os
 import torch
 import random
 import numpy as np
-import yaml
 from typing import Optional, Dict, Any
 from utils.tools import dotdict
 from utils.task import ahead_task_parser
@@ -17,7 +16,10 @@ from utils.gpu_monitor import gpu_monitoring_context
 from exp.exp_fm import Experiment
 from cli.config.models import ExperimentConfig
 from exp.manager import ExperimentManager
-from utils.data_path_utils import replace_data_paths
+from utils.experiment_config_builder import (
+    load_and_merge_data_config,
+    load_and_merge_model_config,
+)
 
 
 def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
@@ -74,19 +76,27 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     # Environment variables
     args.hf_mirror = config.hf_mirror
     
-    # Load model and data configs
-    with open(args.model_config, 'r') as f:
-        model_config = yaml.safe_load(f)
-    args.model_config = dotdict(model_config)
+    # Load model config using centralized loader
+    args.model_config = load_and_merge_model_config(
+        model_config_path=config.model.config_path,
+        model_config_overrides=getattr(config, 'model_config_overrides', None)
+    )
     
-    with open(args.data_config, 'r') as f:
-        data_configs = yaml.safe_load(f)
+    # Extract data_config overrides from ExperimentConfig
+    data_config_overrides = None
+    if hasattr(config, 'model_dump'):
+        config_dict = config.model_dump()
+        if 'data_config' in config_dict and isinstance(config_dict['data_config'], dict):
+            data_config_overrides = config_dict['data_config']
+    elif hasattr(config, 'data_config') and isinstance(config.data_config, dict):
+        data_config_overrides = config.data_config
     
-    # Replace './data' with base_data_path if specified
-    if config.base_data_path:
-        data_configs = replace_data_paths(data_configs, config.base_data_path)
-    
-    args.data_config = dotdict(data_configs)
+    # Load data config using centralized loader (handles overrides and path substitution)
+    args.data_config = load_and_merge_data_config(
+        data_config_path=config.data.config_path,
+        data_config_overrides=data_config_overrides,
+        base_data_path=config.base_data_path
+    )
     
     # Handle ahead task
     if args.ahead is not None:

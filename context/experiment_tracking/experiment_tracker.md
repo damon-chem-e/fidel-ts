@@ -31,7 +31,8 @@
 
 ## Current Work
 
-> - tensor_cache -> speed ups on high compute
+> - tensor_cache test (small dataset first, then large dataset, both on cpu interactive) -> cache on engaging cpu -> speed ups on high compute -> spin up high compute jobs with tensor cache scp to pods
+> - once it's tested and works, add a tcache column to all of the tracking in this document -> checkmark when tensor cache generated, which should always be done before running the experiment
 > - lynx_film_enhanced working -> low compute -> analysis
 > - eval and tables on low compute -> analysis
 
