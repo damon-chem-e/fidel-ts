@@ -1587,7 +1587,13 @@ class TensorCacheDataset(Dataset):
         LOOKUP PROCESS:
         1. Get x_indices and y_indices for this sample
         2. Use indices to look up data from shared tables
-        3. Return reconstructed sample tuple
+        3. Add num_items dimension to embeddings (model expects 3D per sample)
+        4. Return reconstructed sample tuple
+        
+        SHAPE HANDLING:
+        - Embeddings are stored as (L, embed_dim) but models expect (L, num_items, embed_dim)
+        - The num_items dimension corresponds to n_features from timeseries
+        - We add this dimension via np.expand_dims to match original dataset format
         
         This is the key to deduplication efficiency:
         - Indices are small (int32)
@@ -1603,13 +1609,35 @@ class TensorCacheDataset(Dataset):
         seq_x = self.shared['timeseries'][x_idx] if 'timeseries' in self.shared else None
         seq_y = self.shared['timeseries'][y_idx] if 'timeseries' in self.shared else None
         
+        # Determine n_features (num_items) from timeseries shape
+        # This is used to add the missing dimension to embeddings
+        n_features = 1  # Default
+        if 'timeseries' in self.shared and self.shared['timeseries'].ndim > 1:
+            n_features = self.shared['timeseries'].shape[1]
+        
         # Look up timestamps from shared table
         x_time = self.shared['timestamps'][x_idx] if 'timestamps' in self.shared else None
         y_time = self.shared['timestamps'][y_idx] if 'timestamps' in self.shared else None
         
         # Look up embeddings from shared table
+        # SHAPE FIX: Models expect (L, num_items, embed_dim) but we store (L, embed_dim)
+        # Add the num_items dimension to match original dataset format
         hetero_x = self.shared['embeddings'][x_idx] if 'embeddings' in self.shared else None
         hetero_y = self.shared['embeddings'][y_idx] if 'embeddings' in self.shared else None
+        
+        # Add num_items dimension: (L, D) -> (L, N, D) where N = n_features
+        if hetero_x is not None:
+            # Shape: (input_len, embed_dim) -> (input_len, n_features, embed_dim)
+            hetero_x = np.expand_dims(hetero_x, axis=1)
+            if n_features > 1:
+                # Repeat along the num_items dimension if multiple features
+                hetero_x = np.repeat(hetero_x, n_features, axis=1)
+        
+        if hetero_y is not None:
+            # Shape: (output_len, embed_dim) -> (output_len, n_features, embed_dim)
+            hetero_y = np.expand_dims(hetero_y, axis=1)
+            if n_features > 1:
+                hetero_y = np.repeat(hetero_y, n_features, axis=1)
         
         # Look up hetero time features from shared table
         hetero_x_time = self.shared['hetero_time'][x_idx] if 'hetero_time' in self.shared else None
