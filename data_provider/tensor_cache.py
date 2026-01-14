@@ -471,10 +471,12 @@ class TensorCacheDataset(Dataset):
 
             if self.preload_to_ram:
                 # Load fully into RAM
-                arrays[name] = np.load(filepath, mmap_mode=None)
+                # allow_pickle=True is required for string arrays (sample_ids)
+                arrays[name] = np.load(filepath, mmap_mode=None, allow_pickle=True)
             else:
                 # Memory-mapped (lazy loading)
-                arrays[name] = np.load(filepath, mmap_mode='r')
+                # allow_pickle=True is required for string arrays (sample_ids)
+                arrays[name] = np.load(filepath, mmap_mode='r', allow_pickle=True)
 
         return arrays
 
