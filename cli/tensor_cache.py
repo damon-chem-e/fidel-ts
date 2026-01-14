@@ -481,7 +481,8 @@ def generate(
                     cache_dir=cache_dir,
                     config=cache_config,
                     chunk_size=chunk_size,
-                    verbose=True
+                    verbose=True,
+                    console=console  # Enable Rich nested progress bars
                 )
 
                 console.print(f"  [yellow]Generating for splits: {split_list}[/yellow]")

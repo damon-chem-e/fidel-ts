@@ -38,6 +38,17 @@ from datetime import datetime
 from tqdm import tqdm
 import warnings
 
+# Rich progress bar imports (optional, graceful fallback to tqdm)
+try:
+    from rich.progress import (
+        Progress, BarColumn, TextColumn, TimeElapsedColumn,
+        TimeRemainingColumn, MofNCompleteColumn, SpinnerColumn
+    )
+    from rich.console import Console
+    RICH_AVAILABLE = True
+except ImportError:
+    RICH_AVAILABLE = False
+
 if TYPE_CHECKING:
     from data_provider.data_factory import Data_Provider
 
@@ -162,7 +173,8 @@ class TensorCacheGenerator:
         cache_dir: Union[str, Path],
         config: dict,
         chunk_size: int = 10000,
-        verbose: bool = True
+        verbose: bool = True,
+        console: Optional[Any] = None
     ):
         """
         Initialize tensor cache generator.
@@ -174,12 +186,16 @@ class TensorCacheGenerator:
                     This ensures consistent hash computation between CLI and generator.
             chunk_size: Number of samples to process at once (memory management)
             verbose: Whether to show progress bars
+            console: Optional Rich Console for enhanced progress display.
+                    If provided and Rich is available, uses nested progress bars.
+                    Otherwise falls back to tqdm.
         """
         self.data_provider = data_provider
         self.cache_dir = Path(cache_dir)
         self.config = config
         self.chunk_size = chunk_size
         self.verbose = verbose
+        self.console = console
 
         # Compute config hash for cache validation
         # Now uses the config passed in (from centralized builder) instead of extracting its own
@@ -258,6 +274,13 @@ class TensorCacheGenerator:
     def _generate_split(self, flag: str) -> Tuple[dict, dict]:
         """
         Generate cache for a single split.
+        
+        Uses Rich Progress for nested progress bars when console is available:
+        - Level 1: Overall entity progress (e.g., 45/87 entities)
+        - Level 2: Current entity samples (e.g., 15000/25000 samples in Bear_room)
+        - Level 3: Total samples processed across all entities
+        
+        Falls back to tqdm if Rich is not available or no console provided.
 
         Returns:
             Tuple of (shapes dict, entity_info dict)
@@ -290,11 +313,178 @@ class TensorCacheGenerator:
         # Create memory-mapped arrays
         arrays = self._create_mmap_arrays(split_dir, array_shapes)
 
-        # Process all datasets
-        current_idx = 0
+        # Initialize entity info tracking
         entity_info = {'entity_ids': [], 'samples_per_entity': {}}
 
-        dataset_iter = tqdm(datasets.items(), desc=f"Entities ({flag})", disable=not self.verbose)
+        # Choose progress display method based on console availability
+        if self.console is not None and RICH_AVAILABLE and self.verbose:
+            # Use Rich Progress with nested progress bars
+            shapes = self._process_with_rich_progress(
+                flag, datasets, arrays, entity_info, total_samples
+            )
+        else:
+            # Fallback to tqdm
+            shapes = self._process_with_tqdm(
+                flag, datasets, arrays, entity_info
+            )
+
+        return shapes, entity_info
+    
+    def _process_with_rich_progress(
+        self,
+        flag: str,
+        datasets: Dict[str, Any],
+        arrays: Dict[str, np.memmap],
+        entity_info: dict,
+        total_samples: int
+    ) -> dict:
+        """
+        Process datasets using Rich Progress with nested progress bars.
+        
+        Displays three levels of progress:
+        1. Entity progress: Which entity we're on (e.g., 45/87)
+        2. Entity samples: Progress within current entity (e.g., 15000/25000)
+        3. Total samples: Overall progress across all entities
+        
+        This provides much better visibility than a single progress bar,
+        especially for entities with many samples where processing can
+        appear "stuck" with only entity-level progress.
+        
+        Args:
+            flag: Data split name ('train', 'val', 'test')
+            datasets: Dict mapping entity_id to dataset
+            arrays: Memory-mapped arrays to write to
+            entity_info: Dict to populate with entity metadata
+            total_samples: Total number of samples across all entities
+        
+        Returns:
+            Dict of array shapes for metadata
+        """
+        current_idx = 0
+        
+        # Configure Rich Progress with multiple progress bars
+        # Using transient=False so progress persists after completion
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(bar_width=40),
+            MofNCompleteColumn(),
+            TextColumn("•"),
+            TimeElapsedColumn(),
+            TextColumn("•"),
+            TimeRemainingColumn(),
+            console=self.console,
+            transient=False,
+            refresh_per_second=10
+        ) as progress:
+            
+            # Task 1: Overall entity progress
+            entity_task = progress.add_task(
+                f"[cyan]Entities ({flag})",
+                total=len(datasets)
+            )
+            
+            # Task 2: Current entity samples (dynamic description)
+            # Start with a placeholder, will update per entity
+            entity_samples_task = progress.add_task(
+                "[dim]  └─ waiting...[/dim]",
+                total=100,
+                visible=True
+            )
+            
+            # Task 3: Total samples across all entities
+            total_task = progress.add_task(
+                f"[green]Total samples",
+                total=total_samples
+            )
+            
+            # Process each entity
+            for entity_id, dataset in datasets.items():
+                entity_samples = len(dataset)
+                if entity_samples == 0:
+                    progress.update(entity_task, advance=1)
+                    continue
+                
+                # Track entity info
+                entity_info['entity_ids'].append(entity_id)
+                entity_info['samples_per_entity'][entity_id] = entity_samples
+                
+                # Update the entity samples progress bar for this entity
+                # Reset to 0 and set new total for this entity
+                progress.update(
+                    entity_samples_task,
+                    description=f"[yellow]  └─ {entity_id}[/yellow]",
+                    completed=0,
+                    total=entity_samples
+                )
+                
+                # Process entity in chunks
+                for chunk_start in range(0, entity_samples, self.chunk_size):
+                    chunk_end = min(chunk_start + self.chunk_size, entity_samples)
+                    chunk_size_actual = chunk_end - chunk_start
+                    chunk_indices = range(chunk_start, chunk_end)
+                    
+                    # Get samples for this chunk
+                    chunk_samples = [dataset[i] for i in chunk_indices]
+                    
+                    # Write chunk to memory-mapped arrays
+                    write_start = current_idx + chunk_start
+                    write_end = current_idx + chunk_end
+                    self._write_chunk(arrays, chunk_samples, write_start, write_end)
+                    
+                    # Update progress bars
+                    progress.update(entity_samples_task, advance=chunk_size_actual)
+                    progress.update(total_task, advance=chunk_size_actual)
+                
+                # Move to next entity
+                current_idx += entity_samples
+                progress.update(entity_task, advance=1)
+            
+            # Mark entity samples task as complete
+            progress.update(
+                entity_samples_task,
+                description="[dim]  └─ complete[/dim]",
+                visible=False
+            )
+        
+        # Flush memory-mapped arrays
+        for arr in arrays.values():
+            if hasattr(arr, 'flush'):
+                arr.flush()
+        
+        # Build shapes dict for metadata
+        return {name: list(arr.shape) for name, arr in arrays.items()}
+    
+    def _process_with_tqdm(
+        self,
+        flag: str,
+        datasets: Dict[str, Any],
+        arrays: Dict[str, np.memmap],
+        entity_info: dict
+    ) -> dict:
+        """
+        Process datasets using tqdm progress bar (fallback when Rich unavailable).
+        
+        This is the original implementation using a single tqdm progress bar
+        over entities. Less informative than Rich Progress but works everywhere.
+        
+        Args:
+            flag: Data split name ('train', 'val', 'test')
+            datasets: Dict mapping entity_id to dataset
+            arrays: Memory-mapped arrays to write to
+            entity_info: Dict to populate with entity metadata
+        
+        Returns:
+            Dict of array shapes for metadata
+        """
+        current_idx = 0
+        
+        dataset_iter = tqdm(
+            datasets.items(),
+            desc=f"Entities ({flag})",
+            disable=not self.verbose
+        )
+        
         for entity_id, dataset in dataset_iter:
             entity_samples = len(dataset)
             if entity_samples == 0:
@@ -319,15 +509,12 @@ class TensorCacheGenerator:
             current_idx += entity_samples
 
         # Flush memory-mapped arrays
-        # Arrays are already in proper .npy format (created with np.lib.format.open_memmap)
         for arr in arrays.values():
             if hasattr(arr, 'flush'):
                 arr.flush()
 
         # Build shapes dict for metadata
-        shapes = {name: list(arr.shape) for name, arr in arrays.items()}
-
-        return shapes, entity_info
+        return {name: list(arr.shape) for name, arr in arrays.items()}
 
     def _get_array_shapes(self, sample: tuple, total_samples: int) -> Dict[str, tuple]:
         """Determine array shapes from a sample."""
