@@ -490,8 +490,10 @@ def generate(
 
                 # Show summary for this cache
                 metadata = TensorCacheMetadata.load(cache_path / 'metadata.json')
+                # V2 indexed format uses x_indices, V1 direct format uses seq_x
+                # Try x_indices first (V2), then seq_x (V1), then sample_ids (fallback)
                 total_samples = sum(
-                    shapes.get('seq_x', [0])[0]
+                    shapes.get('x_indices', shapes.get('seq_x', shapes.get('sample_ids', [0])))[0]
                     for shapes in metadata.shapes.values()
                 )
                 console.print(f"  [green]✓ Generated: {total_samples:,} total samples[/green]")

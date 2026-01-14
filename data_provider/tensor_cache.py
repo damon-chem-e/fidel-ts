@@ -1669,7 +1669,117 @@ class TensorCacheDataset(Dataset):
 
 
 # =============================================================================
-# SECTION 9: VALIDATION AND UTILITIES
+# SECTION 9: COLLATE FUNCTION FOR NONE HANDLING
+# =============================================================================
+# Custom collate function that handles None values in batch elements.
+# PyTorch's default_collate cannot handle None - it throws TypeError.
+# This is needed because tensor cache may not have all optional fields.
+# =============================================================================
+
+def tensor_cache_collate_fn(batch: List[tuple]) -> tuple:
+    """
+    Custom collate function that handles None values in batch elements.
+    
+    WHY THIS EXISTS:
+    - TensorCacheDataset._getitem_indexed() returns None for missing arrays
+    - PyTorch's default_collate throws TypeError on None values
+    - Some fields (x_time_features, y_time_features) are optional
+    - Models should handle None gracefully for optional fields
+    
+    BEHAVIOR:
+    - For non-None values: stack into batched tensor (like default_collate)
+    - For None values: return None (entire batch element is None)
+    - For string values: return as list (sample_ids)
+    
+    Args:
+        batch: List of sample tuples from TensorCacheDataset
+        
+    Returns:
+        Tuple of batched tensors/arrays, with None preserved for missing fields
+    """
+    if not batch:
+        return tuple()
+    
+    # Get number of elements in each sample tuple
+    n_elements = len(batch[0])
+    
+    # Collate each element position across all samples
+    collated = []
+    for elem_idx in range(n_elements):
+        # Extract this element from all samples
+        elements = [sample[elem_idx] for sample in batch]
+        
+        # Check if ALL elements are None
+        all_none = all(elem is None for elem in elements)
+        if all_none:
+            collated.append(None)
+            continue
+        
+        # Check if ANY element is None (mixed None and non-None)
+        any_none = any(elem is None for elem in elements)
+        if any_none:
+            # For mixed case, we could either skip Nones or fail
+            # For robustness, filter out Nones and log warning
+            # But this changes batch size - safer to replace with zeros
+            # For now, return None for entire field if any is None
+            # (This shouldn't happen in practice - all samples should be consistent)
+            logger.warning(
+                f"Mixed None/non-None values at element {elem_idx} in batch. "
+                f"Returning None for entire field."
+            )
+            collated.append(None)
+            continue
+        
+        # Check element type of first non-None element
+        first_elem = elements[0]
+        
+        # Handle string/sample_id (element 0)
+        if isinstance(first_elem, (str, np.str_)):
+            # Return as list of strings (can't stack strings as tensor)
+            collated.append([str(e) for e in elements])
+            continue
+        
+        # Handle numpy arrays - convert to tensor and stack
+        if isinstance(first_elem, np.ndarray):
+            try:
+                # Stack numpy arrays and convert to tensor
+                stacked = np.stack(elements)
+                collated.append(torch.from_numpy(stacked))
+            except Exception as e:
+                logger.warning(f"Failed to stack element {elem_idx}: {e}")
+                collated.append(None)
+            continue
+        
+        # Handle torch tensors - stack directly
+        if isinstance(first_elem, torch.Tensor):
+            try:
+                collated.append(torch.stack(elements))
+            except Exception as e:
+                logger.warning(f"Failed to stack tensor element {elem_idx}: {e}")
+                collated.append(None)
+            continue
+        
+        # Handle scalars (int, float)
+        if isinstance(first_elem, (int, float, np.integer, np.floating)):
+            try:
+                collated.append(torch.tensor(elements))
+            except Exception as e:
+                logger.warning(f"Failed to convert scalars at element {elem_idx}: {e}")
+                collated.append(None)
+            continue
+        
+        # Unknown type - log warning and return as list
+        logger.warning(
+            f"Unknown element type at index {elem_idx}: {type(first_elem)}. "
+            f"Returning as list."
+        )
+        collated.append(elements)
+    
+    return tuple(collated)
+
+
+# =============================================================================
+# SECTION 10: VALIDATION AND UTILITIES
 # =============================================================================
 # Functions for validating cache integrity and creating dataloaders.
 # =============================================================================
@@ -1752,7 +1862,8 @@ def get_tensor_cache_dataloader(
     num_workers: int = 4,
     prefetch_factor: int = 4,
     shuffle: bool = None,
-    preload_to_ram: bool = False
+    preload_to_ram: bool = False,
+    collate_fn: Optional[callable] = None
 ) -> torch.utils.data.DataLoader:
     """
     Create an optimized DataLoader from tensor cache.
@@ -1762,6 +1873,7 @@ def get_tensor_cache_dataloader(
     - persistent_workers=True: Avoid worker restart overhead
     - prefetch_factor: Pipeline batches while GPU works
     - drop_last=True for train: Avoid variable batch sizes
+    - collate_fn: Uses tensor_cache_collate_fn by default to handle None values
     
     Args:
         cache_dir: Path to tensor cache directory
@@ -1771,12 +1883,18 @@ def get_tensor_cache_dataloader(
         prefetch_factor: Batches to prefetch per worker
         shuffle: Whether to shuffle (default: True for train)
         preload_to_ram: Whether to preload data to RAM
+        collate_fn: Custom collate function (default: tensor_cache_collate_fn)
         
     Returns:
         Configured DataLoader
     """
     if shuffle is None:
         shuffle = (flag == 'train')
+    
+    # Use custom collate function that handles None values
+    # This is required because TensorCacheDataset may return None for optional fields
+    if collate_fn is None:
+        collate_fn = tensor_cache_collate_fn
 
     dataset = TensorCacheDataset(
         cache_dir=cache_dir,
@@ -1792,5 +1910,6 @@ def get_tensor_cache_dataloader(
         pin_memory=True,
         persistent_workers=(num_workers > 0),
         prefetch_factor=prefetch_factor if num_workers > 0 else None,
-        drop_last=(flag == 'train')
+        drop_last=(flag == 'train'),
+        collate_fn=collate_fn
     )
