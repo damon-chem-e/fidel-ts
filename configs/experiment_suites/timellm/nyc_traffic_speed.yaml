@@ -19,6 +19,9 @@ suite:
   description: "Train Time-LLM model on NYC_traffic_speed dataset with 15-day context, 1-week prediction (frozen GPT-2 backbone)"
   tags: ["timellm", "time-llm", "reprogramming", "llm", "frozen-backbone", "pytorch", "fidel-ts", "nyc_traffic_speed", "iclr2024"]
   
+  # Resume configuration - resume from initialized suite
+  resume_suite_id: "timellm_nyc_traffic_speed_20260112_185045"
+
   # Execution settings
   execution:
     parallel: false
@@ -81,3 +84,6 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/timellm/nyc_traffic_speed"
+
+        # Resume configuration (experiment-level)
+        resume_experiment_id: "20260112-185046_fe8c25cbf4dc"
