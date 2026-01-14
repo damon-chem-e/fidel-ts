@@ -12,7 +12,10 @@ The tensor cache eliminates per-sample overhead by:
 
 Usage:
     # Generate cache (run once, CPU-only job)
-    generator = TensorCacheGenerator(data_provider, cache_dir, config)
+    from utils.experiment_config_builder import build_cache_config
+    
+    cache_config = build_cache_config(args)  # Use centralized config builder
+    generator = TensorCacheGenerator(data_provider, cache_dir, cache_config)
     generator.generate()
 
     # Use cache during training (ultra-fast)
@@ -167,7 +170,8 @@ class TensorCacheGenerator:
         Args:
             data_provider: Data_Provider instance with datasets configured
             cache_dir: Directory to store cache files
-            config: Experiment config dict (for hash computation)
+            config: Cache config dict from centralized build_cache_config() function.
+                    This ensures consistent hash computation between CLI and generator.
             chunk_size: Number of samples to process at once (memory management)
             verbose: Whether to show progress bars
         """
@@ -178,10 +182,22 @@ class TensorCacheGenerator:
         self.verbose = verbose
 
         # Compute config hash for cache validation
-        self.config_hash = compute_config_hash(self._extract_cache_config())
+        # Now uses the config passed in (from centralized builder) instead of extracting its own
+        self.config_hash = compute_config_hash(config)
 
     def _extract_cache_config(self) -> dict:
-        """Extract relevant config for cache hash."""
+        """
+        DEPRECATED: This method is no longer used.
+        
+        Config is now passed in via __init__ from the centralized build_cache_config()
+        function to ensure consistent hash computation between CLI and generator.
+        
+        This method is kept for backwards compatibility but should not be called.
+        """
+        logger.warning(
+            "_extract_cache_config() is deprecated. "
+            "Pass cache config directly from utils.experiment_config_builder.build_cache_config()"
+        )
         args = self.data_provider.args
         return {
             'input_len': getattr(args, 'input_len', None),
@@ -226,9 +242,10 @@ class TensorCacheGenerator:
             )
 
         # Save metadata
+        # Use the config passed in (from centralized builder) instead of extracting
         metadata = TensorCacheMetadata(
             config_hash=self.config_hash,
-            data_config=self._extract_cache_config(),
+            data_config=self.config,  # Use centralized config
             shapes=shapes,
             dtypes={name: spec['dtype'] for name, spec in self.ARRAY_SPECS.items()},
             entity_info=entity_info

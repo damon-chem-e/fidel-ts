@@ -151,10 +151,16 @@ def resolve_cache_dir(args: dotdict, explicit_dir: Optional[str] = None) -> Path
     dataset root_path and config hash.
 
     The auto-generated path follows the pattern:
-        {dataset_root_path}/../tensor_cache/{config_hash}/
+        {dataset_root_path}/tensor_cache/{config_hash}/
 
     This co-locates caches with dataset data and enables automatic reuse
     when the same config hash is encountered again.
+
+    For time_mmd datasets with root_path='data/time_mmd/Traffic':
+        -> Cache: data/time_mmd/Traffic/tensor_cache/<hash>/
+
+    For other datasets with root_path='data/fidel-ts/germany_renewable/time_series':
+        -> Cache: data/fidel-ts/germany_renewable/time_series/tensor_cache/<hash>/
 
     Args:
         args: Argument object from build_args_from_config
@@ -163,7 +169,6 @@ def resolve_cache_dir(args: dotdict, explicit_dir: Optional[str] = None) -> Path
     Returns:
         Path to tensor cache directory
     """
-    import os
     from data_provider.tensor_cache import compute_config_hash
 
     if explicit_dir:
@@ -173,10 +178,9 @@ def resolve_cache_dir(args: dotdict, explicit_dir: Optional[str] = None) -> Path
     config = build_cache_config(args)
     config_hash = compute_config_hash(config)
 
-    # Get dataset root path (e.g., data/fidel-ts/germany_renewable/time_series/)
-    # Cache goes in parent: data/fidel-ts/germany_renewable/tensor_cache/<hash>/
+    # Get dataset root path - cache goes directly under this directory
     root_path = args.data_config.get('root_path', './data')
-    dataset_dir = os.path.dirname(root_path.rstrip('/\\'))
+    dataset_dir = root_path.rstrip('/\\')
 
     return Path(dataset_dir) / 'tensor_cache' / config_hash
 
