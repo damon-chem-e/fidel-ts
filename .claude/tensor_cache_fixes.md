@@ -98,6 +98,11 @@ Both CLI and Generator now compute identical hashes from the same parameter set,
    - `_extract_cache_config()`: Deprecated with warning
    - `generate()`: Uses centralized config for metadata
 
+3. **data_provider/data_factory.py** (Additional fixes for runtime)
+   - `_resolve_tensor_cache_dir()`: Fixed to use root_path directly (not parent)
+   - `_build_tensor_cache_config()`: Added missing `timemmd_text_output` parameter
+   - Updated docstrings to clarify cache location and config consistency
+
 ## Testing
 
 To verify the fixes work:
@@ -121,6 +126,17 @@ Expected results:
 - Validation reports cache as valid
 - Running generate again skips (cache already valid)
 
+## Additional Testing
+
+Created a quick test suite to verify tensor cache works during training:
+- **File:** `configs/experiment_suites/tensor_cache_quick_test.yaml`
+- **Usage:** `python -m cli.suite run configs/experiment_suites/tensor_cache_quick_test.yaml`
+- **Features:**
+  - Tests lynx_film_raw training with tensor cache
+  - Auto-resolves cache directory (no hardcoded paths)
+  - Quick 2-epoch test for fast verification
+  - Uses time_mmd Traffic dataset
+
 ## Design Notes
 
 ### Why Use Centralized Config Builder?
@@ -131,6 +147,8 @@ The centralized `build_cache_config()` in `utils/experiment_config_builder.py` i
 - Consistent behavior across all tools (CLI, profiling, training)
 
 This prevents subtle bugs where different parts of the codebase have different ideas about what makes a cache unique.
+
+**Critical:** The `_build_tensor_cache_config()` method in `Data_Provider` must include the same parameters as the centralized builder, especially `timemmd_text_output` for time_mmd datasets!
 
 ### Cache Location Strategy
 

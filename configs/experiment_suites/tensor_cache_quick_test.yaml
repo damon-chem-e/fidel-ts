@@ -1,0 +1,59 @@
+# Experiment Suite: Tensor Cache Quick Test
+# Description: Quick test to verify tensor cache works during training
+# Usage: python -m cli.suite run configs/experiment_suites/tensor_cache_quick_test.yaml
+# NOTE: Run tensor cache generation first:
+#   python -m cli.tensor_cache generate configs/experiment_suites/lynx_film_raw/time_mmd_ttc.yaml --filter "traffic"
+
+suite:
+  name: "tensor_cache_quick_test"
+  description: "Quick test: Verify tensor cache loading works during training with lynx_film_raw"
+  tags: ["tensor_cache", "test", "lynx_film_raw", "multimodal"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/tensor_cache_quick_test"
+    
+  # Experiments in this suite
+  experiments:
+    # Time MMD Traffic - Quick test with tensor cache
+    - name: "tensor_cache_test_traffic"
+      description: "lynx_film_raw on Time MMD Traffic using tensor cache (2 epochs)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        
+        # Override timemmd_text_output to match cache generation config
+        data_config:
+          timemmd_text_output: embedding
+        
+        training:
+          input_len: 24
+          output_len: 6
+          batch_size: 128  # Smaller batch for quick test
+          learning_rate: 1e-3
+          patience: 2
+          epochs: 2  # Just 2 epochs for quick test
+          track_per_sample: false  # Disable for speed
+          evaluate_test_during_training: false  # Only final eval
+          truncate_train_for_purge: true
+          num_workers: 4  # Use workers for tensor cache loading
+          prefetch_factor: 4  # Prefetch for speed
+          
+          # TENSOR CACHE CONFIGURATION
+          use_tensor_cache: true  # Enable tensor cache (will auto-resolve path)
+          # tensor_cache_dir: null  # Optional: Leave unset to auto-resolve from config hash
+        
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/tensor_cache_quick_test"
+        
+        wandb:
+          enabled: false  # Disable W&B for quick test

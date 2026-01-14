@@ -270,10 +270,16 @@ class Data_Provider(object):
         Otherwise, auto-generate based on dataset root_path and config hash.
 
         The auto-generated path follows the pattern:
-            {dataset_root_path}/../tensor_cache/{config_hash}/
+            {dataset_root_path}/tensor_cache/{config_hash}/
 
         This co-locates caches with dataset data and enables automatic reuse
         when the same config hash is encountered again.
+
+        For time_mmd datasets with root_path='data/time_mmd/Traffic':
+            -> Cache: data/time_mmd/Traffic/tensor_cache/<hash>/
+
+        For other datasets with root_path='data/fidel-ts/germany_renewable/time_series':
+            -> Cache: data/fidel-ts/germany_renewable/time_series/tensor_cache/<hash>/
 
         Returns:
             Path to tensor cache directory, or None if not using tensor cache
@@ -287,17 +293,16 @@ class Data_Provider(object):
             return explicit_dir
 
         # Auto-generate path based on dataset location and config hash
-        # Cache lives alongside dataset: data/<dataset>/tensor_cache/<hash>/
+        # Cache lives directly under root_path: {root_path}/tensor_cache/<hash>/
         from data_provider.tensor_cache import compute_config_hash
 
         # Build config dict for hash computation
         config = self._build_tensor_cache_config()
         config_hash = compute_config_hash(config)
 
-        # Get dataset root path (e.g., data/fidel-ts/germany_renewable/time_series/)
-        # Cache goes in parent: data/fidel-ts/germany_renewable/tensor_cache/<hash>/
+        # Get dataset root path - cache goes directly under this directory
         root_path = self.dataset_config.root_path
-        dataset_dir = os.path.dirname(root_path.rstrip('/\\'))
+        dataset_dir = root_path.rstrip('/\\')
 
         cache_dir = os.path.join(dataset_dir, 'tensor_cache', config_hash)
         return cache_dir
@@ -308,6 +313,9 @@ class Data_Provider(object):
 
         These are the parameters that affect cache validity - if any change,
         the cache must be regenerated.
+
+        IMPORTANT: This must match the config built by utils.experiment_config_builder.build_cache_config()
+        to ensure consistent hash computation across CLI and runtime.
 
         Returns:
             Dict of config parameters for hash computation
@@ -321,6 +329,7 @@ class Data_Provider(object):
             'data_name': getattr(self.dataset_config, 'name', 'unknown'),
             'hetero_stride': getattr(self.args.model_config, 'stride', 1) if hasattr(self.args, 'model_config') else 1,
             'hetero_type': self.dataset_config.hetero_info.get('hetero_type') if self.dataset_config.get('hetero_info') else None,
+            'timemmd_text_output': self.dataset_config.get('timemmd_text_output'),  # Critical for time_mmd datasets!
             'missing_value_strategy': self.dataset_config.get('missing_value_strategy', 'none'),
             'split_info': str(self.dataset_config.get('split_info', '')),
         }
