@@ -2,10 +2,11 @@
 
 ## Summary
 
-Fixed two critical issues with tensor cache generation and validation for time_mmd/ttc datasets:
+Fixed three critical issues with tensor cache generation and validation for time_mmd/ttc datasets:
 
 1. **Cache directory path** - Fixed to save caches in the correct location within dataset directories
 2. **Config hash mismatch** - Fixed inconsistent hash computation between CLI and generator
+3. **Memory-mapped file format** - Fixed to use proper .npy format for efficient memory-mapped I/O
 
 ## Issue 1: Cache Directory Path
 
@@ -95,6 +96,7 @@ Both CLI and Generator now compute identical hashes from the same parameter set,
 2. **data_provider/tensor_cache.py**
    - Module docstring: Updated usage example to show centralized config builder
    - `TensorCacheGenerator.__init__()`: Now uses config passed in directly
+   - `TensorCacheGenerator._create_mmap_arrays()`: Changed from `np.memmap` to `np.lib.format.open_memmap`
    - `_extract_cache_config()`: Deprecated with warning
    - `generate()`: Uses centralized config for metadata
 
@@ -105,17 +107,22 @@ Both CLI and Generator now compute identical hashes from the same parameter set,
 
 ## Testing
 
+**IMPORTANT:** Old caches created with `np.memmap` are incompatible and must be regenerated.
+
 To verify the fixes work:
 
 ```bash
-# Clean up old cache
-rm -rf data/time_mmd/tensor_cache/
+# Clean up old incompatible caches
+rm -rf data/time_mmd/*/tensor_cache/
 
-# Generate cache
+# Generate cache with proper format
 python -m cli.tensor_cache generate configs/experiment_suites/lynx_film_raw/time_mmd_ttc.yaml --filter "traffic"
 
 # Validate (should succeed)
 python -m cli.tensor_cache validate configs/experiment_suites/lynx_film_raw/time_mmd_ttc.yaml --filter "traffic"
+
+# Test training with tensor cache
+python -m cli.suite run configs/experiment_suites/tensor_cache_quick_test.yaml
 
 # Verify cache location
 ls data/time_mmd/Traffic/tensor_cache/
@@ -124,6 +131,7 @@ ls data/time_mmd/Traffic/tensor_cache/
 Expected results:
 - Cache generated at `data/time_mmd/Traffic/tensor_cache/<hash>/`
 - Validation reports cache as valid
+- Training loads from cache without errors
 - Running generate again skips (cache already valid)
 
 ## Additional Testing
@@ -149,6 +157,56 @@ The centralized `build_cache_config()` in `utils/experiment_config_builder.py` i
 This prevents subtle bugs where different parts of the codebase have different ideas about what makes a cache unique.
 
 **Critical:** The `_build_tensor_cache_config()` method in `Data_Provider` must include the same parameters as the centralized builder, especially `timemmd_text_output` for time_mmd datasets!
+
+## Issue 3: Memory-Mapped File Format
+
+### Problem
+After fixing the first two issues, loading cached tensors failed with:
+```
+_pickle.UnpicklingError: Failed to interpret file PosixPath('data/time_mmd/Traffic/tensor_cache/.../sample_ids.npy') as a pickle
+```
+
+### Root Cause
+The code was mixing two different approaches to memory-mapped files:
+
+**Saving** (in `_create_mmap_arrays()`):
+```python
+arrays[name] = np.memmap(filepath, dtype=dtype, mode='w+', shape=shape)
+```
+This creates a **raw binary file** with `.npy` extension but no proper .npy format headers.
+
+**Loading** (in `_load_arrays()`):
+```python
+arrays[name] = np.load(filepath, mmap_mode='r', allow_pickle=True)
+```
+This expects a **proper .npy format file** with headers and metadata.
+
+When `np.load` tries to read a raw binary file created by `np.memmap`, it fails to parse the header and tries to interpret it as a pickle file, causing the error.
+
+### Fix
+Use `np.lib.format.open_memmap()` instead of `np.memmap()` for creating arrays:
+
+**Before:**
+```python
+arrays[name] = np.memmap(filepath, dtype=dtype, mode='w+', shape=shape)
+```
+
+**After:**
+```python
+arrays[name] = np.lib.format.open_memmap(
+    str(filepath), dtype=dtype, mode='w+', shape=shape
+)
+```
+
+### Why This is Better
+`np.lib.format.open_memmap()`:
+- Creates files in proper .npy format with headers
+- Supports memory-mapped I/O (efficient, no full load into RAM)
+- Compatible with `np.load(..., mmap_mode='r')` for loading
+- No conversion step needed - arrays are written in the correct format
+- Maintains full efficiency of memory-mapped operations
+
+This is the **canonical way** to create memory-mapped .npy files in NumPy.
 
 ### Cache Location Strategy
 

@@ -390,7 +390,10 @@ class Data_Provider(object):
         """
         from data_provider.tensor_cache import get_tensor_cache_dataloader
 
-        return get_tensor_cache_dataloader(
+        # Log DataLoader creation start (this can take time with many workers)
+        print(f"[ info ] Creating {flag} DataLoader from tensor cache (num_workers={self.args.num_workers})...")
+        
+        dataloader = get_tensor_cache_dataloader(
             cache_dir=self.tensor_cache_dir,
             flag=flag,
             batch_size=self.batch_size,
@@ -399,6 +402,9 @@ class Data_Provider(object):
             shuffle=shuffle,
             preload_to_ram=False  # Memory-mapped is usually best
         )
+        
+        print(f"[ info ] {flag} DataLoader created successfully")
+        return dataloader
 
     def get_spliter(self):
         """

@@ -278,9 +278,12 @@ class Experiment(Exp_Basic):
                    model_optim, criterion, track_per_sample)
         """
         # Get data loaders for all splits
+        # Note: DataLoader creation can take 10-30s with many workers
+        print("[ info ] Initializing data loaders (this may take a moment)...")
         train_loader = self._get_data(flag='train')
         vali_loader = self._get_data(flag='val')
         test_loader = self._get_data(flag='test')
+        print("[ info ] All data loaders initialized successfully")
         
         # Release raw file buffer to save memory
         self.data_provider.data_buffer.clear()
@@ -884,6 +887,9 @@ class Experiment(Exp_Basic):
         
         # Load resume checkpoint if available
         start_epoch = self._load_resume_checkpoint(model_optim)
+        
+        # Log training configuration
+        print(f"[ info ] Starting training: {train_steps} steps/epoch, epochs {start_epoch+1}-{self.args.train_epochs}")
         
         # Training loop over all epochs
         for epoch in range(start_epoch, self.args.train_epochs):

@@ -318,7 +318,8 @@ class TensorCacheGenerator:
 
             current_idx += entity_samples
 
-        # Flush arrays
+        # Flush memory-mapped arrays
+        # Arrays are already in proper .npy format (created with np.lib.format.open_memmap)
         for arr in arrays.values():
             if hasattr(arr, 'flush'):
                 arr.flush()
@@ -366,16 +367,26 @@ class TensorCacheGenerator:
         split_dir: Path,
         shapes: Dict[str, tuple]
     ) -> Dict[str, np.memmap]:
-        """Create memory-mapped arrays for cache storage."""
+        """
+        Create memory-mapped arrays for cache storage in proper .npy format.
+        
+        Uses np.lib.format.open_memmap() which creates .npy format files that:
+        - Include proper headers and metadata
+        - Can be memory-mapped for efficient access
+        - Can be loaded with np.load(..., mmap_mode='r')
+        
+        This is more efficient than np.memmap() which creates raw binary files.
+        """
         arrays = {}
 
         for name, shape in shapes.items():
             dtype = self.ARRAY_SPECS[name]['dtype']
             filepath = split_dir / f"{name}.npy"
 
-            # Create memory-mapped array
-            arrays[name] = np.memmap(
-                filepath,
+            # Create memory-mapped array in proper .npy format
+            # This creates a file that can be loaded with np.load(..., mmap_mode='r')
+            arrays[name] = np.lib.format.open_memmap(
+                str(filepath),
                 dtype=dtype,
                 mode='w+',
                 shape=shape
@@ -444,9 +455,11 @@ class TensorCacheDataset(Dataset):
         self.preload_to_ram = preload_to_ram
 
         # Load metadata
+        logger.debug(f"Loading tensor cache metadata for {flag} split")
         self.metadata = TensorCacheMetadata.load(self.cache_dir / 'metadata.json')
 
-        # Load arrays
+        # Load arrays (memory-mapping or RAM loading)
+        logger.debug(f"Loading/mapping tensor arrays for {flag} split")
         self.arrays = self._load_arrays()
 
         # Get number of samples from first array
