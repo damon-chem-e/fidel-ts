@@ -30,6 +30,9 @@ suite:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
         
+        model_config_overrides:
+          input_text_dim: 768  # BERT embedding dimension (projects 768 -> text_dim=256)
+        
         # Override timemmd_text_output to match cache generation config
         data_config:
           timemmd_text_output: embedding
