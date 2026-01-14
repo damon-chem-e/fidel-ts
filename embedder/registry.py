@@ -73,10 +73,28 @@ class EmbeddingModelRegistry:
                     print(f'[ info ] Downloading {model_name} from HuggingFace (will cache to: {cache_model_path})')
                 
                 # Load model and move to target device
-                model = AutoModel.from_pretrained(
-                    model_name,
-                    cache_dir=hf_cache_dir
-                ).to(device)
+                try:
+                    model = AutoModel.from_pretrained(
+                        model_name,
+                        cache_dir=hf_cache_dir
+                    ).to(device)
+                except RuntimeError as e:
+                    # Handle CUDA not available error - fallback to CPU
+                    if 'CUDA' in str(e) or 'cuda' in str(e):
+                        print(f'[ warning ] Failed to load model on {device}: {e}')
+                        print(f'[ info ] Falling back to CPU device')
+                        device = 'cpu'
+                        # Update the key to use CPU device
+                        key = (model_name, device, hf_cache_dir)
+                        # Check if CPU version already loaded
+                        if key in cls._models:
+                            return cls._models[key]
+                        model = AutoModel.from_pretrained(
+                            model_name,
+                            cache_dir=hf_cache_dir
+                        ).to(device)
+                    else:
+                        raise
                 
                 model.eval()  # Set to evaluation mode
                 cls._models[key] = model

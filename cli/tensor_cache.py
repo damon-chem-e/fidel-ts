@@ -1,18 +1,71 @@
 """
 CLI module for tensor cache generation and management.
 
+================================================================================
+OVERVIEW
+================================================================================
+
 This module provides commands for generating and validating tensor caches
-that enable ultra-fast data loading during training.
+that enable ultra-fast data loading during training (100-1000x speedup).
 
-Usage:
-    # Generate cache for an experiment suite
-    python -m cli.tensor_cache generate configs/experiment_suites/lynx_film/canada_photovoltaics.yaml
+================================================================================
+GPU VS CPU SEPARATION
+================================================================================
 
-    # Validate existing cache
-    python -m cli.tensor_cache validate configs/experiment_suites/lynx_film/canada_photovoltaics.yaml
+There are TWO distinct phases in the data pipeline, with different GPU requirements:
 
-    # Show cache info
-    python -m cli.tensor_cache info ./output/tensor_cache/
+PHASE 1: EMBEDDING GENERATION (GPU REQUIRED)
+--------------------------------------------
+  - Runs BERT/transformer models on text data
+  - Produces embedding vectors (768-dim for BERT-base)
+  - MUST run on GPU (CPU is 10-100x slower, impractical)
+  - Output: Embedding cache files (.pkl)
+  - Location: data/{dataset}/embeddings_{hash}/
+
+PHASE 2: TENSOR CACHE GENERATION (CPU OK)
+-----------------------------------------
+  - Reads pre-computed embeddings from disk
+  - Performs temporal matching, indexing, array construction
+  - Pure numpy/CPU operations
+  - CAN run on CPU-only nodes IF embeddings are pre-computed
+  - Output: Tensor cache files (.npy)
+  - Location: data/{dataset}/tensor_cache/{hash}/
+
+================================================================================
+--cpu-only FLAG SEMANTICS
+================================================================================
+
+The --cpu-only flag enables tensor cache generation on CPU-only nodes.
+
+IMPORTANT: This flag does NOT enable CPU embedding computation!
+           Embedding computation ALWAYS requires GPU.
+
+What --cpu-only does:
+  1. Sets device='cpu' for Data_Provider
+  2. Validates that embeddings are ALREADY cached
+  3. If embeddings are NOT cached → FAIL with helpful error
+  4. If embeddings ARE cached → Proceed with tensor cache generation
+
+Typical workflow:
+  1. GPU node:  Generate embeddings (automatic, part of data loading)
+  2. CPU node:  python -m cli.tensor_cache generate suite.yaml --cpu-only
+                (uses pre-computed embeddings, generates tensor cache)
+
+================================================================================
+USAGE EXAMPLES
+================================================================================
+
+# Generate cache (auto-detect GPU/CPU, compute embeddings if needed)
+python -m cli.tensor_cache generate configs/experiment_suites/lynx_film/suite.yaml
+
+# Generate cache on CPU-only node (REQUIRES pre-computed embeddings)
+python -m cli.tensor_cache generate configs/experiment_suites/lynx_film/suite.yaml --cpu-only
+
+# Validate existing cache
+python -m cli.tensor_cache validate configs/experiment_suites/lynx_film/suite.yaml
+
+# Show cache info
+python -m cli.tensor_cache info ./output/tensor_cache/
 
 See context/performance_optimization/training_optimization_plan.md for details.
 """
@@ -143,6 +196,75 @@ def build_cache_config(args: dotdict) -> dict:
     return build_cache_config_centralized(args)
 
 
+def _check_embeddings_cached(args: dotdict) -> bool:
+    """
+    Check if embeddings are cached for the given experiment configuration.
+    
+    This function performs a LIGHTWEIGHT check that does NOT load any models.
+    It's designed to be called on CPU-only nodes to validate that embeddings
+    exist before attempting tensor cache generation.
+    
+    How it works:
+    -------------
+    1. Extracts hetero_info from args (contains embedding configuration)
+    2. Creates a FidelTSEmbeddingLoader with the same config
+    3. Calls has_cached_embeddings() which:
+       - Uses lookup table for embedding dimensions (no model loading)
+       - Searches for cache directories matching the metadata hash
+       - Returns True if valid cache found
+    
+    Why this is important:
+    ----------------------
+    The --cpu-only flag promises that no GPU will be needed. But if embeddings
+    aren't cached, the Data_Provider will try to compute them, which requires
+    loading BERT on GPU. By validating upfront, we can fail fast with a helpful
+    error instead of failing deep in the embedding loading code.
+    
+    Args:
+        args: Experiment arguments (dotdict) containing data_config
+    
+    Returns:
+        True if embeddings are cached and ready to load, False otherwise
+    """
+    from embedder.fidel_ts_embedder import FidelTSEmbeddingLoader
+    
+    # Get hetero_info from args (embedding configuration)
+    hetero_info = args.data_config.get('hetero_info', {})
+    
+    if not hetero_info:
+        # No hetero_info means no embeddings needed (time_mmd or non-hetero dataset)
+        # In this case, we don't need to check for embedding cache
+        return True
+    
+    # Extract embedding-related parameters from hetero_info
+    dataset_name = args.data  # e.g., 'Bear_room'
+    root_path = args.data_config.get('root_path', './data')
+    embed_model_name = hetero_info.get('embed_model_name', 'bert-base-uncased')
+    aggregation_method = hetero_info.get('aggregation_method', 'cls')
+    use_old_embeddings = hetero_info.get('use_old_embeddings', False)
+    
+    try:
+        # Create loader (does NOT load any models)
+        loader = FidelTSEmbeddingLoader(
+            dataset_name=dataset_name,
+            hetero_info=hetero_info,
+            base_data_path=root_path,
+            embed_model_name=embed_model_name,
+            aggregation_method=aggregation_method,
+            device='cpu',  # Device doesn't matter for cache check
+            hf_cache_dir=args.get('hf_cache_dir', './HF_cache/'),
+            use_old_embeddings=use_old_embeddings
+        )
+        
+        # Check if embeddings are cached (lightweight, no model loading)
+        return loader.has_cached_embeddings()
+    
+    except Exception as e:
+        # If we can't even check, assume not cached
+        logger.warning(f"Error checking embedding cache: {e}")
+        return False
+
+
 def resolve_cache_dir(args: dotdict, explicit_dir: Optional[str] = None) -> Path:
     """
     Resolve tensor cache directory path.
@@ -193,14 +315,15 @@ def generate(
     chunk_size: int = typer.Option(10000, "--chunk-size", help="Samples per processing chunk"),
     splits: str = typer.Option("train,val,test", "--splits", help="Comma-separated splits to generate"),
     force: bool = typer.Option(False, "--force", help="Overwrite existing cache"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be generated without generating")
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be generated without generating"),
+    cpu_only: bool = typer.Option(False, "--cpu-only", help="CPU-only mode: requires pre-computed embeddings")
 ):
     """
     Generate tensor cache for all experiments in a suite.
 
     This pre-computes all CPU-intensive dataloader operations:
     - Temporal matching
-    - Embedding lookups
+    - Embedding lookups  
     - Array construction
 
     The resulting cache enables 100-1000x faster data loading during training.
@@ -210,12 +333,21 @@ def generate(
 
     Experiments with the same config hash share the same cache (deduplication).
 
+    GPU vs CPU:
+    -----------
+    By default, this command will use GPU for embedding computation if needed.
+    Use --cpu-only to run on CPU-only nodes, but ONLY if embeddings are already
+    cached. The --cpu-only flag does NOT enable CPU embedding computation.
+
     Examples:
-        # Generate for all experiments in suite
+        # Generate for all experiments in suite (uses GPU for embeddings if needed)
         python -m cli.tensor_cache generate configs/experiment_suites/lynx_film/suite.yaml
 
         # Generate only for experiments matching pattern
         python -m cli.tensor_cache generate configs/experiment_suites/lynx_film/suite.yaml --filter germany
+        
+        # CPU-only mode (REQUIRES pre-computed embeddings!)
+        python -m cli.tensor_cache generate configs/experiment_suites/lynx_film/suite.yaml --cpu-only
     """
     from data_provider.tensor_cache import compute_config_hash, validate_cache
 
@@ -238,6 +370,8 @@ def generate(
         console.print(f"  Total experiments: [green]{len(experiments)}[/green]")
         if filter_experiments:
             console.print(f"  Filter: [yellow]'{filter_experiments}'[/yellow]")
+        if cpu_only:
+            console.print(f"  Device: [yellow]CPU-only mode (GPU disabled)[/yellow]")
         console.print()
 
         # Analyze experiments and group by config hash (deduplication)
@@ -303,7 +437,43 @@ def generate(
 
             # Generate cache
             try:
-                console.print(f"  [yellow]Initializing Data_Provider...[/yellow]")
+                # =================================================================
+                # CPU-ONLY MODE VALIDATION
+                # =================================================================
+                # When --cpu-only is set, we MUST verify embeddings are cached.
+                # This is because:
+                #   1. Embedding computation requires GPU (BERT is GPU-intensive)
+                #   2. We explicitly do NOT support CPU fallback for embeddings
+                #   3. Better to fail fast with clear error than fail deep in code
+                #
+                # The validation uses has_cached_embeddings() which does NOT load
+                # the embedding model - it only checks if cache directories exist.
+                # =================================================================
+                
+                if cpu_only:
+                    console.print("  [yellow]CPU-only mode: Validating embedding cache...[/yellow]")
+                    
+                    # Check if embeddings are cached (without loading model)
+                    embeddings_cached = _check_embeddings_cached(exp_args)
+                    
+                    if not embeddings_cached:
+                        console.print("  [red]✗ Embeddings NOT cached![/red]")
+                        console.print("  [red]  CPU-only mode requires pre-computed embeddings.[/red]")
+                        console.print("  [yellow]  Solutions:[/yellow]")
+                        console.print("  [yellow]    1. Run without --cpu-only on a GPU node first[/yellow]")
+                        console.print("  [yellow]    2. Generate embeddings separately on GPU[/yellow]")
+                        console.print("  [yellow]    3. Check embedding cache path exists[/yellow]")
+                        continue  # Skip this cache group
+                    
+                    console.print("  [green]✓ Embeddings found in cache[/green]")
+                    
+                    # Set device to CPU
+                    original_device = exp_args.device
+                    exp_args.device = 'cpu'
+                    if original_device != 'cpu':
+                        console.print(f"  [dim]Device: {original_device} -> cpu[/dim]")
+                
+                console.print("  [yellow]Initializing Data_Provider...[/yellow]")
                 data_provider = Data_Provider(exp_args, buffer=not exp_args.disable_buffer, console=console)
 
                 generator = TensorCacheGenerator(

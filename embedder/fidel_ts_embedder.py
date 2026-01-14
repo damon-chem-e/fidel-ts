@@ -1,9 +1,56 @@
 """
 Fidel-TS embedding loader for handling embeddings in Fidel-TS datasets.
 
-Loads/computes embeddings for Fidel-TS datasets using the new hash-based cache system.
-Supports loading from old .pkl files (explicitly requested) or new cache system.
-NO fallback between systems - explicit requests only.
+================================================================================
+ARCHITECTURE OVERVIEW
+================================================================================
+
+This module handles text embeddings for Fidel-TS datasets (Bear_room, Jena, NYC, etc.).
+It supports two embedding sources:
+  1. NEW CACHE SYSTEM: Hash-based cache directories with metadata validation
+  2. OLD PKL FILES: Legacy .pkl files (explicit request only via use_old_embeddings=True)
+
+Key Design Decisions:
+---------------------
+1. NO CPU FALLBACK FOR EMBEDDING COMPUTATION
+   - BERT/transformer embeddings are GPU-intensive operations
+   - Running on CPU is impractically slow (10-100x slower)
+   - If GPU is unavailable and embeddings need computing → FAIL with clear error
+   - This forces users to either: (a) use GPU, or (b) use pre-computed embeddings
+
+2. GPU-FREE CACHE LOOKUP
+   - Finding existing cache directories does NOT require loading the model
+   - We use a lookup table for embedding dimensions (KNOWN_MODELS)
+   - This enables tensor_cache generation on CPU-only nodes when embeddings exist
+
+3. EXPLICIT SYSTEM SELECTION
+   - No automatic fallback between old and new embedding systems
+   - User must explicitly choose via use_old_embeddings parameter
+   - Prevents silent data corruption from mismatched embedding formats
+
+================================================================================
+TYPICAL USAGE PATTERNS
+================================================================================
+
+Pattern 1: GPU node with embeddings not cached
+  - _find_cache_dir() returns None (no model loading needed)
+  - _compute_and_cache() is called
+  - _init_embedder() loads BERT on GPU
+  - Embeddings computed and saved to cache
+  - REQUIRES GPU
+
+Pattern 2: CPU node with embeddings already cached  
+  - _find_cache_dir() returns cache path (no model loading needed)
+  - _load_from_cache() loads pre-computed embeddings from disk
+  - NO GPU REQUIRED
+
+Pattern 3: CPU node with embeddings NOT cached
+  - _find_cache_dir() returns None
+  - _compute_and_cache() is called
+  - _init_embedder() detects no GPU → RAISES ERROR
+  - User must either use GPU or pre-compute embeddings elsewhere
+
+================================================================================
 """
 
 import joblib
@@ -140,9 +187,208 @@ class FidelTSEmbeddingLoader:
         self.embedder = None
         self.cache_manager = None
     
+    def _get_embedding_dim_for_model(self, model_name: str) -> int:
+        """
+        Get embedding dimension for a model WITHOUT loading model weights.
+        
+        This is a critical optimization that enables GPU-free cache lookup.
+        
+        Why this exists:
+        ----------------
+        To find existing embedding caches, we need to compute a metadata hash.
+        The hash includes the embedding dimension. Traditionally, getting the
+        embedding dimension requires loading the model (which needs GPU for
+        large models like BERT).
+        
+        Our solution: Maintain a lookup table of known embedding dimensions.
+        For 99% of use cases (BERT, RoBERTa, etc.), we can get the dimension
+        instantly without touching the model weights.
+        
+        Fallback behavior:
+        ------------------
+        For unknown models, we attempt to load just the config file (not weights).
+        HuggingFace model configs are small JSON files that contain hidden_size.
+        This is still much faster than loading full model weights.
+        
+        Args:
+            model_name: HuggingFace model name (e.g., 'bert-base-uncased')
+        
+        Returns:
+            Embedding dimension (hidden_size from model config)
+        
+        Raises:
+            ValueError: If dimension cannot be determined for unknown model
+        """
+        # =========================================================================
+        # KNOWN MODELS LOOKUP TABLE
+        # =========================================================================
+        # This table enables GPU-free cache lookup for common embedding models.
+        # Add new models here as needed to avoid config loading overhead.
+        #
+        # Source: HuggingFace model cards / config.json files
+        # =========================================================================
+        KNOWN_MODELS = {
+            # BERT family
+            'bert-base-uncased': 768,
+            'bert-base-cased': 768,
+            'bert-large-uncased': 1024,
+            'bert-large-cased': 1024,
+            # RoBERTa family
+            'roberta-base': 768,
+            'roberta-large': 1024,
+            # DistilBERT (smaller, faster BERT)
+            'distilbert-base-uncased': 768,
+            'distilbert-base-cased': 768,
+            # ALBERT (parameter-efficient BERT)
+            'albert-base-v2': 768,
+            'albert-large-v2': 1024,
+            'albert-xlarge-v2': 2048,
+            'albert-xxlarge-v2': 4096,
+            # Sentence transformers (if used)
+            'sentence-transformers/all-MiniLM-L6-v2': 384,
+            'sentence-transformers/all-mpnet-base-v2': 768,
+        }
+        
+        if model_name in KNOWN_MODELS:
+            return KNOWN_MODELS[model_name]
+        
+        # Fallback: Load only the config file (not model weights)
+        # This is still fast because config.json is small (~1KB)
+        try:
+            from transformers import AutoConfig
+            import os
+            os.makedirs(self.hf_cache_dir, exist_ok=True)
+            config = AutoConfig.from_pretrained(model_name, cache_dir=self.hf_cache_dir)
+            return config.hidden_size
+        except Exception as e:
+            raise ValueError(
+                f"Could not determine embedding dimension for model '{model_name}'. "
+                f"Add it to KNOWN_MODELS in _get_embedding_dim_for_model() or ensure "
+                f"the model config is accessible. Error: {e}"
+            )
+    
+    def _create_metadata_without_model(self) -> 'EmbeddingMetadata':
+        """
+        Create embedding metadata WITHOUT loading the model.
+        
+        This is the key method that enables GPU-free cache lookup. It creates
+        metadata that can be used to compute cache hashes and find existing
+        cache directories, all without loading BERT weights.
+        
+        Why this matters:
+        -----------------
+        Traditional flow:
+          Load BERT (needs GPU) → Get config → Create metadata → Compute hash
+        
+        Our optimized flow:
+          Lookup embedding_dim → Create metadata → Compute hash (no GPU!)
+        
+        This enables the following workflow:
+        1. Generate embeddings on GPU cluster (saves to cache)
+        2. Generate tensor_cache on CPU-only node (loads from cache)
+        
+        The second step doesn't need GPU because:
+        - Finding cache: Uses this method (no model loading)
+        - Loading embeddings: Just reads .pkl files from disk
+        - Tensor cache gen: Pure numpy/CPU operations
+        
+        Implementation notes:
+        --------------------
+        - embedding_dim comes from lookup table (see _get_embedding_dim_for_model)
+        - sequence_length is only relevant for aggregation='none'
+        - max_length is hardcoded to 512 (standard BERT max)
+        
+        Returns:
+            EmbeddingMetadata object with all fields needed for hash computation
+        """
+        # Get embedding dimension from lookup table (no model loading!)
+        embedding_dim = self._get_embedding_dim_for_model(self.embed_model_name)
+        
+        # sequence_length only matters for aggregation='none' (full token embeddings)
+        # For 'cls' and 'average', output is always [embedding_dim] regardless of input length
+        sequence_length = None
+        if self.aggregation_method == 'none':
+            sequence_length = 512  # Matches max_length for padding consistency
+        
+        # Create metadata directly without going through TextEmbedder
+        from .metadata import EmbeddingMetadata
+        return EmbeddingMetadata(
+            tokenizer_name=self.embed_model_name,
+            model_name=self.embed_model_name,
+            aggregation_method=self.aggregation_method,
+            embedding_dim=embedding_dim,
+            sequence_length=sequence_length,
+            max_length=512,
+            device=self.device,
+            hf_cache_dir=self.hf_cache_dir
+        )
+    
     def _init_embedder(self):
-        """Initialize TextEmbedder if not already initialized."""
+        """
+        Initialize TextEmbedder for computing new embeddings.
+        
+        IMPORTANT: This method is ONLY called when embeddings need to be computed.
+        If embeddings are already cached, this method is never invoked.
+        
+        GPU Requirement:
+        ----------------
+        Embedding computation with BERT/transformers is a GPU-intensive operation.
+        Running on CPU is impractically slow (10-100x slower), making it unsuitable
+        for production use. Therefore:
+        
+        - If GPU device requested but CUDA unavailable → RAISE ERROR (no CPU fallback)
+        - If CPU device explicitly requested → Allow (user knows what they're doing)
+        
+        This design forces users to either:
+        1. Run embedding computation on a GPU node
+        2. Use pre-computed embeddings from cache (no GPU needed for loading)
+        
+        The rationale is that silently falling back to CPU would result in:
+        - Hours of computation instead of minutes
+        - Poor user experience with no clear indication of the problem
+        - Potential cluster resource waste
+        
+        Raises:
+            RuntimeError: If CUDA device requested but not available
+        """
         if self.embedder is None:
+            import torch
+            
+            # =========================================================================
+            # GPU AVAILABILITY CHECK - NO CPU FALLBACK FOR EMBEDDING COMPUTATION
+            # =========================================================================
+            # Embedding computation is a GPU-intensive process. We explicitly DO NOT
+            # fall back to CPU because:
+            #   1. CPU embedding is 10-100x slower (impractical for real datasets)
+            #   2. Silent fallback would surprise users with multi-hour waits
+            #   3. Better to fail fast with clear guidance
+            #
+            # If embeddings are already cached, this code path is never reached.
+            # Use --cpu-only flag in CLI only when embeddings are pre-computed.
+            # =========================================================================
+            
+            if self.device.startswith('cuda') and not torch.cuda.is_available():
+                raise RuntimeError(
+                    f"\n"
+                    f"╔══════════════════════════════════════════════════════════════════════╗\n"
+                    f"║  GPU REQUIRED FOR EMBEDDING COMPUTATION                              ║\n"
+                    f"╠══════════════════════════════════════════════════════════════════════╣\n"
+                    f"║  Requested device: {self.device:<50} ║\n"
+                    f"║  CUDA available: False                                               ║\n"
+                    f"║                                                                      ║\n"
+                    f"║  Embedding computation with BERT/transformers requires a GPU.        ║\n"
+                    f"║  Running on CPU is 10-100x slower and not supported.                 ║\n"
+                    f"║                                                                      ║\n"
+                    f"║  SOLUTIONS:                                                          ║\n"
+                    f"║  1. Run on a GPU node (recommended)                                  ║\n"
+                    f"║  2. Pre-compute embeddings on GPU, then use --cpu-only flag          ║\n"
+                    f"║  3. Check if embeddings already exist in cache                       ║\n"
+                    f"║                                                                      ║\n"
+                    f"║  Cache location: {str(self.paths.get('cache_base', 'N/A'))[:52]:<52} ║\n"
+                    f"╚══════════════════════════════════════════════════════════════════════╝\n"
+                )
+            
+            # Initialize the embedder with the requested device
             self.embedder = TextEmbedder(
                 model_name=self.embed_model_name,
                 aggregation_method=self.aggregation_method,
@@ -248,13 +494,84 @@ class FidelTSEmbeddingLoader:
         
         return dynamic_embeddings, static_embeddings
     
+    def has_cached_embeddings(self) -> bool:
+        """
+        Check if embeddings are available in cache WITHOUT loading the model.
+        
+        This is a lightweight check that can be performed on CPU-only nodes
+        to determine if embedding computation will be required. It enables
+        the CLI to validate --cpu-only mode before attempting initialization.
+        
+        How it works:
+        -------------
+        1. Creates metadata using lookup table (no model loading)
+        2. Searches for matching cache directory
+        3. Returns True if valid cache found, False otherwise
+        
+        Use case:
+        ---------
+        Before initializing Data_Provider with --cpu-only flag, the CLI can
+        call this method to verify embeddings are cached. If not cached,
+        the CLI can fail early with a helpful message instead of failing
+        deep in the embedding loading code.
+        
+        Returns:
+            True if embeddings are cached and valid, False otherwise
+        """
+        # Also check for old embeddings if that's what's configured
+        if self.use_old_embeddings:
+            return self._has_old_embeddings()
+        
+        # Check new cache system
+        cache_dir = self._find_cache_dir()
+        return cache_dir is not None
+    
+    def _has_old_embeddings(self) -> bool:
+        """
+        Check if old .pkl embedding files exist.
+        
+        Returns:
+            True if old embedding files exist
+        """
+        if 'old_embedding_path' in self.paths:
+            return self.paths['old_embedding_path'].exists()
+        elif 'old_embedding_paths' in self.paths:
+            return any(p.exists() for p in self.paths['old_embedding_paths'])
+        return False
+    
     def _find_cache_dir(self) -> Optional[Path]:
-        """Find existing cache directory matching current metadata."""
+        """
+        Find existing cache directory matching current embedding configuration.
+        
+        IMPORTANT: This method does NOT load the embedding model.
+        
+        How it works:
+        -------------
+        1. Creates metadata using _create_metadata_without_model()
+           - Uses lookup table for embedding dimensions (no model loading)
+           - This is the key optimization that enables CPU-only cache lookup
+        
+        2. Searches cache_base for directories matching the metadata hash
+           - Compares model name, aggregation method, embedding dim, etc.
+           - Returns path if match found, None otherwise
+        
+        Why this matters:
+        -----------------
+        Traditional approach: Load BERT → Get embedding_dim → Compute hash → Find cache
+        Our approach: Lookup embedding_dim → Compute hash → Find cache (no BERT loading!)
+        
+        This enables tensor cache generation on CPU-only nodes when embeddings
+        are already computed, because we never need to load the GPU-hungry model
+        just to find out if the cache exists.
+        
+        Returns:
+            Path to cache directory if found, None otherwise
+        """
         cache_base = self.paths['cache_base']
         
-        # Initialize embedder to get metadata
-        self._init_embedder()
-        metadata = self.embedder.create_metadata()
+        # Create metadata without loading the model
+        # Uses lookup table for known models (BERT, RoBERTa, etc.)
+        metadata = self._create_metadata_without_model()
         
         # Use static method to find cache
         return EmbeddingCacheManager.find_fidel_ts_cache(cache_base, metadata)
