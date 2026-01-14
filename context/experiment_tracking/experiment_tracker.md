@@ -90,7 +90,7 @@
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |---------|--------|----------|---------------|------|--------|---------|
 | California ISO | ✅ Complete | `timellm_california_iso_20260112_141144` | `20260112-141144_a05ebe165526` | - | - | MIT Sloan (A100) |
-| NYC Traffic Speed | 🟡 Running | `timellm_nyc_traffic_speed_20260112_185045` | - | - | - | MIT Sloan (A100) |
+| NYC Traffic Speed | ❌ Error (needs resume) | `timellm_nyc_traffic_speed_20260112_185045` | - | - | - | MIT Sloan (A100) |
 | Canada Photovoltaics | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
 | Germany Renewable | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
 | Bear Room | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
@@ -101,7 +101,7 @@
 |---------|--------|-----------|----------|---------------|------|--------|---------|
 | Time MMD & TTC | ⏳ Pending | ✅ Complete | - | - | - | - | MIT Sloan (A100) |
 | Bear Room | ⏳ Pending | ✅ Complete | - | - | - | - | MIT Sloan (A100) |
-| California ISO | ⏳ Pending | 🟡 In Progress (OOM) | - | - | - | - | MIT Sloan (A100) |
+| California ISO | ⏳ Pending | ❌ In Progress (OOM) | - | - | - | - | MIT Sloan (A100) |
 | Canada Photovoltaics | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
 | Germany Renewable | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
 | NYC Traffic Speed | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
@@ -134,7 +134,13 @@
 #### Hyperparameter Sweep (NYC Traffic)
 | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------------|------|--------|---------|
-| 🟡 Running | `sweep_v2dy5lr5` | - | - | - | MIT Preemptable (L40s x 4) |
+| ⏸️ Paused (new job submission) | `sweep_v2dy5lr5` | - | - | - | MIT Preemptable (L40s x 4) |
+
+**Notes:**
+- New job submission paused until tensor cache is working to speed up runs
+- Findings: Learning rate 0.0004 with d_model 768, e_layers 2, n_heads 4 shows good generalization
+- Every single run gets best val loss after a single epoch → set max_epochs to 1
+- Will likely create a new sweep that uses tensor cache, sweeps closer around these optimal points, and only uses a single epoch
 
 #### Initial Runs (Other Datasets)
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
@@ -259,7 +265,7 @@
 
 | Resource | Allocation | Status |
 |----------|------------|--------|
-| MIT Preemptable (L40s x 4) | Lynx Film Raw sweep (NYC Traffic) | 🟡 Running |
+| MIT Preemptable (L40s x 4) | Lynx Film Raw sweep (NYC Traffic) | ⏸️ Paused (new job submission) |
 | MIT Sloan (A100) | Time-LLM on Fidel-TS | 🟡 Running |
 | MIT Sloan (A100) | TimeCMA on Fidel-TS | ❌ Crashed |
 | RunPod-Canada | iTransformer pretraining, TGTSF, LeRet, Lynx Film Raw, Lynx Film | ⏳ Pending |

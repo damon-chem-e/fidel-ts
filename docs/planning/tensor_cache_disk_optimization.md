@@ -81,9 +81,13 @@ text embeddings have significant compressibility (similar values, patterns).
 | hetero_y (output embeddings) | 134 GB | ~0.8 GB | ~170x |
 | hetero_general | 1.4 GB | ~90 KB | ~16,000x |
 | hetero_channel | 1.4 GB | ~90 KB | ~16,000x |
-| seq_x, seq_y | 2.4 GB | 2.4 GB | 1x (no redundancy) |
-| time arrays | 1.9 GB | ~100 MB | ~20x |
-| **TOTAL** | **408 GB** | **~5-10 GB** | **~50-80x** |
+| seq_x, seq_y | 2.4 GB | ~20 MB | ~120x |
+| x_time, y_time | 1.6 GB | ~15 MB | ~110x |
+| hetero_x_time, hetero_y_time | 268 MB | ~3 MB | ~90x |
+| **TOTAL** | **408 GB** | **~3-4 GB** | **~100-130x** |
+
+**Note**: Time series (seq_x, seq_y) also have sliding window redundancy! Adjacent
+samples share 287/288 timesteps for input and 143/144 for output.
 
 ---
 
@@ -186,7 +190,34 @@ def get_hetero_general(self, sample_idx):
 
 ---
 
-### Solution D: Compression (Supplementary)
+### Solution D: Index-Based Time Series Lookup
+
+The same sliding window redundancy applies to time series data (seq_x, seq_y).
+
+#### Current Schema
+```
+seq_x:  shape=(N_samples, input_len, n_features)   # 1.6 GB
+seq_y:  shape=(N_samples, output_len, n_features)  # 818 MB
+```
+
+#### Proposed Schema
+```
+timeseries:       shape=(N_unique_timestamps, n_features)  # ~10 MB
+x_ts_indices:     shape=(N_samples, input_len) int32       # ~0.8 GB
+y_ts_indices:     shape=(N_samples, output_len) int32      # ~0.4 GB
+```
+
+#### Why This Matters
+For Bear_room with ~726k samples and ~726k unique timestamps:
+- Current: 726,566 × 288 × 1 feature × 4 bytes = 836 MB for seq_x
+- Deduplicated: 726,566 × 1 × 4 bytes (data) + indices = ~13 MB
+
+For datasets with more features or future growth, this becomes more significant.
+The same infrastructure supports both embeddings and time series.
+
+---
+
+### Solution E: Compression (Supplementary)
 
 Use compression for arrays that are accessed sequentially (not random access).
 
@@ -243,95 +274,123 @@ Similar pattern - store unique timestamps once, reference by index.
 
 ```python
 ARRAY_SPECS_V2 = {
-    # Per-sample arrays (no change)
-    'sample_ids': {'index': 0, 'dtype': 'U64'},
-    'seq_x': {'index': 1, 'dtype': 'float32'},
-    'seq_y': {'index': 2, 'dtype': 'float32'},
+    # Per-sample metadata only
+    'sample_ids': {'dtype': 'U64'},           # (N_samples,)
+    'entity_indices': {'dtype': 'int16'},     # (N_samples,) - index into entity tables
     
-    # Timestamp arrays (still per-sample, could optimize later)
-    'x_time': {'index': 3, 'dtype': 'int64'},
-    'y_time': {'index': 4, 'dtype': 'int64'},
+    # Index arrays - reference into shared tables
+    'x_indices': {'dtype': 'int32'},          # (N_samples, input_len) - into timeseries/embeddings
+    'y_indices': {'dtype': 'int32'},          # (N_samples, output_len) - into timeseries/embeddings
     
-    # NEW: Embedding indices (replaces direct embedding storage)
-    'x_embed_indices': {'dtype': 'int32'},  # (N_samples, input_len)
-    'y_embed_indices': {'dtype': 'int32'},  # (N_samples, output_len)
-    
-    # NEW: Entity indices (replaces per-sample static embeddings)
-    'entity_indices': {'dtype': 'int16'},   # (N_samples,)
-    
-    # Time features (keep as-is for now)
-    'hetero_x_time': {'index': 7, 'dtype': 'float32'},
-    'hetero_y_time': {'index': 8, 'dtype': 'float32'},
-    'x_time_features': {'index': 11, 'dtype': 'float32'},
-    'y_time_features': {'index': 12, 'dtype': 'float32'},
+    # Time features - still per-sample (small, different structure)
+    'x_time_features': {'dtype': 'float32'},  # (N_samples, input_len, n_time_features)
+    'y_time_features': {'dtype': 'float32'},  # (N_samples, output_len, n_time_features)
 }
 
-# Shared tables (stored once, not per-sample)
+# Shared tables (stored once in shared/ directory, not per-sample)
 SHARED_TABLES = {
-    'embeddings': {'dtype': 'float32'},      # (N_unique, embed_dim)
-    'entity_general': {'dtype': 'float32'},  # (N_entities, embed_dim)
-    'entity_channel': {'dtype': 'float32'},  # (N_entities, embed_dim)
+    # Time series data - one row per unique timestamp
+    'timeseries': {'dtype': 'float32'},       # (N_unique_timestamps, n_features)
+    'timestamps': {'dtype': 'int64'},         # (N_unique_timestamps,) - actual timestamp values
+    
+    # Embeddings - one row per unique timestamp (may be subset of timeseries)
+    'embeddings': {'dtype': 'float32'},       # (N_unique_timestamps, embed_dim)
+    'hetero_time_features': {'dtype': 'float32'},  # (N_unique_timestamps, n_hetero_time_features)
+    
+    # Entity-level static data - one row per entity
+    'entity_general': {'dtype': 'float32'},   # (N_entities, embed_dim)
+    'entity_channel': {'dtype': 'float32'},   # (N_entities, embed_dim)
 }
 ```
+
+**Key insight**: `x_indices` and `y_indices` serve as universal indices into ALL
+shared tables. The same index retrieves the timeseries value, embedding, and
+timestamp for a given position. This unifies the lookup mechanism.
 
 ### Modified Cache Structure
 
 ```
 tensor_cache/{hash}/
-├── metadata.json           # Version, config, shapes
+├── metadata.json              # Version, config, shapes, index mappings
+├── shared/                    # Shared across ALL splits (deduplicated)
+│   ├── timeseries.npy         # (N_unique_ts, n_features) - raw time series
+│   ├── timestamps.npy         # (N_unique_ts,) int64 - timestamp values
+│   ├── embeddings.npy         # (N_unique_ts, embed_dim) - text embeddings
+│   ├── hetero_time.npy        # (N_unique_ts, n_time_features) - hetero time features
+│   ├── entity_general.npy     # (N_entities, embed_dim) - static general embeddings
+│   ├── entity_channel.npy     # (N_entities, embed_dim) - static channel embeddings
+│   └── index_mappings.json    # {timestamp_str: idx}, {entity_id: idx}
 ├── train/
-│   ├── sample_ids.npy      # (N,) str
-│   ├── seq_x.npy           # (N, input_len, features)
-│   ├── seq_y.npy           # (N, output_len, features)
-│   ├── x_time.npy          # (N, input_len)
-│   ├── y_time.npy          # (N, output_len)
-│   ├── x_embed_indices.npy # (N, input_len) int32 - NEW
-│   ├── y_embed_indices.npy # (N, output_len) int32 - NEW
-│   ├── entity_indices.npy  # (N,) int16 - NEW
-│   ├── hetero_x_time.npy   # (N, input_len, time_features)
-│   ├── hetero_y_time.npy   # (N, output_len, time_features)
-│   └── ...
-├── shared/                  # NEW: Shared across splits
-│   ├── embeddings.npy       # (N_unique, embed_dim)
-│   ├── entity_general.npy   # (N_entities, embed_dim)
-│   ├── entity_channel.npy   # (N_entities, embed_dim)
-│   └── embedding_index.json # {timestamp_str: index}
+│   ├── sample_ids.npy         # (N,) str - sample identifiers
+│   ├── entity_indices.npy     # (N,) int16 - index into entity tables
+│   ├── x_indices.npy          # (N, input_len) int32 - indices into shared tables
+│   ├── y_indices.npy          # (N, output_len) int32 - indices into shared tables
+│   ├── x_time_features.npy    # (N, input_len, n_tf) - per-sample time features
+│   └── y_time_features.npy    # (N, output_len, n_tf) - per-sample time features
 ├── val/
-│   └── ...
+│   └── ... (same structure as train)
 └── test/
-    └── ...
+    └── ... (same structure as train)
+```
+
+**Size comparison** (Bear_room train):
+```
+BEFORE (direct storage):     AFTER (indexed):
+├── hetero_x.npy    267 GB   ├── shared/
+├── hetero_y.npy    134 GB   │   ├── embeddings.npy    ~2 GB
+├── seq_x.npy       1.6 GB   │   ├── timeseries.npy    ~3 MB
+├── seq_y.npy       818 MB   │   └── ...               ~5 MB
+├── x_time.npy      1.1 GB   ├── train/
+├── y_time.npy      545 MB   │   ├── x_indices.npy     ~0.8 GB
+└── ...             ~2 GB    │   ├── y_indices.npy     ~0.4 GB
+                             │   └── ...               ~0.2 GB
+─────────────────────────    ─────────────────────────────────
+TOTAL:              ~408 GB  TOTAL:                    ~3.5 GB
 ```
 
 ### Modified TensorCacheDataset.__getitem__
 
 ```python
 def __getitem__(self, index: int) -> tuple:
-    # Direct arrays (unchanged)
+    # Get universal indices for this sample
+    x_idx = self.arrays['x_indices'][index]      # (input_len,) int32
+    y_idx = self.arrays['y_indices'][index]      # (output_len,) int32
+    entity_idx = self.arrays['entity_indices'][index]  # scalar int16
+    
+    # Use indices to look up ALL data from shared tables
+    # Time series
+    seq_x = self.shared['timeseries'][x_idx]     # (input_len, n_features)
+    seq_y = self.shared['timeseries'][y_idx]     # (output_len, n_features)
+    
+    # Timestamps
+    x_time = self.shared['timestamps'][x_idx]    # (input_len,)
+    y_time = self.shared['timestamps'][y_idx]    # (output_len,)
+    
+    # Text embeddings
+    hetero_x = self.shared['embeddings'][x_idx]  # (input_len, embed_dim)
+    hetero_y = self.shared['embeddings'][y_idx]  # (output_len, embed_dim)
+    
+    # Hetero time features
+    hetero_x_time = self.shared['hetero_time'][x_idx]  # (input_len, n_hetero_tf)
+    hetero_y_time = self.shared['hetero_time'][y_idx]  # (output_len, n_hetero_tf)
+    
+    # Entity-level static embeddings (same for all samples from this entity)
+    hetero_general = self.shared['entity_general'][entity_idx]  # (embed_dim,)
+    hetero_channel = self.shared['entity_channel'][entity_idx]  # (embed_dim,)
+    
+    # Per-sample arrays (not deduplicated - different structure)
     sample_id = self.arrays['sample_ids'][index]
-    seq_x = self.arrays['seq_x'][index]
-    seq_y = self.arrays['seq_y'][index]
-    x_time = self.arrays['x_time'][index]
-    y_time = self.arrays['y_time'][index]
-    
-    # Index-based embedding lookup (NEW)
-    x_embed_idx = self.arrays['x_embed_indices'][index]  # (input_len,)
-    y_embed_idx = self.arrays['y_embed_indices'][index]  # (output_len,)
-    hetero_x = self.shared['embeddings'][x_embed_idx]    # (input_len, embed_dim)
-    hetero_y = self.shared['embeddings'][y_embed_idx]    # (output_len, embed_dim)
-    
-    # Entity-based static embedding lookup (NEW)
-    entity_idx = self.arrays['entity_indices'][index]
-    hetero_general = self.shared['entity_general'][entity_idx]
-    hetero_channel = self.shared['entity_channel'][entity_idx]
-    
-    # Rest unchanged
-    hetero_x_time = self.arrays['hetero_x_time'][index]
-    hetero_y_time = self.arrays['hetero_y_time'][index]
+    x_time_features = self.arrays['x_time_features'][index]
+    y_time_features = self.arrays['y_time_features'][index]
     
     return (sample_id, seq_x, seq_y, x_time, y_time,
             hetero_x, hetero_y, hetero_x_time, hetero_y_time,
             hetero_general, hetero_channel, x_time_features, y_time_features)
 ```
+
+**Performance note**: The index lookups (`shared['timeseries'][x_idx]`) use numpy
+advanced indexing which is highly optimized. For a batch of 768 samples, the total
+lookup overhead is ~2-5ms - negligible compared to GPU training time.
 
 ---
 
@@ -394,11 +453,17 @@ class TensorCacheDataset:
 
 | Metric | Before | After | Improvement |
 |--------|--------|-------|-------------|
-| Bear_room train cache | 408 GB | ~5 GB | **80x smaller** |
-| Full Bear_room cache (train+val+test) | ~600 GB | ~8 GB | **75x smaller** |
-| NYC_traffic_speed (estimated) | ~850 GB | ~12 GB | **70x smaller** |
-| Cache generation time | Similar | Similar | Neutral |
-| Training throughput | Baseline | -3-5% | Acceptable |
+| Bear_room train cache | 408 GB | ~3.5 GB | **~115x smaller** |
+| Full Bear_room cache (train+val+test) | ~600 GB | ~5 GB | **~120x smaller** |
+| NYC_traffic_speed (estimated) | ~850 GB | ~8 GB | **~105x smaller** |
+| Cache generation time | Similar | Slightly faster | Better (less I/O) |
+| Training throughput | Baseline | -2-5% | Acceptable |
+
+**Why training throughput impact is minimal**:
+- Shared tables loaded into RAM once at dataset init (~2-3 GB)
+- Index lookups use numpy advanced indexing (C-optimized)
+- Lookup time ~2-5ms per batch vs ~100-500ms model forward pass
+- Reduced disk I/O may actually improve throughput on some systems
 
 ---
 
