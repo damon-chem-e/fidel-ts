@@ -1075,31 +1075,79 @@ class TensorCacheGenerator:
         """
         collector = SharedTableCollector()
         
-        # Process all splits to collect unique data
+        # Count total samples for progress tracking
+        total_samples = 0
         for flag in flags:
             datasets = self.data_provider.get_datasets(flag)
-            if not datasets:
-                continue
-            
-            for entity_id, dataset in datasets.items():
-                if len(dataset) == 0:
-                    continue
-                
-                # Register entity (extracts static embeddings from first sample)
-                first_sample = dataset[0]
-                _register_entity_data(
-                    collector,
-                    entity_id,
-                    first_sample[SAMPLE_IDX_HETERO_GENERAL],
-                    first_sample[SAMPLE_IDX_HETERO_CHANNEL]
+            if datasets:
+                total_samples += sum(len(ds) for ds in datasets.values())
+        
+        # Process all splits to collect unique data
+        if RICH_AVAILABLE and total_samples > 0:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[bold blue]{task.description}"),
+                BarColumn(bar_width=40),
+                MofNCompleteColumn(),
+                TextColumn("•"),
+                TimeElapsedColumn(),
+                disable=not RICH_AVAILABLE
+            ) as progress:
+                task = progress.add_task(
+                    "Processing samples",
+                    total=total_samples
                 )
                 
-                # Process all samples to register unique timestamps
-                for sample_idx in range(len(dataset)):
-                    sample = dataset[sample_idx]
-                    _process_sample_for_collection(collector, sample)
+                for flag in flags:
+                    datasets = self.data_provider.get_datasets(flag)
+                    if not datasets:
+                        continue
+                    
+                    for entity_id, dataset in datasets.items():
+                        if len(dataset) == 0:
+                            continue
+                        
+                        # Register entity (extracts static embeddings from first sample)
+                        first_sample = dataset[0]
+                        _register_entity_data(
+                            collector,
+                            entity_id,
+                            first_sample[SAMPLE_IDX_HETERO_GENERAL],
+                            first_sample[SAMPLE_IDX_HETERO_CHANNEL]
+                        )
+                        
+                        # Process all samples to register unique timestamps
+                        for sample_idx in range(len(dataset)):
+                            sample = dataset[sample_idx]
+                            _process_sample_for_collection(collector, sample)
+                            progress.update(task, advance=1)
+        else:
+            # Fallback without progress bar
+            for flag in flags:
+                datasets = self.data_provider.get_datasets(flag)
+                if not datasets:
+                    continue
+                
+                for entity_id, dataset in datasets.items():
+                    if len(dataset) == 0:
+                        continue
+                    
+                    # Register entity (extracts static embeddings from first sample)
+                    first_sample = dataset[0]
+                    _register_entity_data(
+                        collector,
+                        entity_id,
+                        first_sample[SAMPLE_IDX_HETERO_GENERAL],
+                        first_sample[SAMPLE_IDX_HETERO_CHANNEL]
+                    )
+                    
+                    # Process all samples to register unique timestamps
+                    for sample_idx in range(len(dataset)):
+                        sample = dataset[sample_idx]
+                        _process_sample_for_collection(collector, sample)
         
         # Finalize: convert lists to arrays
+        logger.info("Converting collected data to arrays...")
         shared_tables, index_mappings = _finalize_shared_tables(collector)
         
         logger.info(
