@@ -60,13 +60,13 @@ suite:
           cache_dir: "./LLM_cache/"
           prompt_template: "timecma_v1"
           # Memory-efficient mode for large Fidel-TS dataset (~30M observations)
-          # Optimized for H200 (80GB VRAM) + 128GB CPU RAM:
-          #   - batch_size=2048: ~40GB VRAM (hidden states + attention for GPT-2)
-          #   - chunk_size=500000: ~60GB CPU RAM for data + prompts
-          # This reduces LLM forward passes by 32x vs batch_size=64
+          # Reduced to avoid OOM on A100 (40GB VRAM):
+          #   - batch_size=128: ~2-3GB VRAM per batch (safe margin)
+          #   - chunk_size=1000: ~12-20MB per chunk for data + prompts
+          # More frequent disk I/O but much lower peak memory usage
           memory_efficient: true
-          batch_size: 2048
-          chunk_size: 500000
+          batch_size: 128  # Reduced from 2048 for A100 compatibility
+          chunk_size: 1000  # Reduced from 500000 for lower peak memory
         model_config_overrides:
           # NYC Traffic Speed has 1 target (SPEED)
           enc_in: 1           # Number of input channels

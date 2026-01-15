@@ -60,8 +60,8 @@ suite:
           prompt_template: "timecma_v1"
           # Memory-efficient mode for large Fidel-TS dataset
           memory_efficient: true
-          batch_size: 2048
-          chunk_size: 500000
+          batch_size: 128  # Reduced from 2048 to avoid OOM on forward pass
+          chunk_size: 1000  # Reduced from 500000 to avoid loading too much data at once
         model_config_overrides:
           # Jena_Atmospheric_Physics channel configuration
           enc_in: 1           # Number of input channels
