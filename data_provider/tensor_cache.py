@@ -123,7 +123,7 @@ import psutil
 import os
 import gc
 
-def _debug_memory(label: str, force_gc: bool = False) -> None:
+def _debug_memory(label: str, force_gc: bool = False, collector: Optional[Any] = None) -> None:
     """
     Print current memory usage with a label.
     
@@ -132,6 +132,7 @@ def _debug_memory(label: str, force_gc: bool = False) -> None:
     Args:
         label: Description of current operation/phase
         force_gc: If True, run gc.collect() before measuring memory
+        collector: Optional SharedTableCollector to report sizes
     """
     if os.environ.get('TENSOR_CACHE_DEBUG_MEMORY', '0') != '1':
         return
@@ -143,7 +144,16 @@ def _debug_memory(label: str, force_gc: bool = False) -> None:
     mem_info = process.memory_info()
     rss_gb = mem_info.rss / (1024 ** 3)
     vms_gb = mem_info.vms / (1024 ** 3)
-    print(f"[DEBUG MEM] {label}: RSS={rss_gb:.2f}GB, VMS={vms_gb:.2f}GB")
+    
+    msg = f"[DEBUG MEM] {label}: RSS={rss_gb:.2f}GB, VMS={vms_gb:.2f}GB"
+    
+    if collector is not None:
+        msg += (f" | Collector: timestamps={len(collector.timestamps)}, "
+                f"embeddings={len(collector.embeddings)}, "
+                f"timeseries={len(collector.timeseries)}, "
+                f"hetero_time={len(collector.hetero_time)}")
+    
+    print(msg)
 
 _DEBUG_GETITEM_COUNT = 0
 _DEBUG_GETITEM_LIMIT = 5  # Only print first N __getitem__ calls
@@ -1396,10 +1406,33 @@ class TensorCacheGenerator:
                         )
                         
                         # Process all samples to register unique timestamps
+                        # MEMORY OPTIMIZATION: Periodic GC during large loops to prevent unbounded growth
+                        samples_per_gc = 10000  # Run GC every 10K samples
                         for sample_idx in range(len(dataset)):
                             sample = dataset[sample_idx]
                             _process_sample_for_collection(collector, sample)
                             progress.update(task, advance=1)
+                            
+                            # Periodic memory management during processing
+                            if (sample_idx + 1) % samples_per_gc == 0:
+                                # Force garbage collection periodically to release sample references
+                                gc.collect()
+                                _debug_memory(
+                                    f"_build_shared_tables: processing {entity_id}, "
+                                    f"sample {sample_idx+1}/{len(dataset)}",
+                                    force_gc=False,
+                                    collector=collector
+                                )
+                                
+                                # Always warn if memory usage is high (even without debug mode)
+                                process = psutil.Process(os.getpid())
+                                rss_gb = process.memory_info().rss / (1024 ** 3)
+                                if rss_gb > 50:  # Warn if using more than 50GB
+                                    logger.warning(
+                                        f"High memory usage detected: {rss_gb:.1f}GB RSS. "
+                                        f"Collector has {len(collector.timestamps)} unique timestamps. "
+                                        f"Enable TENSOR_CACHE_DEBUG_MEMORY=1 for detailed memory tracking."
+                                    )
                     
                     # CRITICAL: Release this split's datasets before loading next split
                     # This prevents multiple dataset instances from accumulating in memory
@@ -1430,9 +1463,32 @@ class TensorCacheGenerator:
                     )
                     
                     # Process all samples to register unique timestamps
+                    # MEMORY OPTIMIZATION: Periodic GC during large loops to prevent unbounded growth
+                    samples_per_gc = 10000  # Run GC every 10K samples
                     for sample_idx in range(len(dataset)):
                         sample = dataset[sample_idx]
                         _process_sample_for_collection(collector, sample)
+                        
+                        # Periodic memory management during processing
+                        if (sample_idx + 1) % samples_per_gc == 0:
+                            # Force garbage collection periodically to release sample references
+                            gc.collect()
+                            _debug_memory(
+                                f"_build_shared_tables: processing {entity_id}, "
+                                f"sample {sample_idx+1}/{len(dataset)}",
+                                force_gc=False,
+                                collector=collector
+                            )
+                            
+                            # Always warn if memory usage is high (even without debug mode)
+                            process = psutil.Process(os.getpid())
+                            rss_gb = process.memory_info().rss / (1024 ** 3)
+                            if rss_gb > 50:  # Warn if using more than 50GB
+                                logger.warning(
+                                    f"High memory usage detected: {rss_gb:.1f}GB RSS. "
+                                    f"Collector has {len(collector.timestamps)} unique timestamps. "
+                                    f"Enable TENSOR_CACHE_DEBUG_MEMORY=1 for detailed memory tracking."
+                                )
                 
                 # CRITICAL: Release this split's datasets before loading next split
                 # This prevents multiple dataset instances from accumulating in memory
@@ -2334,7 +2390,7 @@ def tensor_cache_collate_fn(batch: List[tuple]) -> tuple:
     
     # BEGIN DEBUG
     if debug_this_call:
-        _debug_memory(f"tensor_cache_collate_fn END")
+        _debug_memory("tensor_cache_collate_fn END")
         _DEBUG_COLLATE_COUNT += 1
     # END DEBUG
     

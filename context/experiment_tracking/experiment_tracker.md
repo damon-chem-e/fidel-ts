@@ -106,10 +106,10 @@
 | Time MMD & TTC | ⏳ Pending | ✅ Complete | - | - | - | - | MIT Sloan (A100) |
 | Bear Room | ⏳ Pending | ✅ Complete | - | - | - | - | MIT Sloan (A100) |
 | California ISO | ⏳ Pending | ✅ Complete | - | - | - | - | MIT Sloan (A100) |
-| Canada Photovoltaics | ⏳ Pending | 🟡 In Progress | - | - | - | - | MIT Sloan (A100) |
+| Canada Photovoltaics | ⏳ Pending | ✅ Complete  | - | - | - | - | MIT Sloan (A100) |
 | Germany Renewable | ⏳ Pending | 🟡 In Progress | - | - | - | - | MIT Sloan (A100) |
 | NYC Traffic Speed | ⏳ Pending | ✅ Complete | - | - | - | - | MIT Sloan (A100) |
-| Jena Atmospheric Physics | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
+| Jena Atmospheric Physics | ⏳ Pending | 🟡 In Progress | - | - | - | - | MIT Sloan (A100) |
 
 **Note:** TimeCMA has two steps: (1) LLM embedding generation, (2) model training. Suite ID and training status are all pending for Fidel-TS datasets.
 
