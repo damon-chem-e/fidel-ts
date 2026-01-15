@@ -737,14 +737,14 @@ def _register_timestamp_data(
         
         if collector.num_news_items == 1:
             # N=1: Store only the text embedding, flattened to (D,)
-            # If embedding is already 1D, use as-is
-            # If 2D (N, D), take only first item (actual embedding)
+            # CRITICAL: Use .copy() to break references to parent arrays (prevents memory leaks)
+            # Array slicing creates views that keep references to the original large arrays
             if emb_arr.ndim == 1:
-                emb_to_store = emb_arr
+                emb_to_store = emb_arr.copy()  # Copy to break reference
             elif emb_arr.ndim == 2:
-                emb_to_store = emb_arr[0]  # First item is the actual embedding
+                emb_to_store = emb_arr[0].copy()  # Copy slice to break reference to parent
             else:
-                emb_to_store = emb_arr.flatten()
+                emb_to_store = emb_arr.flatten()  # flatten() already creates a copy
             collector.embeddings.append(emb_to_store)
             
             # Update embed_dim if not yet set
@@ -759,10 +759,11 @@ def _register_timestamp_data(
                 # Create (2, D) with zeros for downtime
                 embed_dim = len(emb_arr)
                 emb_to_store = np.zeros((2, embed_dim), dtype=np.float32)
-                emb_to_store[0] = emb_arr
+                emb_to_store[0] = emb_arr.copy()  # Copy to break reference
             elif emb_arr.ndim == 2 and emb_arr.shape[0] >= 2:
                 # Normal case: (N, D) array, take first 2 items
-                emb_to_store = emb_arr[:2]  # (2, D)
+                # CRITICAL: Use .copy() to break references to parent arrays
+                emb_to_store = emb_arr[:2].copy()  # (2, D) - copy to break reference
             elif emb_arr.ndim == 2 and emb_arr.shape[0] == 1:
                 # Edge case: Only 1 item, pad with zeros for downtime
                 embed_dim = emb_arr.shape[1]
@@ -891,9 +892,12 @@ def _process_sample_for_collection(
             if hetero_x is not None:
                 if hetero_x.ndim >= 2 and i < hetero_x.shape[0]:
                     # Per-timestep embedding, may be (num_items, embed_dim) or (embed_dim,)
-                    emb = hetero_x[i]
+                    # CRITICAL: Always copy to break reference to parent hetero_x array
+                    # Array slicing creates views that keep references to the original large arrays
+                    emb = hetero_x[i].copy()
                 elif hetero_x.ndim == 1:
-                    emb = hetero_x  # Static embedding (same for all timesteps)
+                    # Static embedding (same for all timesteps) - copy to break reference
+                    emb = hetero_x.copy()
                 else:
                     emb = None
             else:
@@ -917,12 +921,15 @@ def _process_sample_for_collection(
             # Extract per-timestep embedding (pass full embedding including downtime)
             # The _register_timestamp_data function will handle N=1 vs N=2 based on
             # collector.num_news_items setting determined by downtime detection
+            # CRITICAL: Create copies to break references to parent hetero_y array
+            # Array slicing creates views that keep references to the original large arrays
             if hetero_y is not None:
                 if hetero_y.ndim >= 2 and i < hetero_y.shape[0]:
                     # Per-timestep embedding, may be (num_items, embed_dim) or (embed_dim,)
-                    emb = hetero_y[i]
+                    emb = hetero_y[i].copy()
                 elif hetero_y.ndim == 1:
-                    emb = hetero_y  # Static embedding (same for all timesteps)
+                    # Static embedding (same for all timesteps) - copy to break reference
+                    emb = hetero_y.copy()
                 else:
                     emb = None
             else:
