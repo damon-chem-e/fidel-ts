@@ -30,6 +30,7 @@ suite:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 360
           output_len: 24
           batch_size: 256
@@ -100,6 +101,7 @@ suite:
           name: "California_ISO"
           config_path: "data_configs/California_ISO/fullCAISO_hetero_TGTSF_H.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 360
           output_len: 24
           batch_size: 256
@@ -170,6 +172,7 @@ suite:
           name: "Canada_photovoltaics_plants"
           config_path: "data_configs/Canada_photovoltaics_plants/fullCPP_hetero_TGTSF.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 360
           output_len: 24
           batch_size: 256
@@ -240,6 +243,7 @@ suite:
           name: "Germany_Renewable_Power_Grid"
           config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_hetero_TGTSF_H.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 360
           output_len: 24
           batch_size: 256
@@ -310,6 +314,7 @@ suite:
           name: "Jena_Atmospheric_Physics"
           config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_hetero_TGTSF_H.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 360
           output_len: 24
           batch_size: 256
@@ -380,6 +385,7 @@ suite:
           name: "Bear_room"
           config_path: "data_configs/Bear_room/fullBear_hetero_TGTSF.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 360
           output_len: 24
           batch_size: 256

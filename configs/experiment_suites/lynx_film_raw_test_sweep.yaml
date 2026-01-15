@@ -35,6 +35,7 @@ suite:
         data_config:
           timemmd_text_output: embedding
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 96  # Smaller for faster testing
           output_len: 24  # Smaller for faster testing
           batch_size: 16  # Will be overridden by sweep (default in middle of range)

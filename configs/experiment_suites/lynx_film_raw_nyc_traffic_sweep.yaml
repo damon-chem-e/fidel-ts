@@ -38,6 +38,7 @@ suite:
         data_config:
           # NYC traffic speed specific configs (if needed)
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 360      # 15 days at hourly intervals (half month) - matches nyc_traffic_speed.yaml
           output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720}) - matches nyc_traffic_speed.yaml
           batch_size: 128     # Will be overridden by sweep (default in middle of range)

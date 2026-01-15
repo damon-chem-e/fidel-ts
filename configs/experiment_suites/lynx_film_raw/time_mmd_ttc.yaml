@@ -43,6 +43,7 @@ suite:
         data_config:
           timemmd_text_output: embedding
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 12
@@ -81,6 +82,7 @@ suite:
         data_config:
           timemmd_text_output: embedding
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 12
@@ -119,6 +121,7 @@ suite:
         data_config:
           timemmd_text_output: embedding
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 12
@@ -271,6 +274,7 @@ suite:
         data_config:
           timemmd_text_output: embedding
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 12
@@ -311,6 +315,7 @@ suite:
         data_config:
           timemmd_text_output: embedding
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 12

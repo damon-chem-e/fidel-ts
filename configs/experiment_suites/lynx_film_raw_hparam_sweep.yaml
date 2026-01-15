@@ -31,6 +31,7 @@ suite:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 360
           output_len: 24
           batch_size: 768  # Will be overridden by sweep

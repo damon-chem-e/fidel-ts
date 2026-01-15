@@ -43,6 +43,7 @@ suite:
           name: "time_mmd_algriculture"
           config_path: "data_configs/time_mmd/Algriculture/config.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution (NOTE: TimeLLM uses LLM backbone directly, not pre-embedded text, so this parameter is ignored)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 32
@@ -96,6 +97,7 @@ suite:
           name: "time_mmd_climate"
           config_path: "data_configs/time_mmd/Climate/config.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution (NOTE: TimeLLM uses LLM backbone directly, not pre-embedded text, so this parameter is ignored)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 32
@@ -148,6 +150,7 @@ suite:
           name: "time_mmd_economy"
           config_path: "data_configs/time_mmd/Economy/config.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution (NOTE: TimeLLM uses LLM backbone directly, not pre-embedded text, so this parameter is ignored)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 32
@@ -356,6 +359,7 @@ suite:
           name: "time_mmd_socialgood"
           config_path: "data_configs/time_mmd/SocialGood/config.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution (NOTE: TimeLLM uses LLM backbone directly, not pre-embedded text, so this parameter is ignored)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 32
@@ -408,6 +412,7 @@ suite:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution (NOTE: TimeLLM uses LLM backbone directly, not pre-embedded text, so this parameter is ignored)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 32

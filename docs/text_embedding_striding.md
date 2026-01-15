@@ -1148,23 +1148,340 @@ training:
 
 ## Model-Specific Behavior
 
-### Models Using hetero_stride
+This section provides a **complete reference** for every model in the codebase, documenting:
+1. Whether the model uses `hetero_stride`
+2. Where in the code the striding is applied
+3. How the model consumes text embeddings
+4. Whether adding `text_embedding_stride: "full"` to configs is safe
 
-| Model | Uses Stride? | Text Input | Notes |
-|-------|--------------|------------|-------|
-| **lynx** | ✓ Yes | Text embeddings | Uses FiLM modulation |
-| **lynx_film** | ✓ Yes | Text embeddings | Enhanced FiLM with text encoder |
-| **lynx_film_raw** | ✓ Yes | Text embeddings | Raw embeddings, no text encoder |
-| **TGTSF** | ✓ Yes | Text embeddings | Cross-modal attention |
-| **iATSF** | ✓ Yes | Text embeddings | Similar to TGTSF |
-| **GPT4TS** | ✗ No | LLM embeddings | Different mechanism |
-| **TimeCMA** | ✗ No | LLM embeddings | Uses llm_embedder with stride=1 |
-| **TimeLLM** | ✗ No | LLM backbone | Text not embedded separately |
-| **DLinear** | ✗ No | None | Unimodal |
-| **PatchTST** | ✗ No | None | Unimodal |
-| **Informer** | ✗ No | None | Unimodal |
+### Safety of Adding text_embedding_stride to Any Config
 
-### lynx_film_raw: Recommended Configuration
+**TL;DR: Adding `text_embedding_stride: "full"` to ANY config is SAFE and will not break training.**
+
+**Why it's safe:**
+
+1. **Forward signature**: All models use `**kwargs` in their `forward()` method to absorb extra parameters:
+   ```python
+   # Unimodal models (DLinear, PatchTST, iTransformer, etc.)
+   def forward(self, x, return_representations=False, **kwargs):
+       # historical_events, news, etc. absorbed by **kwargs and ignored
+   ```
+
+2. **Data always passed**: `exp_universal.py` always passes `historical_events` and `news` to models:
+   ```python
+   output = self.model(x=batch_x, historical_events=batch_x_hetero, news=batch_y_hetero, ...)
+   ```
+
+3. **Stride only affects loading**: `text_embedding_stride` only affects how the dataloader loads embeddings. If a model ignores them, the stride is irrelevant.
+
+4. **Default is backward-compatible**: If not specified, defaults to "aligned" (legacy behavior).
+
+---
+
+### Complete Model Reference
+
+#### Category 1: Models That USE hetero_stride (Temporal Text Embeddings)
+
+These models receive **temporal sequences** of text embeddings and are affected by striding.
+
+##### lynx_film_raw
+
+| Property | Value |
+|----------|-------|
+| **Uses hetero_stride** | ✓ YES |
+| **Text Input Type** | Temporal sequence of BERT/text embeddings |
+| **Text Input Shape** | `[batch, text_seq_len, 1, text_dim]` |
+| **Stride Location** | `layers/lynx_film_layers.py:79-88`, `models/lynx_film_raw.py` |
+| **How Stride is Used** | Calculates `text_seq_len = ceil(input_len / hetero_stride)` for FiLMGenerator input dimension |
+| **Recommended Stride** | `"full"` (stride=1) - preserves all temporal text information |
+
+**Code Path:**
+```python
+# layers/lynx_film_layers.py
+if hasattr(configs, 'hetero_stride') and configs.hetero_stride is not None:
+    hetero_stride = configs.hetero_stride  # ← Uses resolved stride
+else:
+    # Legacy fallback
+    hetero_stride = stride if hetero_align_stride else 1
+
+self.text_seq_len = int(np.ceil(self.seq_len / hetero_stride))
+# FiLMGenerator input_dim = text_seq_len * text_dim
+```
+
+**Why Stride Matters:**
+- FiLMGenerator has **fixed input dimension** based on expected text sequence length
+- If dataloader provides different length, dimension mismatch error occurs
+- Stride=1 (full resolution) recommended for maximum information preservation
+
+---
+
+##### lynx_film
+
+| Property | Value |
+|----------|-------|
+| **Uses hetero_stride** | ✓ YES |
+| **Text Input Type** | Temporal sequence of BERT/text embeddings |
+| **Text Input Shape** | `[batch, text_seq_len, 1, text_dim]` |
+| **Stride Location** | `models/lynx_film_enhanced.py:168-179` |
+| **How Stride is Used** | Calculates `text_seq_len` for text encoder and FiLM generators |
+| **Recommended Stride** | `"full"` (stride=1) |
+
+**Same mechanism as lynx_film_raw** but with additional text encoder layer.
+
+---
+
+##### lynx
+
+| Property | Value |
+|----------|-------|
+| **Uses hetero_stride** | ✓ YES |
+| **Text Input Type** | Temporal sequence of BERT/text embeddings |
+| **Text Input Shape** | `[batch, text_seq_len, 1, text_dim]` |
+| **Stride Location** | `models/lynx.py` |
+| **How Stride is Used** | Similar to lynx_film variants |
+| **Recommended Stride** | `"full"` (stride=1) |
+
+**Model Config Flag:** `hetero_align_stride: True` in `model_configs/general/lynx.yaml`
+
+---
+
+##### TGTSF
+
+| Property | Value |
+|----------|-------|
+| **Uses hetero_stride** | ✓ YES |
+| **Text Input Type** | Temporal sequence of BERT/text embeddings |
+| **Text Input Shape** | `[batch, text_seq_len, 1, text_dim]` |
+| **Stride Location** | Model uses strided text via `news` and `historical_events` params |
+| **How Stride is Used** | Cross-modal attention between time series patches and text |
+| **Recommended Stride** | `"aligned"` or `"full"` depending on sequence length |
+
+**Forward Signature:**
+```python
+def forward(self, x, news=None, channel_description=None, historical_events=None, **kwargs):
+```
+
+**Note:** TGTSF uses cross-modal attention which can aggregate information across timesteps, so striding has less impact than FiLM-based models.
+
+---
+
+##### iATSF
+
+| Property | Value |
+|----------|-------|
+| **Uses hetero_stride** | ✓ YES |
+| **Text Input Type** | Temporal sequence of BERT/text embeddings |
+| **Text Input Shape** | `[batch, text_seq_len, 1, text_dim]` |
+| **How Stride is Used** | Similar architecture to TGTSF |
+| **Recommended Stride** | `"aligned"` or `"full"` |
+
+---
+
+##### GPT4MTS
+
+| Property | Value |
+|----------|-------|
+| **Uses hetero_stride** | ⚠️ PARTIAL |
+| **Text Input Type** | Historical events embeddings |
+| **Text Input Shape** | `[batch, seq_len, embed_dim]` |
+| **Stride Location** | Does NOT use `hetero_stride` config; has own patching |
+| **How Stride is Used** | Internal patching via `unfold()`, independent of hetero_stride |
+| **Recommended Stride** | N/A - config parameter ignored |
+
+**Forward Signature:**
+```python
+def forward(self, x, historical_events, **kwargs):
+    historical_events = rearrange(historical_events, 'b l m -> b m l')
+    historical_events = self.padding_patch_layer(historical_events)
+    historical_events = historical_events.unfold(...)  # Own patching
+```
+
+**Important:** GPT4MTS receives `historical_events` but applies its **own internal patching**, not using `hetero_stride`. Setting `text_embedding_stride` has **no effect** on this model.
+
+---
+
+##### ZhangHanBest
+
+| Property | Value |
+|----------|-------|
+| **Uses hetero_stride** | ⚠️ PARTIAL |
+| **Text Input Type** | news, historical_events |
+| **How Stride is Used** | Receives strided embeddings but flexible about input size |
+| **Recommended Stride** | `"full"` for maximum information |
+
+**Forward Signature:**
+```python
+def forward(self, x, news=None, historical_events=None, **kwargs):
+```
+
+---
+
+##### MMTSFlib
+
+| Property | Value |
+|----------|-------|
+| **Uses hetero_stride** | ⚠️ PARTIAL |
+| **Text Input Type** | news, historical_events |
+| **How Stride is Used** | Late fusion - text processed separately |
+| **Recommended Stride** | `"full"` for maximum information |
+
+**Forward Signature:**
+```python
+def forward(self, x: torch.Tensor, news=None, historical_events=None, **kwargs):
+```
+
+---
+
+#### Category 2: Models That Do NOT Use hetero_stride
+
+These models either use different text embedding mechanisms or are purely unimodal.
+
+##### TimeCMA
+
+| Property | Value |
+|----------|-------|
+| **Uses hetero_stride** | ✗ NO |
+| **Text Input Type** | Per-sample LLM embeddings (NOT temporal sequence) |
+| **Text Input Shape** | `[batch, d_llm, num_channels]` - no temporal dimension |
+| **Why No Stride** | One embedding per sample, not per timestep |
+| **Config Safety** | ✓ SAFE to add `text_embedding_stride: "full"` (ignored) |
+
+**How TimeCMA uses text:**
+```python
+# TimeCMA forward expects x_hetero with shape [B, d_llm, N]
+# This is a SINGLE embedding per sample, NOT a temporal sequence
+x_hetero = x_hetero.float().to(device)  # LLM embeddings (per-sample)
+```
+
+**Key Difference:** TimeCMA uses `llm_embedder.py` which generates **one embedding per sample** by:
+1. Converting the entire time series window to a text prompt
+2. Passing through GPT-2/LLM
+3. Extracting the **last token** as the embedding
+
+There is **no temporal sequence** to stride - just one embedding vector per sample.
+
+---
+
+##### TimeLLM
+
+| Property | Value |
+|----------|-------|
+| **Uses hetero_stride** | ✗ NO |
+| **Text Input Type** | None - uses frozen LLM backbone directly |
+| **Why No Stride** | LLM is the model backbone, not a text encoder |
+| **Config Safety** | ✓ SAFE to add `text_embedding_stride: "full"` (ignored) |
+
+**How TimeLLM works:**
+```python
+def forward(self, x_enc, x_mark_enc=None, x_mark_dec=None, **kwargs):
+    # Patches time series, cross-attends with LLM word embeddings
+    # Uses FROZEN LLM (GPT-2) as backbone
+    # Does NOT receive external text embeddings
+```
+
+**Key Point:** TimeLLM "reprograms" a frozen LLM to understand time series. It doesn't use pre-computed text embeddings at all.
+
+---
+
+##### ChatTime
+
+| Property | Value |
+|----------|-------|
+| **Uses hetero_stride** | ✗ NO (uses text differently) |
+| **Text Input Type** | Prompt-based LLM inference |
+| **Why No Stride** | Text passed as prompts, not embeddings |
+| **Config Safety** | ✓ SAFE to add `text_embedding_stride: "full"` (ignored) |
+
+**Forward Signature:**
+```python
+def forward(self, x, batch_y_hetero, hetero_general, hetero_channel):
+    # Uses hetero data as prompt context, not as embeddings
+```
+
+---
+
+##### LeRet
+
+| Property | Value |
+|----------|-------|
+| **Uses hetero_stride** | ✗ NO |
+| **Text Input Type** | Optional language integrator (separate mechanism) |
+| **Why No Stride** | Uses Retention mechanism, not text embeddings |
+| **Config Safety** | ✓ SAFE to add `text_embedding_stride: "full"` (ignored) |
+
+**Forward Signature:**
+```python
+def forward(self, x=None, x_enc=None, x_mark_enc=None, x_mark_dec=None, **kwargs):
+    # Retention-based architecture
+    # Language integrator is optional and uses different mechanism
+```
+
+---
+
+##### Unimodal Models (No Text Input)
+
+These models are purely time series and ignore all heterogeneous data.
+
+| Model | Uses hetero_stride | Config Safety | Notes |
+|-------|-------------------|---------------|-------|
+| **DLinear** | ✗ NO | ✓ SAFE | Simple linear decomposition |
+| **PatchTST** | ✗ NO | ✓ SAFE | Patch-based transformer |
+| **iTransformer** | ✗ NO | ✓ SAFE | Inverted transformer |
+| **Informer** | ✗ NO | ✓ SAFE | ProbSparse attention |
+| **FEDformer** | ✗ NO | ✓ SAFE | Frequency-enhanced decomposed transformer |
+| **FITS** | ✗ NO | ✓ SAFE | Frequency interpolation |
+| **Chronos** | ✗ NO | ✓ SAFE | Foundation model |
+| **Sundial** | ✗ NO | ✓ SAFE | Foundation model |
+| **TimeMoE** | ✗ NO | ✓ SAFE | Mixture of experts |
+
+**All unimodal models use `**kwargs`:**
+```python
+def forward(self, x, return_representations=False, **kwargs):
+    # **kwargs absorbs historical_events, news, etc.
+    # These are simply ignored
+```
+
+---
+
+### Summary Table: All Models
+
+| Model | Uses Stride | Stride Affects Output | Config Safe | Recommended Stride |
+|-------|-------------|----------------------|-------------|-------------------|
+| **lynx_film_raw** | ✓ YES | ✓ Critical | ✓ | `"full"` |
+| **lynx_film** | ✓ YES | ✓ Critical | ✓ | `"full"` |
+| **lynx** | ✓ YES | ✓ Critical | ✓ | `"full"` |
+| **TGTSF** | ✓ YES | ✓ Yes | ✓ | `"aligned"` or `"full"` |
+| **iATSF** | ✓ YES | ✓ Yes | ✓ | `"aligned"` or `"full"` |
+| **GPT4MTS** | ⚠️ Partial | ✗ Own patching | ✓ | N/A (ignored) |
+| **ZhangHanBest** | ⚠️ Partial | ~ Flexible | ✓ | `"full"` |
+| **MMTSFlib** | ⚠️ Partial | ~ Flexible | ✓ | `"full"` |
+| **TimeCMA** | ✗ NO | ✗ Per-sample | ✓ | N/A (ignored) |
+| **TimeLLM** | ✗ NO | ✗ LLM backbone | ✓ | N/A (ignored) |
+| **ChatTime** | ✗ NO | ✗ Prompt-based | ✓ | N/A (ignored) |
+| **LeRet** | ✗ NO | ✗ Retention | ✓ | N/A (ignored) |
+| **DLinear** | ✗ NO | ✗ Unimodal | ✓ | N/A (ignored) |
+| **PatchTST** | ✗ NO | ✗ Unimodal | ✓ | N/A (ignored) |
+| **iTransformer** | ✗ NO | ✗ Unimodal | ✓ | N/A (ignored) |
+| **Informer** | ✗ NO | ✗ Unimodal | ✓ | N/A (ignored) |
+| **FEDformer** | ✗ NO | ✗ Unimodal | ✓ | N/A (ignored) |
+| **FITS** | ✗ NO | ✗ Unimodal | ✓ | N/A (ignored) |
+| **Chronos** | ✗ NO | ✗ Foundation | ✓ | N/A (ignored) |
+| **Sundial** | ✗ NO | ✗ Foundation | ✓ | N/A (ignored) |
+| **TimeMoE** | ✗ NO | ✗ Foundation | ✓ | N/A (ignored) |
+
+**Legend:**
+- ✓ YES: Model actively uses hetero_stride to determine text sequence length
+- ⚠️ Partial: Receives hetero data but has own processing mechanism
+- ✗ NO: Completely ignores or doesn't use hetero_stride
+- ✓ Critical: Incorrect stride causes dimension mismatch errors
+- ~ Flexible: Model handles varying input sizes
+- ✓ Config Safe: Adding `text_embedding_stride: "full"` will NOT break training
+
+---
+
+### Recommended Configuration Examples
+
+#### lynx_film_raw: Full Resolution (Recommended)
 
 ```yaml
 model:
@@ -1175,7 +1492,7 @@ model_config_overrides:
   input_text_dim: 768  # BERT embedding dimension
 
 training:
-  text_embedding_stride: "full"  # ← RECOMMENDED
+  text_embedding_stride: "full"  # ← RECOMMENDED - preserves all text info
   input_len: 24
   output_len: 6
   use_tensor_cache: true
@@ -1190,7 +1507,9 @@ data_config:
 - Minimal overhead: ~15MB VRAM, <5% training time with tensor cache
 - Better performance on event-driven datasets
 
-### TGTSF: Striding May Be Appropriate
+---
+
+#### TGTSF: Aligned Striding (Default)
 
 ```yaml
 model:
@@ -1198,7 +1517,7 @@ model:
   config_path: "model_configs/general/TGTSF.yaml"
 
 training:
-  text_embedding_stride: "aligned"  # Use model's stride
+  text_embedding_stride: "aligned"  # Use model's patch stride
   input_len: 96
   output_len: 24
 ```
@@ -1208,6 +1527,23 @@ training:
 - Attention mechanism can aggregate information across timesteps
 - Striding reduces attention complexity (quadratic in sequence length)
 - For long sequences (input_len=96), striding may be beneficial
+
+---
+
+#### TimeCMA/TimeLLM: Config Ignored But Safe
+
+```yaml
+model:
+  name: "TimeCMA"  # or "TimeLLM"
+  config_path: "model_configs/general/TimeCMA.yaml"
+
+training:
+  text_embedding_stride: "full"  # ← SAFE but has no effect on these models
+  input_len: 96
+  output_len: 24
+```
+
+**Note:** These models don't use temporal text embedding sequences, so the config parameter is simply ignored. Including it is safe and maintains consistency across experiment configs.
 
 ---
 

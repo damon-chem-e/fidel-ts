@@ -34,6 +34,7 @@ suite:
           name: "fidel_Canada_photovoltaics_plants:fullCPP_hetero_TGTSF"
           config_path: "data_configs/Canada_photovoltaics_plants/fullCPP_hetero_TGTSF.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution (TimeCMA uses per-sample embeddings, so this is ignored but safe)
           input_len: 360      # 15 days at hourly intervals (half month)
           output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720})
           batch_size: 32

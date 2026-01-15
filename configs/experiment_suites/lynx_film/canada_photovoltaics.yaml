@@ -39,6 +39,7 @@ suite:
           name: "Canada_photovoltaics_plants"
           config_path: "data_configs/Canada_photovoltaics_plants/fullCPP_hetero_TGTSF.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 360      # 15 days at hourly intervals (half month)
           output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720})
           batch_size: 768

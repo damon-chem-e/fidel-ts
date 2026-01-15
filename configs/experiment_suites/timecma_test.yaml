@@ -43,6 +43,7 @@ suite:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution (NOTE: TimeCMA uses per-sample embeddings, not temporal sequences, so this parameter is ignored)
           input_len: 96
           output_len: 24
           batch_size: 32
@@ -98,6 +99,7 @@ suite:
           name: "time_mmd_energy"
           config_path: "data_configs/time_mmd/Energy/config.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution (NOTE: TimeCMA uses per-sample embeddings, not temporal sequences, so this parameter is ignored)
           input_len: 96
           output_len: 24
           batch_size: 32
@@ -249,6 +251,7 @@ suite:
           name: "time_mmd_climate"
           config_path: "data_configs/time_mmd/Climate/config.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution (NOTE: TimeCMA uses per-sample embeddings, not temporal sequences, so this parameter is ignored)
           input_len: 96
           output_len: 24
           batch_size: 32
@@ -300,6 +303,7 @@ suite:
           name: "fidel_NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_H.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution (NOTE: TimeCMA uses per-sample embeddings, not temporal sequences, so this parameter is ignored)
           input_len: 96
           output_len: 24
           batch_size: 32
@@ -358,6 +362,7 @@ suite:
           name: "ttc_climate"
           config_path: "data_configs/ttc/climate/config.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution (NOTE: TimeCMA uses per-sample embeddings, not temporal sequences, so this parameter is ignored)
           input_len: 96
           output_len: 24
           batch_size: 32

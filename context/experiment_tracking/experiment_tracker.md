@@ -2,7 +2,7 @@
 
 **Last Updated:** 2025-01-13
 
-**Hetero stride note:** All multimodal experiments that use text need to be rerun without hetero striding (full-resolution text). TimeCMA LLM embeddings are not affected and remain valid.
+ b**Hetero stride note:** All multimodal experiments that use text need to be rerun without hetero striding (full-resolution text). TimeCMA LLM embeddings are not affected and remain valid.
 
 ## Overview: Planned Results
 
@@ -105,9 +105,9 @@
 | Time MMD & TTC | ⏳ Pending | ✅ Complete | - | - | - | - | MIT Sloan (A100) |
 | Bear Room | ⏳ Pending | ✅ Complete | - | - | - | - | MIT Sloan (A100) |
 | California ISO | ⏳ Pending | ✅ Complete | - | - | - | - | MIT Sloan (A100) |
-| Canada Photovoltaics | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
+| Canada Photovoltaics | ⏳ Pending | 🟡 In Progress | - | - | - | - | MIT Sloan (A100) |
 | Germany Renewable | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
-| NYC Traffic Speed | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
+| NYC Traffic Speed | ⏳ Pending | 🟡 In Progress | - | - | - | - | MIT Sloan (A100) |
 | Jena Atmospheric Physics | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
 
 **Note:** TimeCMA has two steps: (1) LLM embedding generation, (2) model training. Suite ID and training status are all pending for Fidel-TS datasets.
@@ -123,15 +123,15 @@
 | Jena Atmospheric Physics | ⏳ Pending | - | - | - | - | RunPod (pod:jena) |
 
 #### MMTSFLib
-| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
-|---------|--------|----------|---------------|------|--------|---------|
-| Time MMD & TTC | ⏳ Pending | - | - | - | - | - |
-| Canada Photovoltaics | ⏳ Pending | - | - | - | - | - |
-| Germany Renewable | ⏳ Pending | - | - | - | - | - |
-| NYC Traffic Speed | ⏳ Pending | - | - | - | - | - |
-| California ISO | ⏳ Pending | - | - | - | - | - |
-| Bear Room | ⏳ Pending | - | - | - | - | - |
-| Jena Atmospheric Physics | ⏳ Pending | - | - | - | - | - |
+| Dataset | Status | LLM Embed | Suite ID | Experiment ID | Eval | Tables | Compute |
+|---------|--------|-----------|----------|---------------|------|--------|---------|
+| Time MMD & TTC | ⏳ Pending | ⏳ Pending | - | - | - | - | - |
+| Canada Photovoltaics | ⏳ Pending | ⏳ Pending | - | - | - | - | - |
+| Germany Renewable | ⏳ Pending | ⏳ Pending | - | - | - | - | - |
+| NYC Traffic Speed | ⏳ Pending | ⏳ Pending | - | - | - | - | - |
+| California ISO | ⏳ Pending | ⏳ Pending | - | - | - | - | - |
+| Bear Room | ⏳ Pending | ⏳ Pending | - | - | - | - | - |
+| Jena Atmospheric Physics | ⏳ Pending | ⏳ Pending | - | - | - | - | - |
 
 **Note:** MMTSFlib requires precomputed LLM embeddings. All experiments are pending setup and execution.
 

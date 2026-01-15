@@ -35,6 +35,7 @@ suite:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended, though LeRet may not use hetero data)
           input_len: 24
           output_len: 6
           batch_size: 32
@@ -90,6 +91,7 @@ suite:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended, though LeRet may not use hetero data)
           input_len: 24
           output_len: 6
           batch_size: 32

@@ -42,6 +42,7 @@ suite:
           name: "fidel_NYC_traffic_speed:fullNYCTS_hetero_TGTSF_H"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution (NOTE: TimeLLM uses LLM backbone directly, not pre-embedded text, so this parameter is ignored)
           input_len: 360      # 15 days at hourly intervals (half month)
           output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720})
           batch_size: 32

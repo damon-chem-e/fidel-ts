@@ -31,6 +31,7 @@ suite:
           name: "Germany_Renewable_Power_Grid"
           config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_hetero_TGTSF_H.yaml"
         training:
+          text_embedding_stride: "full"  # Full resolution (LeRet may not use hetero data, but safe to include)
           input_len: 360      # 15 days at hourly intervals (half month)
           output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720})
           batch_size: 768
