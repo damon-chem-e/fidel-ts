@@ -474,8 +474,15 @@ class SuiteExecutor:
                 evaluate_standard(eval_config)
         else:
             # Convert dict to ExperimentConfig for training experiments
+            # Filter out 'evaluation' dict if present (it's only used by cli.test suite, not training)
+            # ExperimentConfig expects evaluation to be a string path, not a dict
+            training_config = config.copy()
+            if 'evaluation' in training_config and isinstance(training_config['evaluation'], dict):
+                # Remove evaluation dict - it will be preserved in suite config for cli.test suite
+                training_config = {k: v for k, v in training_config.items() if k != 'evaluation'}
+            
             try:
-                experiment_config = ExperimentConfig(**config)
+                experiment_config = ExperimentConfig(**training_config)
             except Exception as e:
                 raise ValueError(f"Invalid experiment configuration: {str(e)}")
             

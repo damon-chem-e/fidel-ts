@@ -10,6 +10,9 @@ suite:
   description: "Train lynx_film_raw model on all Time MMD and TTC datasets"
   tags: ["lynx_film_raw", "multimodal", "pytorch", "time_mmd", "ttc", "film"]
   
+  # Resume configuration - resume from initialized suite
+  resume_suite_id: "lynx_film_raw_time_mmd_ttc_20260115_120012"
+  
   # Execution settings
   execution:
     parallel: false
@@ -59,6 +62,7 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260115-120012_9c7b8d770933"
     
     # Climate: context=24, prediction=6
     - name: "lynx_film_raw_timemmd_climate"
@@ -97,6 +101,7 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260115-120012_a01155bc875c"
     
     # Economy: context=24, prediction=6
     - name: "lynx_film_raw_timemmd_economy"
@@ -135,6 +140,7 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260115-120012_4c872c989948"
     
     # Energy: context=24, prediction=12
     - name: "lynx_film_raw_timemmd_energy"
@@ -172,6 +178,7 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260115-120012_ca8bdfd656a3"
     
     # Environment: context=24, prediction=48
     - name: "lynx_film_raw_timemmd_environment"
@@ -246,6 +253,7 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc"
+          resume_experiment_id: "20260115-120012_9bb96170a9a1"
     
     # Socialgood: context=24, prediction=6
     - name: "lynx_film_raw_timemmd_socialgood"
@@ -280,7 +288,7 @@ suite:
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         evaluation:
-          filter_nan_samples: true  # Filter out samples with NaN losses
+          filter_nan_samples: true  # Filter out samples with NaN losses (used by cli.test suite)
         wandb:
           tags: ["lynx_film_raw", "time_mmd_socialgood"]
         experiment:
