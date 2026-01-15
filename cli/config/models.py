@@ -115,6 +115,19 @@ class TrainingConfig(BaseModel):
             "Default location: ./tensor_cache/{data_name}_{input_len}_{output_len}/"
         )
     )
+    
+    # Text embedding stride for multimodal models (lynx, lynx_film, TGTSF, etc.)
+    text_embedding_stride: Optional[Union[str, int]] = Field(
+        default=None,
+        description=(
+            "Controls text embedding temporal resolution. Options:\n"
+            "  - None/'aligned' (default): Use model_config.stride if hetero_align_stride=True, else 1\n"
+            "  - 'full': Always use stride=1 (full resolution, recommended for lynx_film_raw)\n"
+            "  - <int>: Explicit stride value (e.g., 3 for every 3rd timestep)\n"
+            "Full resolution preserves all text information but uses more memory (~15MB/batch extra).\n"
+            "See docs/planning/hetero_stride_optional_plan.md for details."
+        )
+    )
 
     # LeRet-specific two-stage training configuration
     leret: Optional[LeRetTrainingConfig] = Field(

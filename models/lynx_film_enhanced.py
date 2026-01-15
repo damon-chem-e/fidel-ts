@@ -171,16 +171,21 @@ class Model(nn.Module):
         # ═══════════════════════════════════════════════════════════════
         # CALCULATE TEXT SEQUENCE LENGTH
         # ═══════════════════════════════════════════════════════════════
-        hetero_align_stride = getattr(configs, 'hetero_align_stride', True)
-        stride = configs.stride
-        hetero_stride = stride if hetero_align_stride else 1
+        # Get hetero_stride - prefer pre-computed value from training.text_embedding_stride
+        if hasattr(configs, 'hetero_stride') and configs.hetero_stride is not None:
+            hetero_stride = configs.hetero_stride
+        else:
+            # Legacy fallback: compute from stride/hetero_align_stride
+            hetero_align_stride = getattr(configs, 'hetero_align_stride', True)
+            stride = getattr(configs, 'stride', 1) or 1
+            hetero_stride = stride if hetero_align_stride else 1
         
         if self.timestamp_semantics == 't_about':
             self.text_seq_len = int(np.ceil(self.pred_len / hetero_stride))
-            print(f'         - text_seq_len: {self.text_seq_len} (from y_hetero/news)')
+            print(f'         - text_seq_len: {self.text_seq_len} (from y_hetero/news, stride={hetero_stride})')
         else:
             self.text_seq_len = int(np.ceil(self.seq_len / hetero_stride))
-            print(f'         - text_seq_len: {self.text_seq_len} (from x_hetero/historical_events)')
+            print(f'         - text_seq_len: {self.text_seq_len} (from x_hetero/historical_events, stride={hetero_stride})')
         
         # ═══════════════════════════════════════════════════════════════
         # TEXT ENCODER (from TGTSF)

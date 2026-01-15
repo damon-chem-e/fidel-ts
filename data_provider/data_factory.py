@@ -262,6 +262,51 @@ class Data_Provider(object):
             'model_config_overrides': getattr(self.args, 'model_config_overrides', {}),
         }
 
+    def _get_effective_hetero_stride(self) -> int:
+        """
+        Get the effective hetero_stride for text embedding temporal resolution.
+        
+        This centralizes the hetero_stride computation logic, supporting:
+        - Pre-computed hetero_stride from experiment_config_builder
+        - Legacy fallback to model_config.stride if hetero_align_stride=True
+        
+        The stride determines how many text embeddings are loaded:
+        - stride=1: Full resolution (all timesteps)
+        - stride=3: Every 3rd timestep (reduces from 24 to 8 for input_len=24)
+        
+        See docs/planning/hetero_stride_optional_plan.md for details.
+        
+        Returns:
+            Effective hetero_stride (1 = full resolution, >1 = strided)
+        """
+        # Check if pre-computed by build_experiment_args (preferred path)
+        if hasattr(self.args, 'hetero_stride'):
+            return self.args.hetero_stride
+        
+        # Legacy fallback: compute from model_config
+        # This path is used by:
+        # 1. Old training code that doesn't use build_experiment_args
+        # 2. Embedding generation scripts (llm_embedder.py) - they should use stride=1
+        if not hasattr(self.args, 'model_config'):
+            # No model_config - this is likely embedding generation or testing
+            # Default to full resolution (stride=1)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "Computing hetero_stride without model_config. "
+                "Defaulting to stride=1 (full resolution). "
+                "This is expected for embedding generation but unusual for training."
+            )
+            return 1
+            
+        model_config = self.args.model_config
+        hetero_align_stride = getattr(model_config, 'hetero_align_stride', True)
+        
+        if hetero_align_stride:
+            return getattr(model_config, 'stride', 1) or 1
+        else:
+            return 1
+
     def _resolve_tensor_cache_dir(self) -> Optional[str]:
         """
         Resolve tensor cache directory path.
@@ -327,7 +372,7 @@ class Data_Provider(object):
             'truncate_train_for_purge': getattr(self.args, 'truncate_train_for_purge', False),
             'downsample': getattr(self.args, 'downsample', None),
             'data_name': getattr(self.dataset_config, 'name', 'unknown'),
-            'hetero_stride': getattr(self.args.model_config, 'stride', 1) if hasattr(self.args, 'model_config') else 1,
+            'hetero_stride': self._get_effective_hetero_stride(),
             'hetero_type': self.dataset_config.hetero_info.get('hetero_type') if self.dataset_config.get('hetero_info') else None,
             'timemmd_text_output': self.dataset_config.get('timemmd_text_output'),  # Critical for time_mmd datasets!
             'missing_value_strategy': self.dataset_config.get('missing_value_strategy', 'none'),
@@ -761,7 +806,7 @@ class Data_Provider(object):
             scale=self.args.scale,
             data_buffer=self.data_buffer,
             preload_hetero=self.args.preload_hetero,
-            hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
+            hetero_stride=self._get_effective_hetero_stride(),
             task=self.args.model_config.task,
             custom_input=self.args.model_config.custom_input,
             timezone=self.dataset_config.time_zone,
@@ -987,7 +1032,7 @@ class Data_Provider(object):
                                                     spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col, 
                                                     target=self.dataset_config.target, scale=self.args.scale, 
                                                     data_buffer=self.data_buffer, hetero_data_getter=get_hetero_data, preload_hetero=self.args.preload_hetero, 
-                                                    hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
+                                                    hetero_stride=self._get_effective_hetero_stride(),
                                                     task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
                                                     timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample,
                                                     entity_id=i, missing_value_strategy=missing_value_strategy, required_indicators=required_indicators,
@@ -1028,7 +1073,7 @@ class Data_Provider(object):
                                                 spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col, 
                                                 target=self.dataset_config.target, scale=self.args.scale, 
                                                 data_buffer=self.data_buffer, hetero_data_getter=get_hetero_data, preload_hetero=self.args.preload_hetero, 
-                                                hetero_stride=self.args.model_config.stride if self.args.model_config.hetero_align_stride else 1,
+                                                hetero_stride=self._get_effective_hetero_stride(),
                                                 task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
                                                 timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample,
                                                 entity_id=i, missing_value_strategy=missing_value_strategy, required_indicators=required_indicators,

@@ -46,14 +46,16 @@ class iTransformerFilm(nn.Module):
         self.use_norm = configs.use_norm
         
         # ========================================================================
-        # Calculate text_seq_len based on timestamp_semantics
+        # Calculate text_seq_len based on timestamp_semantics and hetero_stride
         # ========================================================================
         # 
         # timestamp_semantics determines which text source the model receives:
         # - t_about: y_hetero with pred_len timesteps (strided by hetero_stride)
         # - t_known: x_hetero with seq_len timesteps (strided by hetero_stride)
         #
-        # hetero_stride = stride if hetero_align_stride else 1 (set in data_factory)
+        # hetero_stride can be:
+        # - Pre-computed from training.text_embedding_stride config (preferred)
+        # - Computed from stride/hetero_align_stride (backward compatibility)
         #
         # FiLMGenerator FLATTENS all text timesteps into a single vector, so
         # we MUST initialize it with the exact input dimension it will receive.
@@ -74,11 +76,15 @@ class iTransformerFilm(nn.Module):
                 f"Must be 't_about' or 't_known'."
             )
         
-        hetero_align_stride = getattr(configs, 'hetero_align_stride', True)
-        stride = configs.stride
-        
-        # Calculate effective hetero_stride (same logic as data_factory)
-        hetero_stride = stride if hetero_align_stride else 1
+        # Get hetero_stride - prefer pre-computed value, fall back to legacy computation
+        # Pre-computed value comes from training.text_embedding_stride via experiment_config_builder
+        if hasattr(configs, 'hetero_stride') and configs.hetero_stride is not None:
+            hetero_stride = configs.hetero_stride
+        else:
+            # Legacy fallback: compute from stride/hetero_align_stride
+            hetero_align_stride = getattr(configs, 'hetero_align_stride', True)
+            stride = getattr(configs, 'stride', 1) or 1
+            hetero_stride = stride if hetero_align_stride else 1
         
         if timestamp_semantics == 't_about':
             # Using y_hetero: text aligned to prediction window

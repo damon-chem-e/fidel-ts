@@ -12,7 +12,8 @@ The key function is `build_experiment_args()` which:
 2. Applies data_config overrides from experiment config (deep merge)
 3. Loads base model config from YAML file  
 4. Applies model_config_overrides from experiment config (deep merge)
-5. Builds complete args dotdict
+5. Computes effective hetero_stride from text_embedding_stride config
+6. Builds complete args dotdict
 
 This ensures tensor cache generation uses the SAME effective config as training.
 
@@ -27,13 +28,78 @@ Usage:
 import yaml
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 
 from utils.tools import dotdict
 from utils.config_utils import merge_configs
 from utils.data_path_utils import replace_data_paths
 
 logger = logging.getLogger(__name__)
+
+
+def compute_effective_hetero_stride(
+    text_embedding_stride: Optional[Any],
+    model_config: Optional[dotdict]
+) -> int:
+    """
+    Compute the effective hetero_stride from text_embedding_stride config.
+    
+    This centralizes the stride computation logic used by data loading,
+    tensor cache, and models.
+    
+    Args:
+        text_embedding_stride: Config value - can be:
+            - None or 'aligned': Use model_config.stride if hetero_align_stride=True, else 1
+            - 'full': Always use 1 (full resolution)
+            - int: Use explicit value
+        model_config: Model configuration dotdict (may contain stride, hetero_align_stride)
+        
+    Returns:
+        Effective hetero_stride (1 = full resolution, >1 = strided)
+        
+    Examples:
+        # Full resolution
+        compute_effective_hetero_stride('full', model_config) -> 1
+        
+        # Aligned with model (stride=3, hetero_align_stride=True)
+        compute_effective_hetero_stride('aligned', model_config) -> 3
+        
+        # Aligned but hetero_align_stride=False
+        compute_effective_hetero_stride('aligned', model_config) -> 1
+        
+        # Explicit stride
+        compute_effective_hetero_stride(6, model_config) -> 6
+    """
+    # Handle 'full' - always use stride=1
+    if text_embedding_stride == 'full':
+        return 1
+    
+    # Handle explicit integer
+    if isinstance(text_embedding_stride, int):
+        if text_embedding_stride < 1:
+            raise ValueError(f"text_embedding_stride must be >= 1, got {text_embedding_stride}")
+        return text_embedding_stride
+    
+    # Handle None or 'aligned' - use model config's stride if hetero_align_stride=True
+    if text_embedding_stride is None or text_embedding_stride == 'aligned':
+        if model_config is None:
+            return 1
+        
+        # Get hetero_align_stride (default True for backward compatibility)
+        hetero_align_stride = model_config.get('hetero_align_stride', True) if hasattr(model_config, 'get') else True
+        
+        if hetero_align_stride:
+            # Use model's stride
+            stride = model_config.get('stride', 1) if hasattr(model_config, 'get') else 1
+            return stride if stride else 1
+        else:
+            return 1
+    
+    # Invalid value
+    raise ValueError(
+        f"Invalid text_embedding_stride: {text_embedding_stride!r}. "
+        f"Expected 'full', 'aligned', None, or positive integer."
+    )
 
 
 def load_and_merge_data_config(
@@ -201,6 +267,26 @@ def build_experiment_args(
     args.truncate_train_for_purge = training.get('truncate_train_for_purge', False)
     args.ahead = training.get('ahead', None)
     
+    # === Text embedding stride (controls hetero data resolution) ===
+    # Extract from training config
+    args.text_embedding_stride = training.get('text_embedding_stride', None)
+    
+    # Compute effective hetero_stride from text_embedding_stride
+    # This replaces the scattered computation logic in data_factory and models
+    args.hetero_stride = compute_effective_hetero_stride(
+        args.text_embedding_stride,
+        args.model_config
+    )
+    
+    # Inject resolved hetero_stride into both model_config and data_config
+    # - model_config: so models can access it during initialization
+    # - data_config: so tensor_cache can read it from metadata.data_config
+    # This ensures all components use the same stride value
+    if args.model_config is not None:
+        args.model_config['hetero_stride'] = args.hetero_stride
+    if args.data_config is not None:
+        args.data_config['hetero_stride'] = args.hetero_stride
+    
     # === GPU config (optional) ===
     if include_gpu:
         import torch
@@ -224,12 +310,15 @@ def build_cache_config(args: dotdict) -> dict:
     Returns:
         Dict of parameters that affect cache validity
     """
-    # Get hetero_stride from model config if available
-    hetero_stride = 1
-    if hasattr(args, 'model_config') and isinstance(args.model_config, dict):
-        hetero_stride = args.model_config.get('stride', 1)
-    elif hasattr(args, 'model_config') and hasattr(args.model_config, 'get'):
-        hetero_stride = args.model_config.get('stride', 1)
+    # Use pre-computed hetero_stride if available, otherwise compute it
+    # This ensures consistency with build_experiment_args
+    if hasattr(args, 'hetero_stride'):
+        hetero_stride = args.hetero_stride
+    else:
+        # Fallback for args not built by build_experiment_args
+        text_embedding_stride = getattr(args, 'text_embedding_stride', None)
+        model_config = getattr(args, 'model_config', None)
+        hetero_stride = compute_effective_hetero_stride(text_embedding_stride, model_config)
 
     # Get hetero_type from data config if available
     hetero_type = None

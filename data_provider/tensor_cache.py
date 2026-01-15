@@ -148,10 +148,12 @@ CACHE_RELEVANT_KEYS = [
     'hetero_stride',              # Embedding stride (affects which timestamps have data)
     'scale',                      # Normalization setting (affects values)
     'split',                      # Train/val/test split ratios
+    'split_info',                 # Alternate split specification used by some configs
     'truncate_train_for_purge',   # Data truncation setting
     'downsample',                 # Downsampling factor
     'hetero_type',                # Type of heterogeneous data
     'data_name',                  # Dataset identifier
+    'timemmd_text_output',        # 'text' vs 'embedding' changes hetero payload + shapes
     'missing_value_strategy'      # How missing values are handled
 ]
 
@@ -1522,7 +1524,8 @@ class TensorCacheDataset(Dataset):
         
         logger.info(
             f"TensorCacheDataset initialized: {flag}, "
-            f"{self.n_samples:,} samples, format={self.metadata.cache_format}"
+            f"{self.n_samples:,} samples, format={self.metadata.cache_format}, "
+            f"hetero_stride={self.hetero_stride}"
         )
 
     def _init_indexed_format(self) -> None:
@@ -1551,6 +1554,11 @@ class TensorCacheDataset(Dataset):
             self.n_samples = self.arrays['sample_ids'].shape[0]
         else:
             self.n_samples = 0
+        
+        # Extract hetero_stride from data_config for embedding striding
+        # This matches the stride applied by the normal dataloader (data_loader.py)
+        # which reduces embedding timesteps from input_len to ceil(input_len/stride)
+        self.hetero_stride = self.metadata.data_config.get('hetero_stride', 1)
 
     def _init_legacy_format(self) -> None:
         """Initialize for V1 direct format (backward compatibility)."""
@@ -1565,6 +1573,9 @@ class TensorCacheDataset(Dataset):
         
         first_array = next(iter(self.arrays.values()))
         self.n_samples = first_array.shape[0]
+        
+        # Legacy format already stores pre-strided data, but set stride for consistency
+        self.hetero_stride = self.metadata.data_config.get('hetero_stride', 1)
 
     def __len__(self) -> int:
         return self.n_samples
@@ -1587,13 +1598,21 @@ class TensorCacheDataset(Dataset):
         LOOKUP PROCESS:
         1. Get x_indices and y_indices for this sample
         2. Use indices to look up data from shared tables
-        3. Add num_items dimension to embeddings (model expects 3D per sample)
-        4. Return reconstructed sample tuple
+        3. Apply hetero_stride to embedding indices (matches normal dataloader behavior)
+        4. Add num_items dimension to embeddings (model expects 3D per sample)
+        5. Return reconstructed sample tuple
         
         SHAPE HANDLING:
         - Embeddings are stored as (L, embed_dim) but models expect (L, num_items, embed_dim)
         - The num_items dimension corresponds to n_features from timeseries
         - We add this dimension via np.expand_dims to match original dataset format
+        - hetero_stride reduces embedding timesteps: input_len -> ceil(input_len/stride)
+        
+        HETERO STRIDE:
+        - The normal dataloader (data_loader.py) applies hetero_stride to reduce
+          embedding timesteps: x_hetero = self.full_hetero[s_begin:s_end:hetero_stride]
+        - FiLMGenerator expects this strided length, not full input_len
+        - We replicate this behavior by striding the embedding indices
         
         This is the key to deduplication efficiency:
         - Indices are small (int32)
@@ -1619,29 +1638,36 @@ class TensorCacheDataset(Dataset):
         x_time = self.shared['timestamps'][x_idx] if 'timestamps' in self.shared else None
         y_time = self.shared['timestamps'][y_idx] if 'timestamps' in self.shared else None
         
-        # Look up embeddings from shared table
+        # Apply hetero_stride to embedding indices
+        # This matches the striding done in data_loader.py:
+        #   x_hetero = self.full_hetero[s_begin:s_end:self.hetero_stride]
+        # Models like FiLMGenerator expect strided embeddings, not full resolution
+        x_hetero_idx = x_idx[::self.hetero_stride]
+        y_hetero_idx = y_idx[::self.hetero_stride]
+        
+        # Look up embeddings from shared table using STRIDED indices
         # SHAPE FIX: Models expect (L, num_items, embed_dim) but we store (L, embed_dim)
         # Add the num_items dimension to match original dataset format
-        hetero_x = self.shared['embeddings'][x_idx] if 'embeddings' in self.shared else None
-        hetero_y = self.shared['embeddings'][y_idx] if 'embeddings' in self.shared else None
+        hetero_x = self.shared['embeddings'][x_hetero_idx] if 'embeddings' in self.shared else None
+        hetero_y = self.shared['embeddings'][y_hetero_idx] if 'embeddings' in self.shared else None
         
-        # Add num_items dimension: (L, D) -> (L, N, D) where N = n_features
+        # Add num_items dimension: (L_strided, D) -> (L_strided, N, D) where N = n_features
         if hetero_x is not None:
-            # Shape: (input_len, embed_dim) -> (input_len, n_features, embed_dim)
+            # Shape: (ceil(input_len/stride), embed_dim) -> (ceil(input_len/stride), n_features, embed_dim)
             hetero_x = np.expand_dims(hetero_x, axis=1)
             if n_features > 1:
                 # Repeat along the num_items dimension if multiple features
                 hetero_x = np.repeat(hetero_x, n_features, axis=1)
         
         if hetero_y is not None:
-            # Shape: (output_len, embed_dim) -> (output_len, n_features, embed_dim)
+            # Shape: (ceil(output_len/stride), embed_dim) -> (ceil(output_len/stride), n_features, embed_dim)
             hetero_y = np.expand_dims(hetero_y, axis=1)
             if n_features > 1:
                 hetero_y = np.repeat(hetero_y, n_features, axis=1)
         
-        # Look up hetero time features from shared table
-        hetero_x_time = self.shared['hetero_time'][x_idx] if 'hetero_time' in self.shared else None
-        hetero_y_time = self.shared['hetero_time'][y_idx] if 'hetero_time' in self.shared else None
+        # Look up hetero time features from shared table (also strided)
+        hetero_x_time = self.shared['hetero_time'][x_hetero_idx] if 'hetero_time' in self.shared else None
+        hetero_y_time = self.shared['hetero_time'][y_hetero_idx] if 'hetero_time' in self.shared else None
         
         # Look up entity-level static embeddings
         hetero_general = self.shared['entity_general'][entity_idx] if 'entity_general' in self.shared else None

@@ -285,21 +285,7 @@ class TextEmbedder:
         
         try:
             # Load from cache
-            try:
-                cached_embeddings = self.cache_manager.load_embeddings(cache_dir)
-            except Exception as load_error:
-                # Provide detailed error for pickle/joblib loading failures
-                self._cache_miss_reason = (
-                    f"Failed to load embeddings from {cache_dir}: {load_error}\n"
-                    f"Error type: {type(load_error).__name__}\n"
-                    f"This might indicate:\n"
-                    f"  - Corrupted pickle file\n"
-                    f"  - File created with different Python/joblib version\n"
-                    f"  - File in wrong format (not a dict)\n"
-                    f"Try: python scripts/inspect_embedding_cache.py {cache_dir}"
-                )
-                print(f"[ warning ] {self._cache_miss_reason}")
-                return None
+            cached_embeddings = self.cache_manager.load_embeddings(cache_dir)
             
             # Try to match texts to cached embeddings by keys
             if isinstance(cached_embeddings, dict):
@@ -311,29 +297,12 @@ class TextEmbedder:
                     self._cache_miss_reason = None  # Clear any previous reason
                     return result
                 else:
-                    # Some keys missing - provide detailed diagnostics
+                    # Some keys missing
                     missing_keys = [k for k in text_keys if k not in cached_embeddings]
-                    
-                    # Show what keys ARE in the cache (for debugging format mismatches)
-                    cached_key_samples = list(cached_embeddings.keys())[:5]
-                    cached_key_types = set(type(k).__name__ for k in cached_embeddings.keys())
-                    requested_key_types = set(type(k).__name__ for k in text_keys)
-                    
-                    reason_parts = [
-                        f"Cache found at {cache_dir} but {len(missing_keys)}/{len(text_keys)} keys missing.",
-                        f"First missing: {missing_keys[:3]}",
-                        f"Cached keys (sample): {cached_key_samples}",
-                        f"Cached key types: {sorted(cached_key_types)}",
-                        f"Requested key types: {sorted(requested_key_types)}"
-                    ]
-                    
-                    # Check if it's a type mismatch (e.g., int vs str)
-                    if cached_key_types != requested_key_types:
-                        reason_parts.append(
-                            f"KEY TYPE MISMATCH: Cache has {sorted(cached_key_types)} but requested {sorted(requested_key_types)}"
-                        )
-                    
-                    self._cache_miss_reason = " ".join(reason_parts)
+                    self._cache_miss_reason = (
+                        f"Cache found at {cache_dir} but {len(missing_keys)}/{len(text_keys)} keys missing. "
+                        f"First missing: {missing_keys[:3]}"
+                    )
         except Exception as e:
             self._cache_miss_reason = f"Failed to load from cache {cache_dir}: {e}"
             print(f"[ warning ] {self._cache_miss_reason}. Recomputing embeddings.")
