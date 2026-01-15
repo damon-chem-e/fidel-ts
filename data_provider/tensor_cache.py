@@ -118,6 +118,22 @@ from typing import Dict, List, Optional, Tuple, Any, Union, TYPE_CHECKING
 from datetime import datetime
 from tqdm import tqdm
 
+# BEGIN DEBUG
+import psutil
+import os
+
+def _debug_memory(label: str) -> None:
+    """Print current memory usage with a label."""
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+    rss_gb = mem_info.rss / (1024 ** 3)
+    vms_gb = mem_info.vms / (1024 ** 3)
+    print(f"[DEBUG MEM] {label}: RSS={rss_gb:.2f}GB, VMS={vms_gb:.2f}GB")
+
+_DEBUG_GETITEM_COUNT = 0
+_DEBUG_GETITEM_LIMIT = 5  # Only print first N __getitem__ calls
+# END DEBUG
+
 # Rich progress bar imports (optional, graceful fallback to tqdm)
 try:
     from rich.progress import (
@@ -1587,6 +1603,10 @@ class TensorCacheDataset(Dataset):
             flag: Data split ('train', 'val', 'test')
             preload_to_ram: If True, load all data to RAM (V1 format only)
         """
+        # BEGIN DEBUG
+        _debug_memory(f"TensorCacheDataset.__init__ START ({flag})")
+        # END DEBUG
+        
         self.cache_dir = Path(cache_dir)
         self.split_dir = self.cache_dir / flag
         self.flag = flag
@@ -1601,6 +1621,10 @@ class TensorCacheDataset(Dataset):
         else:
             self._init_legacy_format()
         
+        # BEGIN DEBUG
+        _debug_memory(f"TensorCacheDataset.__init__ END ({flag})")
+        # END DEBUG
+        
         logger.info(
             f"TensorCacheDataset initialized: {flag}, "
             f"{self.n_samples:,} samples, format={self.metadata.cache_format}, "
@@ -1609,6 +1633,10 @@ class TensorCacheDataset(Dataset):
 
     def _init_indexed_format(self) -> None:
         """Initialize for V2 indexed format."""
+        # BEGIN DEBUG
+        _debug_memory(f"_init_indexed_format START ({self.flag})")
+        # END DEBUG
+        
         # Load shared tables into RAM (small after deduplication)
         shared_dir = self.cache_dir / 'shared'
         self.shared = {}
@@ -1616,8 +1644,22 @@ class TensorCacheDataset(Dataset):
         for name in SHARED_TABLE_SPECS.keys():
             filepath = shared_dir / f"{name}.npy"
             if filepath.exists():
+                # BEGIN DEBUG
+                file_size_mb = filepath.stat().st_size / (1024 ** 2)
+                print(f"[DEBUG] Loading shared/{name}.npy (file size: {file_size_mb:.1f}MB)")
+                # END DEBUG
                 # Load to RAM for fast lookup
                 self.shared[name] = np.load(filepath, mmap_mode=None)
+                # BEGIN DEBUG
+                arr = self.shared[name]
+                arr_size_mb = arr.nbytes / (1024 ** 2)
+                print(f"[DEBUG]   -> shape={arr.shape}, dtype={arr.dtype}, memory={arr_size_mb:.1f}MB")
+                _debug_memory(f"  After loading {name}")
+                # END DEBUG
+        
+        # BEGIN DEBUG
+        _debug_memory(f"After loading all shared tables ({self.flag})")
+        # END DEBUG
         
         # Load per-split index arrays (memory-mapped for efficiency)
         self.arrays = {}
@@ -1625,6 +1667,14 @@ class TensorCacheDataset(Dataset):
             filepath = self.split_dir / f"{name}.npy"
             if filepath.exists():
                 self.arrays[name] = np.load(filepath, mmap_mode='r', allow_pickle=True)
+                # BEGIN DEBUG
+                arr = self.arrays[name]
+                print(f"[DEBUG] Loaded {self.flag}/{name}.npy: shape={arr.shape}, dtype={arr.dtype}")
+                # END DEBUG
+        
+        # BEGIN DEBUG
+        _debug_memory(f"After loading per-split arrays ({self.flag})")
+        # END DEBUG
         
         # Determine sample count
         if 'x_indices' in self.arrays:
@@ -1665,10 +1715,24 @@ class TensorCacheDataset(Dataset):
         
         Dispatches to format-specific implementation.
         """
+        # BEGIN DEBUG
+        global _DEBUG_GETITEM_COUNT
+        if _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
+            _debug_memory(f"__getitem__({index}) START")
+        # END DEBUG
+        
         if self.metadata.is_indexed:
-            return self._getitem_indexed(index)
+            result = self._getitem_indexed(index)
         else:
-            return self._getitem_legacy(index)
+            result = self._getitem_legacy(index)
+        
+        # BEGIN DEBUG
+        if _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
+            _debug_memory(f"__getitem__({index}) END")
+            _DEBUG_GETITEM_COUNT += 1
+        # END DEBUG
+        
+        return result
 
     def _getitem_indexed(self, index: int) -> tuple:
         """
@@ -1733,16 +1797,30 @@ class TensorCacheDataset(Dataset):
         # Add num_items dimension: (L_strided, D) -> (L_strided, N, D) where N = n_features
         if hetero_x is not None:
             # Shape: (ceil(input_len/stride), embed_dim) -> (ceil(input_len/stride), n_features, embed_dim)
+            # BEGIN DEBUG
+            if _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
+                print(f"[DEBUG]   hetero_x before expand: shape={hetero_x.shape}, n_features={n_features}")
+            # END DEBUG
             hetero_x = np.expand_dims(hetero_x, axis=1)
             if n_features > 1:
                 # Repeat along the num_items dimension if multiple features
                 hetero_x = np.repeat(hetero_x, n_features, axis=1)
+            # BEGIN DEBUG
+            if _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
+                hetero_x_mb = hetero_x.nbytes / (1024 ** 2)
+                print(f"[DEBUG]   hetero_x after repeat: shape={hetero_x.shape}, size={hetero_x_mb:.2f}MB")
+            # END DEBUG
         
         if hetero_y is not None:
             # Shape: (ceil(output_len/stride), embed_dim) -> (ceil(output_len/stride), n_features, embed_dim)
             hetero_y = np.expand_dims(hetero_y, axis=1)
             if n_features > 1:
                 hetero_y = np.repeat(hetero_y, n_features, axis=1)
+            # BEGIN DEBUG
+            if _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
+                hetero_y_mb = hetero_y.nbytes / (1024 ** 2)
+                print(f"[DEBUG]   hetero_y after repeat: shape={hetero_y.shape}, size={hetero_y_mb:.2f}MB")
+            # END DEBUG
         
         # Look up hetero time features from shared table (also strided)
         hetero_x_time = self.shared['hetero_time'][x_hetero_idx] if 'hetero_time' in self.shared else None
@@ -1809,6 +1887,9 @@ class TensorCacheDataset(Dataset):
 # This is needed because tensor cache may not have all optional fields.
 # =============================================================================
 
+_DEBUG_COLLATE_COUNT = 0
+_DEBUG_COLLATE_LIMIT = 3  # Only print first N collate calls
+
 def tensor_cache_collate_fn(batch: List[tuple]) -> tuple:
     """
     Custom collate function that handles None values in batch elements.
@@ -1830,6 +1911,13 @@ def tensor_cache_collate_fn(batch: List[tuple]) -> tuple:
     Returns:
         Tuple of batched tensors/arrays, with None preserved for missing fields
     """
+    # BEGIN DEBUG
+    global _DEBUG_COLLATE_COUNT
+    debug_this_call = _DEBUG_COLLATE_COUNT < _DEBUG_COLLATE_LIMIT
+    if debug_this_call:
+        _debug_memory(f"tensor_cache_collate_fn START (batch_size={len(batch)})")
+    # END DEBUG
+    
     if not batch:
         return tuple()
     
@@ -1907,6 +1995,12 @@ def tensor_cache_collate_fn(batch: List[tuple]) -> tuple:
             f"Returning as list."
         )
         collated.append(elements)
+    
+    # BEGIN DEBUG
+    if debug_this_call:
+        _debug_memory(f"tensor_cache_collate_fn END")
+        _DEBUG_COLLATE_COUNT += 1
+    # END DEBUG
     
     return tuple(collated)
 

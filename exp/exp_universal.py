@@ -277,6 +277,13 @@ class Experiment(Exp_Basic):
             tuple: (train_loader, vali_loader, test_loader, path, early_stopping,
                    model_optim, criterion, track_per_sample)
         """
+        # BEGIN DEBUG
+        import psutil
+        import os as _os
+        _debug_process = psutil.Process(_os.getpid())
+        print(f"[DEBUG MEM] Before creating data loaders: RSS={_debug_process.memory_info().rss / (1024**3):.2f}GB")
+        # END DEBUG
+        
         # Get data loaders for all splits
         # Note: DataLoader creation can take 10-30s with many workers
         print("[ info ] Initializing data loaders (this may take a moment)...")
@@ -285,8 +292,17 @@ class Experiment(Exp_Basic):
         test_loader = self._get_data(flag='test')
         print("[ info ] All data loaders initialized successfully")
         
+        # BEGIN DEBUG
+        print(f"[DEBUG MEM] After all data loaders created: RSS={_debug_process.memory_info().rss / (1024**3):.2f}GB")
+        # END DEBUG
+        
         # Release raw file buffer to save memory
         self.data_provider.data_buffer.clear()
+        print("[ info ] Buffer cleared")
+        
+        # BEGIN DEBUG
+        print(f"[DEBUG MEM] After buffer clear: RSS={_debug_process.memory_info().rss / (1024**3):.2f}GB")
+        # END DEBUG
         
         # Determine checkpoint directory path
         if self.exp_manager is not None:
@@ -499,9 +515,24 @@ class Experiment(Exp_Basic):
         # Create progress bar for this epoch (includes logger)
         progress, task, logger, console = self._create_training_progress_bar(epoch, train_loader)
         
+        # BEGIN DEBUG
+        import psutil
+        import os as _os
+        _debug_process = psutil.Process(_os.getpid())
+        _debug_batch_count = 0
+        _debug_batch_limit = 3
+        print(f"[DEBUG MEM] Before training loop: RSS={_debug_process.memory_info().rss / (1024**3):.2f}GB")
+        # END DEBUG
+        
         # Training loop over all batches
         with progress:
             for i, iter in enumerate(train_loader):
+                # BEGIN DEBUG
+                if _debug_batch_count < _debug_batch_limit:
+                    print(f"[DEBUG MEM] After fetching batch {i}: RSS={_debug_process.memory_info().rss / (1024**3):.2f}GB")
+                    _debug_batch_count += 1
+                # END DEBUG
+                
                 iter_count += 1
                 # Train on single batch and accumulate metrics
                 loss_value, batch_size, _, _, _ = \
