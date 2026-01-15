@@ -160,6 +160,82 @@ The `num_news_items` value is stored in `metadata.json`:
 
 This allows `TensorCacheDataset` to correctly reconstruct embeddings at load time.
 
+## Which Datasets Are Affected?
+
+### Time-MMD Datasets: Always N=1 (No Downtime Issue)
+
+**Time-MMD datasets never had the downtime doubling problem.**
+
+Looking at `data_provider/time_mmd_dataset.py`, the `TimeMMDTextGetter.get_hetero_data()` method returns:
+
+```python
+# Stack to shape: (num_timesteps, 1, bert_dim)
+# This matches expected format: (seq_len, news_num, bert_dim)
+# where news_num=1 for Time-MMD (single text per timestamp)
+output_dynamic = np.stack(embedding_list, axis=0)  # (num_timesteps, 1, bert_dim)
+```
+
+**Key characteristics:**
+- Always returns `(L, 1, D)` shape - already correct
+- No downtime indicator - simpler format
+- Single text description per timestamp
+- Never concatenates additional information
+
+**Examples:** Economy datasets, Climate datasets, all MM-TSFlib format datasets
+
+### Fidel-TS Datasets: N=2 With Downtime (Had the Issue)
+
+**Fidel-TS datasets use the `Heterogeneous_Dataset` class which concatenates downtime indicators.**
+
+Looking at `data_provider/data_loader.py`, the `Heterogeneous_Dataset.get_hetero_data()` method does:
+
+```python
+# From data_loader.py, line ~937
+# Concatenate dynamic embeddings and downtime indicators along num_items dimension
+# Final shape: (batch, 2, embedding_dim) where 2 = num_items (dynamic + downtime)
+output_dynamic = np.concatenate([output_dynamic_, downtime_data_], axis=1)
+```
+
+**Key characteristics:**
+- Returns `(L, 2, D)` shape where:
+  - `[:, 0, :]` = actual text embedding (e.g., weather forecast)
+  - `[:, 1, :]` = downtime indicator (non-zero if sensor down, zeros otherwise)
+- Designed for datasets with potential sensor failures/maintenance
+- More complex format to support operational metadata
+
+**Examples:** Jena_Atmospheric_Physics, Bear_room, California_ISO, Canada_photovoltaics_plants, Germany_Renewable_Power_Grid, NYC_traffic_speed
+
+### Why Fidel-TS Had the 2x Dimension Issue
+
+The old tensor cache implementation would:
+
+1. Receive `(L, 2, D)` from `Heterogeneous_Dataset`
+2. Extract per-timestep: `emb = hetero_x[i]` → shape `(2, D)`
+3. Flatten: `emb.flatten()` → shape `(2*D,)` = `(1536,)` when D=768
+4. Store the flattened 1536-dim vector
+
+This **doubled the embedding dimension** from 768 to 1536, which then caused:
+- Mismatch with model expectations (`input_text_dim: 768`)
+- Shape errors during projection
+- 2x memory usage for embeddings
+
+### The Fix
+
+The new implementation:
+- **Detects** if training data has non-zero downtime indicators
+- **Time-MMD**: Always N=1 (unchanged, already correct)
+- **Fidel-TS with downtime**: N=2 (stores full `(2, D)` array)
+- **Fidel-TS without downtime**: N=1 (omits unused downtime, 50% savings)
+
+### Dataset Type Summary
+
+| Dataset Family | Class | Original Shape | Downtime? | Tensor Cache N |
+|----------------|-------|----------------|-----------|----------------|
+| **Time-MMD** | `TimeMMD_Dataset` | `(L, 1, D)` | Never | Always 1 |
+| **TTC** | `TimeMMD_Dataset` | `(L, 1, D)` | Never | Always 1 |
+| **Fidel-TS (no downtime)** | `Heterogeneous_Dataset` | `(L, 2, D)` but `[:, 1, :] = 0` | No (all zeros) | 1 (auto-detected) |
+| **Fidel-TS (with downtime)** | `Heterogeneous_Dataset` | `(L, 2, D)` | Yes | 2 (auto-detected) |
+
 ## Why N=1 Is Semantically Correct (When No Downtime)
 
 ### What N Represents
@@ -241,6 +317,121 @@ All models that use the tensor cache handle both N=1 and N=2 correctly:
 | `TGTSF` | Cross-attention in `text_encoder` | ✓ | ✓ |
 | `MMTSFlib` | `mean(dim=(1,2))` aggregates L and N | ✓ | ✓ |
 | `ZhangHanBest` | `mean(dim=(1,2))` aggregates L and N | ✓ | ✓ |
+
+## How Models Dynamically Handle N=1 vs N=2
+
+**The model doesn't need to know ahead of time whether N=1 or N=2 - it dynamically adapts to whatever shape it receives.**
+
+This is a key design feature that makes the system robust and eliminates the need for configuration changes when switching between datasets.
+
+### The Flow
+
+#### 1. Tensor Cache Stores Shape Information
+
+```python
+# In metadata.json
+{
+  "version": "2.1.0",
+  "num_news_items": 1,  // or 2, determined during cache generation
+  ...
+}
+```
+
+#### 2. TensorCacheDataset Returns Correct Shape
+
+```python
+# In data_provider/tensor_cache.py, _getitem_indexed()
+num_news_items = self.metadata.num_news_items
+
+if num_news_items == 1:
+    # Expand (L, D) -> (L, 1, D)
+    hetero_x = np.expand_dims(hetero_x, axis=1)
+else:
+    # Already (L, 2, D), no expansion needed
+    pass
+
+# Returns: (L, N, D) where N is read from metadata
+```
+
+#### 3. Model Receives and Dynamically Adapts
+
+The key is in `layers/TGTSF_torch.py`, the `text_encoder.forward()` method:
+
+```python
+def forward(self, news_emb, description_emb):
+    # news_emb: [b, l, n, d] - N can be 1 or 2, doesn't matter!
+    # description_emb: [b, l, c, d]
+    
+    B, L, C, D = description_emb.shape
+    
+    # Dynamically read N from the actual tensor shape
+    news_emb = news_emb.contiguous().view(B*L, news_emb.shape[2], D)  # [b*l, n, d]
+    #                                              ^^^^^^^^^^^^
+    #                                              This is N - read from actual shape!
+    
+    news_mask = news_emb.sum(dim=-1) == 0  # (B*L, N) - works for any N
+    
+    # Cross-attention: each channel attends to all N news items
+    text_emb = self.cross_encoder(tgt=description_emb, memory=news_emb, 
+                                   memory_key_padding_mask=news_mask)
+```
+
+### Why This Works
+
+The model uses **dynamic shapes** - it reads the N dimension from `news_emb.shape[2]` at runtime:
+
+**N=1 case (no downtime):**
+- Tensor cache returns `(L, 1, D)`
+- After batching: `news_emb` is `[B, L, 1, D]`
+- `news_emb.shape[2]` = 1
+- Cross-attention attends to 1 news item per timestamp
+
+**N=2 case (with downtime):**
+- Tensor cache returns `(L, 2, D)`
+- After batching: `news_emb` is `[B, L, 2, D]`
+- `news_emb.shape[2]` = 2
+- Cross-attention attends to 2 items per timestamp (embedding + downtime indicator)
+
+### The Cross-Attention Advantage
+
+Unlike traditional architectures where layer sizes are fixed at initialization:
+
+```python
+# Traditional: Fixed size known at init
+self.linear = nn.Linear(input_size, output_size)  # Must know sizes at creation!
+
+# Cross-attention: Dynamic over sequence dimension
+self.cross_encoder = nn.TransformerDecoder(...)  # N is a sequence dimension!
+#                                                 # Can be any length!
+```
+
+PyTorch's `MultiheadAttention` and `TransformerDecoder` handle variable-length sequences naturally:
+
+```python
+# Query: description_emb [B*L, C, D] - C channels
+# Key/Value: news_emb [B*L, N, D] - N news items (1 or 2)
+
+# Each of C channels independently attends to all N items
+# Works for any N - it's just the sequence length!
+```
+
+### No Model Reconfiguration Needed
+
+**Benefits of this design:**
+
+1. ✅ **Same model weights** work with N=1 or N=2
+2. ✅ **No retraining** needed when switching datasets
+3. ✅ **No configuration changes** in model config files
+4. ✅ **Automatic adaptation** based on tensor cache metadata
+5. ✅ **Mixed datasets** - can train on N=1 data, evaluate on N=2 (though not recommended)
+
+**The model automatically handles N=1 or N=2 because:**
+- Tensor cache metadata stores `num_news_items`
+- `TensorCacheDataset` reads it and returns the correct shape
+- Model dynamically reads N from `news_emb.shape[2]`
+- Cross-attention naturally handles variable N (it's a sequence length, not a parameter)
+
+This is one of the key advantages of the cross-attention architecture - **the N dimension is treated as a sequence length**, not a fixed parameter, so it can vary between datasets without any model changes.
 
 ## Code Location
 

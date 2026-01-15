@@ -121,9 +121,24 @@ from tqdm import tqdm
 # BEGIN DEBUG
 import psutil
 import os
+import gc
 
-def _debug_memory(label: str) -> None:
-    """Print current memory usage with a label."""
+def _debug_memory(label: str, force_gc: bool = False) -> None:
+    """
+    Print current memory usage with a label.
+    
+    Enable via environment variable: TENSOR_CACHE_DEBUG_MEMORY=1
+    
+    Args:
+        label: Description of current operation/phase
+        force_gc: If True, run gc.collect() before measuring memory
+    """
+    if os.environ.get('TENSOR_CACHE_DEBUG_MEMORY', '0') != '1':
+        return
+    
+    if force_gc:
+        gc.collect()
+    
     process = psutil.Process(os.getpid())
     mem_info = process.memory_info()
     rss_gb = mem_info.rss / (1024 ** 3)
@@ -919,6 +934,11 @@ def _finalize_shared_tables(
     - Arrays are efficient for storage and access
     - Convert once after all data collected
     
+    MEMORY OPTIMIZATION:
+    - Clear each collector list immediately after np.stack() conversion
+    - This prevents double memory usage (list + array simultaneously)
+    - gc.collect() at end to force memory reclamation
+    
     Args:
         collector: Completed SharedTableCollector
         
@@ -927,33 +947,50 @@ def _finalize_shared_tables(
     """
     shared_tables = {}
     
+    _debug_memory("_finalize_shared_tables START")
+    
     # Convert timestamp data lists to arrays
+    # CRITICAL: Clear each list immediately after conversion to prevent memory doubling
     if collector.timestamps:
         shared_tables['timestamps'] = np.array(collector.timestamps, dtype=np.int64)
+        collector.timestamps.clear()
+        _debug_memory("After timestamps conversion")
     
     if collector.timeseries:
         shared_tables['timeseries'] = np.stack(collector.timeseries).astype(np.float32)
+        collector.timeseries.clear()
+        _debug_memory("After timeseries conversion")
     
     if collector.embeddings:
         shared_tables['embeddings'] = np.stack(collector.embeddings).astype(np.float32)
+        collector.embeddings.clear()
+        _debug_memory("After embeddings conversion")
     
     if collector.hetero_time:
         shared_tables['hetero_time'] = np.stack(collector.hetero_time).astype(np.float32)
+        collector.hetero_time.clear()
+        _debug_memory("After hetero_time conversion")
     
     # Convert entity data lists to arrays (filter out None values)
     valid_generals = [g for g in collector.entity_general if g is not None]
     if valid_generals:
         shared_tables['entity_general'] = np.stack(valid_generals).astype(np.float32)
+    collector.entity_general.clear()
     
     valid_channels = [c for c in collector.entity_channel if c is not None]
     if valid_channels:
         shared_tables['entity_channel'] = np.stack(valid_channels).astype(np.float32)
+    collector.entity_channel.clear()
     
     # Build index mappings (JSON-serializable)
     index_mappings = {
         'timestamp_to_idx': {str(k): v for k, v in collector.timestamp_to_idx.items()},
         'entity_to_idx': collector.entity_to_idx
     }
+    
+    # Force garbage collection to reclaim cleared list memory
+    gc.collect()
+    _debug_memory("_finalize_shared_tables END (after gc.collect)", force_gc=False)
     
     return shared_tables, index_mappings
 
@@ -1221,15 +1258,24 @@ class TensorCacheGenerator:
         shared_dir.mkdir(exist_ok=True)
 
         # Step 1: Build shared tables
+        _debug_memory("generate: START")
         logger.info("Building shared tables (collecting unique timestamps)...")
         shared_tables, index_mappings = self._build_shared_tables(flags)
+        _debug_memory("generate: after _build_shared_tables")
         
         # Step 2: Save shared tables
         shared_shapes = self._save_shared_tables(shared_dir, shared_tables)
         self._save_index_mappings(shared_dir, index_mappings)
+        
+        # MEMORY OPTIMIZATION: Release shared_tables after saving to disk
+        # They're now on disk and only needed for shape info (already extracted)
+        del shared_tables
+        gc.collect()
+        _debug_memory("generate: after saving shared tables (gc.collect)", force_gc=False)
 
         # Step 3: Generate per-split index arrays
         shapes, entity_info = self._generate_all_splits(flags, index_mappings)
+        _debug_memory("generate: after _generate_all_splits")
 
         # Step 4: Save metadata
         self._save_metadata(shapes, shared_shapes, entity_info)
@@ -1263,7 +1309,12 @@ class TensorCacheGenerator:
             Tuple of (shared_tables dict, index_mappings dict)
         """
         # Step 1: Detect downtime in training data to determine num_news_items
+        _debug_memory("_build_shared_tables: START")
         has_downtime = _detect_downtime_in_training(self.data_provider)
+        # Release train datasets used by downtime detection
+        gc.collect()
+        _debug_memory("_build_shared_tables: after downtime detection (gc.collect)", force_gc=False)
+        
         num_news_items = 2 if has_downtime else 1
         
         # Store for later use in metadata
@@ -1294,11 +1345,18 @@ class TensorCacheGenerator:
         collector.num_news_items = num_news_items
         
         # Count total samples for progress tracking
+        # MEMORY OPTIMIZATION: Release datasets after counting to avoid holding
+        # multiple dataset instances in memory simultaneously
+        _debug_memory("_build_shared_tables: before counting")
         total_samples = 0
         for flag in flags:
             datasets = self.data_provider.get_datasets(flag)
             if datasets:
                 total_samples += sum(len(ds) for ds in datasets.values())
+            # Release this split's datasets before loading next
+            del datasets
+        gc.collect()
+        _debug_memory("_build_shared_tables: after counting (gc.collect)", force_gc=False)
         
         # Process all splits to collect unique data
         if RICH_AVAILABLE and total_samples > 0:
@@ -1317,9 +1375,12 @@ class TensorCacheGenerator:
                 )
                 
                 for flag in flags:
+                    _debug_memory(f"_build_shared_tables: before loading {flag}")
                     datasets = self.data_provider.get_datasets(flag)
                     if not datasets:
                         continue
+                    
+                    _debug_memory(f"_build_shared_tables: after loading {flag}")
                     
                     for entity_id, dataset in datasets.items():
                         if len(dataset) == 0:
@@ -1339,12 +1400,21 @@ class TensorCacheGenerator:
                             sample = dataset[sample_idx]
                             _process_sample_for_collection(collector, sample)
                             progress.update(task, advance=1)
+                    
+                    # CRITICAL: Release this split's datasets before loading next split
+                    # This prevents multiple dataset instances from accumulating in memory
+                    del datasets
+                    gc.collect()
+                    _debug_memory(f"_build_shared_tables: after processing {flag} (gc.collect)", force_gc=False)
         else:
             # Fallback without progress bar
             for flag in flags:
+                _debug_memory(f"_build_shared_tables: before loading {flag}")
                 datasets = self.data_provider.get_datasets(flag)
                 if not datasets:
                     continue
+                
+                _debug_memory(f"_build_shared_tables: after loading {flag}")
                 
                 for entity_id, dataset in datasets.items():
                     if len(dataset) == 0:
@@ -1363,14 +1433,26 @@ class TensorCacheGenerator:
                     for sample_idx in range(len(dataset)):
                         sample = dataset[sample_idx]
                         _process_sample_for_collection(collector, sample)
+                
+                # CRITICAL: Release this split's datasets before loading next split
+                # This prevents multiple dataset instances from accumulating in memory
+                del datasets
+                gc.collect()
+                _debug_memory(f"_build_shared_tables: after processing {flag} (gc.collect)", force_gc=False)
+        
+        # Capture counts before finalization (which clears the lists)
+        n_unique_timestamps = len(collector.timestamps)
+        n_entities = len(collector.entity_to_idx)
         
         # Finalize: convert lists to arrays
         logger.info("Converting collected data to arrays...")
+        _debug_memory("_build_shared_tables: before finalization")
         shared_tables, index_mappings = _finalize_shared_tables(collector)
+        _debug_memory("_build_shared_tables: after finalization")
         
         logger.info(
-            f"Built shared tables: {len(collector.timestamps)} unique timestamps, "
-            f"{len(collector.entity_to_idx)} entities"
+            f"Built shared tables: {n_unique_timestamps} unique timestamps, "
+            f"{n_entities} entities"
         )
         
         return shared_tables, index_mappings
@@ -1414,6 +1496,11 @@ class TensorCacheGenerator:
         """
         Generate index arrays for all requested splits.
         
+        MEMORY OPTIMIZATION:
+        - Each split is processed sequentially
+        - Memory is released between splits via gc.collect() in _generate_split
+        - This prevents accumulation of multiple dataset instances
+        
         Args:
             flags: List of splits to generate
             index_mappings: Timestamp and entity mappings from shared table building
@@ -1423,6 +1510,8 @@ class TensorCacheGenerator:
         """
         shapes = {}
         entity_info = {'entity_ids': [], 'samples_per_entity': {}}
+        
+        _debug_memory("_generate_all_splits: START")
         
         for flag in flags:
             logger.info(f"Generating index arrays for {flag} split...")
@@ -1436,7 +1525,11 @@ class TensorCacheGenerator:
             entity_info['samples_per_entity'].update(
                 split_entity_info.get('samples_per_entity', {})
             )
+            
+            # gc.collect() is called at the end of _generate_split
+            # No need to call again here
         
+        _debug_memory("_generate_all_splits: END")
         return shapes, entity_info
 
     def _generate_split(
@@ -1465,11 +1558,15 @@ class TensorCacheGenerator:
         split_dir.mkdir(exist_ok=True)
         progress_file = split_dir / 'progress.json'
         
+        _debug_memory(f"_generate_split({flag}): START")
+        
         # Get datasets
         datasets = self.data_provider.get_datasets(flag)
         if not datasets:
             logger.warning(f"No datasets found for {flag} split")
             return {}, {}
+        
+        _debug_memory(f"_generate_split({flag}): after loading datasets")
         
         # Calculate totals and get shapes from first sample
         total_samples = sum(len(ds) for ds in datasets.values())
@@ -1526,7 +1623,17 @@ class TensorCacheGenerator:
         if progress_file.exists():
             progress_file.unlink()
         
-        return {name: list(arr.shape) for name, arr in arrays.items()}, entity_info
+        # Capture return values before cleanup
+        result_shapes = {name: list(arr.shape) for name, arr in arrays.items()}
+        
+        # MEMORY OPTIMIZATION: Release datasets and arrays after processing
+        # Arrays are memory-mapped so this just releases the Python wrappers
+        del datasets
+        del arrays
+        gc.collect()
+        _debug_memory(f"_generate_split({flag}): END (gc.collect)", force_gc=False)
+        
+        return result_shapes, entity_info
 
     def _compute_array_shapes(
         self,
