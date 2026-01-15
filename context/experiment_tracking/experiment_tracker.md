@@ -2,6 +2,8 @@
 
 **Last Updated:** 2025-01-13
 
+**Hetero stride note:** All multimodal experiments that use text need to be rerun without hetero striding (full-resolution text). TimeCMA LLM embeddings are not affected and remain valid.
+
 ## Overview: Planned Results
 
 - **[Point A]** FIATS outperforms unimodal on fidel-ts test sets (except CAISO). Show efficiency and performance on big datasets, compare to other multimodal methods, show loss curves.
@@ -31,6 +33,7 @@
 
 ## Current Work
 
+> - HETERO STRIDE: Plan rerun of all text-using experiments without hetero striding (full-resolution text); only TimeCMA LLM embeddings are kept as-is.
 > - tensor_cache test (small dataset first, then large dataset, both on cpu interactive) -> cache on engaging cpu -> speed ups on high compute -> spin up high compute jobs with tensor cache scp to pods
 > - once it's tested and works, add a tcache column to all of the tracking in this document -> checkmark when tensor cache generated, which should always be done before running the experiment
 > -- tensor cache works, but the cacheing takes up too much space (over 1TB just for bear room) due to lots of duplication. Looking into solutions. Once implemented, test again on Bear room (on a non-gpu node) then if it works properly, we proceed with high compute jobs.
@@ -89,7 +92,7 @@
 #### Time-LLM
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |---------|--------|----------|---------------|------|--------|---------|
-| California ISO | ✅ Complete | `timellm_california_iso_20260112_141144` | `20260112-141144_a05ebe165526` | - | - | MIT Sloan (A100) |
+| California ISO | ⏳ Pending | `timellm_california_iso_20260112_141144` | `20260112-141144_a05ebe165526` | - | - | MIT Sloan (A100) |
 | NYC Traffic Speed | ❌ Error (needs resume) | `timellm_nyc_traffic_speed_20260112_185045` | - | - | - | MIT Sloan (A100) |
 | Canada Photovoltaics | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
 | Germany Renewable | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
@@ -101,7 +104,7 @@
 |---------|--------|-----------|----------|---------------|------|--------|---------|
 | Time MMD & TTC | ⏳ Pending | ✅ Complete | - | - | - | - | MIT Sloan (A100) |
 | Bear Room | ⏳ Pending | ✅ Complete | - | - | - | - | MIT Sloan (A100) |
-| California ISO | ⏳ Pending | ❌ In Progress (OOM) | - | - | - | - | MIT Sloan (A100) |
+| California ISO | ⏳ Pending | ✅ Complete | - | - | - | - | MIT Sloan (A100) |
 | Canada Photovoltaics | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
 | Germany Renewable | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
 | NYC Traffic Speed | ⏳ Pending | ⏳ Pending | - | - | - | - | MIT Sloan (A100) |
@@ -118,6 +121,19 @@
 | California ISO | ⏳ Pending | - | - | - | - | RunPod (pod:caiso) |
 | Bear Room | ⏳ Pending | - | - | - | - | RunPod (pod:bear_room) |
 | Jena Atmospheric Physics | ⏳ Pending | - | - | - | - | RunPod (pod:jena) |
+
+#### MMTSFLib
+| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|---------|--------|----------|---------------|------|--------|---------|
+| Time MMD & TTC | ⏳ Pending | - | - | - | - | - |
+| Canada Photovoltaics | ⏳ Pending | - | - | - | - | - |
+| Germany Renewable | ⏳ Pending | - | - | - | - | - |
+| NYC Traffic Speed | ⏳ Pending | - | - | - | - | - |
+| California ISO | ⏳ Pending | - | - | - | - | - |
+| Bear Room | ⏳ Pending | - | - | - | - | - |
+| Jena Atmospheric Physics | ⏳ Pending | - | - | - | - | - |
+
+**Note:** MMTSFlib requires precomputed LLM embeddings. All experiments are pending setup and execution.
 
 #### Other Benchmarks (Pending Experimentation)
 - **ZhangHanBest-PatchTST**: ⏳ Pending (needs experimentation setup)
@@ -161,7 +177,7 @@
 
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |---------|--------|----------|---------------|------|--------|---------|
-| Canada Photovoltaics | ✅ Complete | `lynx_film_canada_photovoltaics_20260113_105228` | `20260113-105229_286069803489` | - | - | RunPod (pod:canada) |
+| Canada Photovoltaics | ⏳ Pending | `lynx_film_canada_photovoltaics_20260113_105228` | `20260113-105229_286069803489` | - | - | RunPod (pod:canada) |
 | Germany Renewable | ⏳ Pending (testing tensor_cache) | - | - | - | - | RunPod (pod:germany) |
 | NYC Traffic Speed | ⏳ Pending | - | - | - | - | RunPod (pod:nyc_traffic) |
 | California ISO | ⏳ Pending | - | - | - | - | RunPod (pod:caiso) |
