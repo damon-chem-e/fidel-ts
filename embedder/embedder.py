@@ -20,7 +20,36 @@ from .cache_manager import EmbeddingCacheManager
 class TextEmbedder:
     """
     Unified text embedder with caching and multiple aggregation methods.
+    
+    Uses lazy loading: model and tokenizer are only loaded when actually needed
+    for computing embeddings. This enables CPU-only cache lookups without loading
+    GPU-intensive models.
     """
+    
+    # Known embedding dimensions for common models (enables GPU-free cache lookup)
+    # Add new models here as needed to avoid model loading overhead
+    # Source: HuggingFace model cards / config.json files
+    EMBEDDING_DIM_LOOKUP = {
+        # BERT family
+        'bert-base-uncased': 768,
+        'bert-base-cased': 768,
+        'bert-large-uncased': 1024,
+        'bert-large-cased': 1024,
+        # RoBERTa family
+        'roberta-base': 768,
+        'roberta-large': 1024,
+        # DistilBERT (smaller, faster BERT)
+        'distilbert-base-uncased': 768,
+        'distilbert-base-cased': 768,
+        # ALBERT (parameter-efficient BERT)
+        'albert-base-v2': 768,
+        'albert-large-v2': 1024,
+        'albert-xlarge-v2': 2048,
+        'albert-xxlarge-v2': 4096,
+        # Sentence transformers (if used)
+        'sentence-transformers/all-MiniLM-L6-v2': 384,
+        'sentence-transformers/all-mpnet-base-v2': 768,
+    }
     
     def __init__(self,
                  model_name: str = 'bert-base-uncased',
@@ -47,6 +76,10 @@ class TextEmbedder:
             cache_path: Dataset-specific path within cache_root
             force_reembed: If True, recompute embeddings even if cache exists
             console: Optional Rich Console instance for progress bar display
+        
+        Note:
+            Model and tokenizer are lazy-loaded (only when needed for computation).
+            This enables CPU-only cache lookups without loading GPU-intensive models.
         """
         self.model_name = model_name
         self.aggregation_method = aggregation_method
@@ -57,15 +90,27 @@ class TextEmbedder:
         self.force_reembed = force_reembed
         self.console = console  # Rich Console for progress bars
         
-        # Get model and tokenizer from registry
-        self.model = EmbeddingModelRegistry.get_model(model_name, device, hf_cache_dir)
-        self.tokenizer = EmbeddingModelRegistry.get_tokenizer(model_name, hf_cache_dir)
+        # Lazy-loaded attributes (None until needed)
+        self._model = None
+        self._tokenizer = None
         
-        # Get aggregation function
+        # Get aggregation function (doesn't require model)
         self.aggregate_fn = get_aggregation_function(aggregation_method)
         
-        # Get embedding dimension
-        self.embedding_dim = self.model.config.hidden_size
+        # Get embedding dimension from lookup table (no model loading)
+        self.embedding_dim = self._get_embedding_dim_without_model(model_name)
+        
+        # Flag to track if we need to load model to get dimension
+        self._needs_model_for_dim = (self.embedding_dim is None)
+        
+        # Warn if model not in lookup table
+        if self._needs_model_for_dim:
+            import warnings
+            warnings.warn(
+                f"Model '{model_name}' not in EMBEDDING_DIM_LOOKUP. "
+                f"Model will be loaded to determine embedding dimension. "
+                f"Consider adding this model to EMBEDDING_DIM_LOOKUP for faster cache checks."
+            )
         
         # Cache manager
         if cache_root is not None:
@@ -78,6 +123,56 @@ class TextEmbedder:
         if aggregation_method == 'none':
             self.sequence_length = max_length  # All sequences padded to max_length
     
+    @staticmethod
+    def _get_embedding_dim_without_model(model_name: str) -> Optional[int]:
+        """
+        Get embedding dimension from lookup table (no model loading).
+        
+        Args:
+            model_name: HuggingFace model name
+        
+        Returns:
+            Embedding dimension if known, None otherwise
+        """
+        return TextEmbedder.EMBEDDING_DIM_LOOKUP.get(model_name)
+    
+    @property
+    def model(self):
+        """
+        Lazy-load model only when needed.
+        
+        Returns:
+            Loaded model instance
+        """
+        if self._model is None:
+            # Load model from registry
+            self._model = EmbeddingModelRegistry.get_model(
+                self.model_name, self.device, self.hf_cache_dir
+            )
+            
+            # If we didn't have embedding_dim from lookup, get it now
+            if self._needs_model_for_dim:
+                self.embedding_dim = self._model.config.hidden_size
+                self._needs_model_for_dim = False
+        
+        return self._model
+    
+    @property
+    def tokenizer(self):
+        """
+        Lazy-load tokenizer only when needed.
+        
+        Returns:
+            Loaded tokenizer instance
+        """
+        if self._tokenizer is None:
+            # Load tokenizer from registry
+            self._tokenizer = EmbeddingModelRegistry.get_tokenizer(
+                self.model_name, self.hf_cache_dir
+            )
+        
+        return self._tokenizer
+    
     def create_metadata(self, **extra_config) -> EmbeddingMetadata:
         """
         Create metadata object for current configuration.
@@ -87,7 +182,15 @@ class TextEmbedder:
         
         Returns:
             EmbeddingMetadata object
+        
+        Note:
+            If embedding_dim is not known from lookup table, this will trigger
+            model loading to get the dimension.
         """
+        # If embedding_dim still not set (unknown model), load model to get it
+        if self.embedding_dim is None:
+            _ = self.model  # Trigger lazy load to get embedding_dim
+        
         return EmbeddingMetadata(
             tokenizer_name=self.model_name,
             model_name=self.model_name,
