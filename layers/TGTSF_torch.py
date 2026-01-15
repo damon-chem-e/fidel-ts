@@ -162,13 +162,14 @@ class text_encoder(nn.Module):
 
         # print(news_emb.shape, news_mask.shape)
 
+        # Ensure contiguity before view operations for torch.compile
         # reshape the news_emb
-        news_emb=news_emb.view(B*L, news_emb.shape[2], D) # [b*l, n, d]
+        news_emb = news_emb.contiguous().view(B*L, news_emb.shape[2], D)  # [b*l, n, d]
         news_mask = news_emb.sum(dim=-1) == 0
         news_mask = news_mask.float()
 
         # reshape the description_emb
-        description_emb=description_emb.view(B*L, description_emb.shape[2], D) # [b*l, c, d]
+        description_emb = description_emb.contiguous().view(B*L, description_emb.shape[2], D)  # [b*l, c, d]
 
         text_emb=description_emb
 
@@ -206,7 +207,8 @@ class text_encoder(nn.Module):
         #                as recent historical text is most relevant for prediction.
         # ============================================================================
         
-        x = rearrange(text_emb, 'b l c d -> (b c) l d', b=B, c=C)
+        # Ensure contiguity after rearrange for attention operations
+        x = rearrange(text_emb, 'b l c d -> (b c) l d', b=B, c=C).contiguous()
         # x shape: [(B*C), L, D] where L is actual input text length
         
         # W_pos shape: (L_pos, 1, D) -> permute to (1, L_pos, D) for broadcasting

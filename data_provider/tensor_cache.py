@@ -281,17 +281,24 @@ class TensorCacheMetadata:
     - Store config hash for staleness detection
     - Record array shapes for pre-allocation
     - Identify cache format (indexed vs direct)
+    - Store num_news_items for embedding shape handling
     
     VERSIONING:
-    - VERSION = "2.0.0": Current version with indexed format
+    - VERSION = "2.1.0": Current version with indexed format and downtime handling
+    - VERSION = "2.0.0": Indexed format without explicit num_news_items
     - VERSION = "1.0.0": Legacy direct format (still readable)
     
     FORMATS:
     - FORMAT_INDEXED: V2 format with shared tables + indices (~100x smaller)
     - FORMAT_DIRECT: V1 format with per-sample arrays (legacy)
+    
+    NUM_NEWS_ITEMS:
+    - N=1: Embeddings stored as (D,) per timestamp - only text embedding
+    - N=2: Embeddings stored as (2, D) per timestamp - text embedding + downtime indicator
+    - Determined during cache generation based on whether training data has downtime
     """
 
-    VERSION = "2.0.0"
+    VERSION = "2.1.0"
     FORMAT_DIRECT = "direct"    # V1: stores data directly per sample
     FORMAT_INDEXED = "indexed"  # V2: stores indices into shared tables
 
@@ -306,7 +313,8 @@ class TensorCacheMetadata:
         scaler_params: Optional[dict] = None,
         entity_info: Optional[dict] = None,
         created_at: Optional[str] = None,
-        version: Optional[str] = None
+        version: Optional[str] = None,
+        num_news_items: int = 1
     ):
         """
         Initialize metadata.
@@ -322,6 +330,7 @@ class TensorCacheMetadata:
             entity_info: Entity IDs and sample counts
             created_at: ISO timestamp of cache creation
             version: Metadata version string
+            num_news_items: Number of news items per timestamp (1=embedding only, 2=embedding+downtime)
         """
         self.version = version or self.VERSION
         self.config_hash = config_hash
@@ -333,6 +342,7 @@ class TensorCacheMetadata:
         self.scaler_params = scaler_params or {}
         self.entity_info = entity_info or {}
         self.created_at = created_at or datetime.now().isoformat()
+        self.num_news_items = num_news_items
 
     def to_dict(self) -> dict:
         """Serialize metadata to dictionary for JSON storage."""
@@ -346,7 +356,8 @@ class TensorCacheMetadata:
             'shared_shapes': self.shared_shapes,
             'dtypes': self.dtypes,
             'scaler_params': self.scaler_params,
-            'entity_info': self.entity_info
+            'entity_info': self.entity_info,
+            'num_news_items': self.num_news_items
         }
 
     @classmethod
@@ -363,7 +374,10 @@ class TensorCacheMetadata:
             scaler_params=data.get('scaler_params', {}),
             entity_info=data.get('entity_info', {}),
             created_at=data.get('created_at'),
-            version=data.get('version', '1.0.0')
+            version=data.get('version', '1.0.0'),
+            # Default to 1 for old caches without num_news_items field
+            # Old caches stored flattened embeddings (effectively N=1)
+            num_news_items=data.get('num_news_items', 1)
         )
 
     def save(self, path: Path) -> None:
@@ -542,6 +556,15 @@ class SharedTableCollector:
     - Lists grow during collection phase
     - Converted to numpy arrays once at the end
     - Final arrays are much smaller than per-sample storage
+    
+    DOWNTIME HANDLING:
+    - The original dataloader produces embeddings with shape (L, N, D) where N=2:
+      - [:, 0, :] = actual text embedding
+      - [:, 1, :] = downtime indicator (or zeros if no downtime)
+    - We detect whether training data has any non-zero downtime indicators
+    - If no downtime in training: store N=1 (only embeddings), saving 50% memory
+    - If downtime in training: store N=2 (embeddings + downtime), matching original
+    - Rationale: If no downtime in training, model won't learn to use it anyway
     """
     # Mapping from timestamp to index in shared tables
     timestamp_to_idx: Dict[int, int] = field(default_factory=dict)
@@ -559,6 +582,81 @@ class SharedTableCollector:
     
     # Inferred shapes (updated as we see data)
     shapes: InferredShapes = field(default_factory=InferredShapes)
+    
+    # Downtime handling: num_news_items determines embedding storage format
+    # N=1: store only embedding (no downtime), shape (L, D)
+    # N=2: store embedding + downtime indicator, shape (L, 2, D)
+    num_news_items: int = 1  # Default to N=1; set to 2 if downtime detected in training
+
+
+def _detect_downtime_in_training(
+    data_provider,
+    max_samples_to_check: int = 1000
+) -> bool:
+    """
+    Detect if training data has any non-zero downtime indicators.
+    
+    RATIONALE:
+    The original dataloader produces embeddings with shape (L, N, D) where N=2:
+    - [:, 0, :] = actual text embedding
+    - [:, 1, :] = downtime indicator (non-zero if sensor was down, zeros otherwise)
+    
+    If training data has NO non-zero downtime indicators, the model won't learn
+    how to use them anyway. In this case, we can store N=1 (just embeddings)
+    which saves 50% memory and matches model expectations.
+    
+    If training data HAS non-zero downtime indicators, we store N=2 to preserve
+    this signal for the model to learn from.
+    
+    Args:
+        data_provider: Data provider with get_datasets() method
+        max_samples_to_check: Maximum samples to scan (for efficiency)
+        
+    Returns:
+        True if any non-zero downtime indicators found in training data
+    """
+    datasets = data_provider.get_datasets('train')
+    if not datasets:
+        return False
+    
+    samples_checked = 0
+    
+    for entity_id, dataset in datasets.items():
+        if len(dataset) == 0:
+            continue
+        
+        # Check a subset of samples from each entity
+        samples_per_entity = min(len(dataset), max_samples_to_check // max(len(datasets), 1))
+        
+        for sample_idx in range(0, len(dataset), max(1, len(dataset) // samples_per_entity)):
+            if samples_checked >= max_samples_to_check:
+                break
+                
+            sample = dataset[sample_idx]
+            
+            # Check hetero_x (input embeddings)
+            hetero_x = _safe_array(sample[SAMPLE_IDX_HETERO_X])
+            if hetero_x is not None and hetero_x.ndim == 3:
+                # Shape: (L, N, D) where N should be 2 for embeddings + downtime
+                if hetero_x.shape[1] >= 2:
+                    downtime_indicator = hetero_x[:, 1, :]  # Second item is downtime
+                    if np.any(downtime_indicator != 0):
+                        return True
+            
+            # Check hetero_y (output embeddings)
+            hetero_y = _safe_array(sample[SAMPLE_IDX_HETERO_Y])
+            if hetero_y is not None and hetero_y.ndim == 3:
+                if hetero_y.shape[1] >= 2:
+                    downtime_indicator = hetero_y[:, 1, :]
+                    if np.any(downtime_indicator != 0):
+                        return True
+            
+            samples_checked += 1
+        
+        if samples_checked >= max_samples_to_check:
+            break
+    
+    return False
 
 
 def _register_timestamp_data(
@@ -576,11 +674,16 @@ def _register_timestamp_data(
     - If new: assign next index, append data to lists
     - If seen: skip (data already stored)
     
+    EMBEDDING HANDLING:
+    - If collector.num_news_items == 1: store embedding as (D,) - just the embedding
+    - If collector.num_news_items == 2: store embedding as (2, D) - embedding + downtime
+    - This is determined by _detect_downtime_in_training() before collection starts
+    
     Args:
         collector: SharedTableCollector to update
         timestamp: Unix timestamp (int64)
         ts_value: Time series value at this timestamp
-        embedding: Text embedding at this timestamp
+        embedding: Text embedding at this timestamp (may be (D,), (N, D), or full per-timestep)
         hetero_time_feat: Hetero time features at this timestamp
     """
     ts_key = int(timestamp)
@@ -601,16 +704,64 @@ def _register_timestamp_data(
         n_features = collector.shapes.n_features or 1
         collector.timeseries.append(np.zeros(n_features, dtype=np.float32))
     
-    # Store embedding (with fallback to zeros)
+    # Store embedding based on num_news_items setting
+    # N=1: store as (D,) - just the text embedding
+    # N=2: store as (2, D) - text embedding + downtime indicator
     if embedding is not None:
-        emb_flat = np.asarray(embedding).flatten()
-        collector.embeddings.append(emb_flat)
-        # Update embed_dim if not yet set (ensures consistency)
-        if collector.shapes.embed_dim is None:
-            collector.shapes.embed_dim = len(emb_flat)
+        emb_arr = np.asarray(embedding)
+        
+        if collector.num_news_items == 1:
+            # N=1: Store only the text embedding, flattened to (D,)
+            # If embedding is already 1D, use as-is
+            # If 2D (N, D), take only first item (actual embedding)
+            if emb_arr.ndim == 1:
+                emb_to_store = emb_arr
+            elif emb_arr.ndim == 2:
+                emb_to_store = emb_arr[0]  # First item is the actual embedding
+            else:
+                emb_to_store = emb_arr.flatten()
+            collector.embeddings.append(emb_to_store)
+            
+            # Update embed_dim if not yet set
+            if collector.shapes.embed_dim is None:
+                collector.shapes.embed_dim = len(emb_to_store)
+        else:
+            # N=2: Store full embedding + downtime indicator as (2, D)
+            # If embedding is 1D, we need to handle this edge case
+            # If 2D with shape (N, D), store the full array
+            if emb_arr.ndim == 1:
+                # Edge case: 1D embedding provided but N=2 requested
+                # Create (2, D) with zeros for downtime
+                embed_dim = len(emb_arr)
+                emb_to_store = np.zeros((2, embed_dim), dtype=np.float32)
+                emb_to_store[0] = emb_arr
+            elif emb_arr.ndim == 2 and emb_arr.shape[0] >= 2:
+                # Normal case: (N, D) array, take first 2 items
+                emb_to_store = emb_arr[:2]  # (2, D)
+            elif emb_arr.ndim == 2 and emb_arr.shape[0] == 1:
+                # Edge case: Only 1 item, pad with zeros for downtime
+                embed_dim = emb_arr.shape[1]
+                emb_to_store = np.zeros((2, embed_dim), dtype=np.float32)
+                emb_to_store[0] = emb_arr[0]
+            else:
+                # Fallback: flatten and reshape
+                emb_flat = emb_arr.flatten()
+                embed_dim = len(emb_flat)
+                emb_to_store = np.zeros((2, embed_dim), dtype=np.float32)
+                emb_to_store[0] = emb_flat
+            
+            collector.embeddings.append(emb_to_store)
+            
+            # Update embed_dim if not yet set (based on actual embedding dim, not total)
+            if collector.shapes.embed_dim is None:
+                collector.shapes.embed_dim = emb_to_store.shape[1]
     else:
+        # Fallback to zeros with appropriate shape
         embed_dim = collector.shapes.embed_dim or 768
-        collector.embeddings.append(np.zeros(embed_dim, dtype=np.float32))
+        if collector.num_news_items == 1:
+            collector.embeddings.append(np.zeros(embed_dim, dtype=np.float32))
+        else:
+            collector.embeddings.append(np.zeros((2, embed_dim), dtype=np.float32))
     
     # Store hetero time features (with fallback to zeros)
     if hetero_time_feat is not None:
@@ -674,10 +825,17 @@ def _process_sample_for_collection(
     - sample[4]: y_time - output timestamps (output_len,)
     - sample[1]: seq_x - input time series (input_len, n_features)
     - sample[2]: seq_y - output time series (output_len, n_features)
-    - sample[5]: hetero_x - input embeddings (input_len, embed_dim)
-    - sample[6]: hetero_y - output embeddings (output_len, embed_dim)
+    - sample[5]: hetero_x - input embeddings (input_len, num_items, embed_dim) where num_items=2
+    - sample[6]: hetero_y - output embeddings (output_len, num_items, embed_dim) where num_items=2
     - sample[7]: hetero_x_time - input hetero time features
     - sample[8]: hetero_y_time - output hetero time features
+    
+    EMBEDDING HANDLING:
+    - The original dataloader produces embeddings with shape (L, N, D) where N=2:
+      - [:, 0, :] = actual text embedding
+      - [:, 1, :] = downtime indicator (or zeros if no downtime)
+    - We pass the FULL embedding (including downtime) to _register_timestamp_data
+    - _register_timestamp_data decides what to store based on collector.num_news_items
     
     Args:
         collector: SharedTableCollector to update
@@ -702,10 +860,13 @@ def _process_sample_for_collection(
             # Extract value at position i (handling different array shapes)
             ts_val = seq_x[i] if seq_x is not None and i < len(seq_x) else None
             
-            # Handle embeddings: 2D (per-timestep) or 1D (static/repeated)
+            # Extract per-timestep embedding (pass full embedding including downtime)
+            # The _register_timestamp_data function will handle N=1 vs N=2 based on
+            # collector.num_news_items setting determined by downtime detection
             if hetero_x is not None:
-                if hetero_x.ndim > 1 and i < len(hetero_x):
-                    emb = hetero_x[i]  # Per-timestep embedding
+                if hetero_x.ndim >= 2 and i < hetero_x.shape[0]:
+                    # Per-timestep embedding, may be (num_items, embed_dim) or (embed_dim,)
+                    emb = hetero_x[i]
                 elif hetero_x.ndim == 1:
                     emb = hetero_x  # Static embedding (same for all timesteps)
                 else:
@@ -717,7 +878,7 @@ def _process_sample_for_collection(
             
             _register_timestamp_data(collector, ts, ts_val, emb, htf)
     
-    # Process output window timestamps (same pattern)
+    # Process output window timestamps (same pattern as input)
     y_time = _safe_array(sample[SAMPLE_IDX_Y_TIME])
     if y_time is not None:
         y_time_flat = y_time.flatten()
@@ -728,10 +889,13 @@ def _process_sample_for_collection(
         for i, ts in enumerate(y_time_flat):
             ts_val = seq_y[i] if seq_y is not None and i < len(seq_y) else None
             
-            # Handle embeddings: 2D (per-timestep) or 1D (static/repeated)
+            # Extract per-timestep embedding (pass full embedding including downtime)
+            # The _register_timestamp_data function will handle N=1 vs N=2 based on
+            # collector.num_news_items setting determined by downtime detection
             if hetero_y is not None:
-                if hetero_y.ndim > 1 and i < len(hetero_y):
-                    emb = hetero_y[i]  # Per-timestep embedding
+                if hetero_y.ndim >= 2 and i < hetero_y.shape[0]:
+                    # Per-timestep embedding, may be (num_items, embed_dim) or (embed_dim,)
+                    emb = hetero_y[i]
                 elif hetero_y.ndim == 1:
                     emb = hetero_y  # Static embedding (same for all timesteps)
                 else:
@@ -1081,15 +1245,53 @@ class TensorCacheGenerator:
         Build shared tables by collecting unique data across all splits.
         
         ALGORITHM:
-        1. Create SharedTableCollector
-        2. Iterate through all splits and entities
-        3. For each sample, register unique timestamps and entity data
-        4. Convert collected lists to numpy arrays
+        1. Detect if training data has downtime (determines num_news_items)
+        2. Create SharedTableCollector with appropriate num_news_items setting
+        3. Iterate through all splits and entities
+        4. For each sample, register unique timestamps and entity data
+        5. Convert collected lists to numpy arrays
+        
+        DOWNTIME DETECTION:
+        - If training data has non-zero downtime indicators: num_news_items=2
+          (stores embedding + downtime indicator)
+        - If training data has NO downtime: num_news_items=1
+          (stores only embedding, 50% memory savings)
+        - Rationale: If model doesn't see downtime during training, it won't
+          learn to use it anyway, so storing it wastes memory
         
         Returns:
             Tuple of (shared_tables dict, index_mappings dict)
         """
+        # Step 1: Detect downtime in training data to determine num_news_items
+        has_downtime = _detect_downtime_in_training(self.data_provider)
+        num_news_items = 2 if has_downtime else 1
+        
+        # Store for later use in metadata
+        self._num_news_items = num_news_items
+        
+        # Log the decision with clear explanation
+        if has_downtime:
+            logger.info(
+                "[ info ] Downtime detected in training data - storing num_news_items=2 "
+                "(embedding + downtime indicator). This matches the original dataloader behavior."
+            )
+            print(
+                "[ info ] Downtime detected in training data - storing embeddings with "
+                "downtime indicators (N=2). The model will learn to use downtime information."
+            )
+        else:
+            logger.info(
+                "[ info ] No downtime in training data - storing num_news_items=1 "
+                "(embedding only). This saves 50% embedding memory."
+            )
+            print(
+                "[ info ] No downtime in training data - storing embeddings without "
+                "downtime indicators (N=1). Even if val/test have downtime, the model "
+                "won't have learned to use it, so omitting saves memory."
+            )
+        
         collector = SharedTableCollector()
+        collector.num_news_items = num_news_items
         
         # Count total samples for progress tracking
         total_samples = 0
@@ -1555,7 +1757,16 @@ class TensorCacheGenerator:
         shared_shapes: dict,
         entity_info: dict
     ) -> None:
-        """Save cache metadata to metadata.json."""
+        """
+        Save cache metadata to metadata.json.
+        
+        Includes num_news_items which determines embedding shape:
+        - N=1: embeddings stored as (D,) per timestamp
+        - N=2: embeddings stored as (2, D) per timestamp (embedding + downtime)
+        """
+        # Get num_news_items from the build process (set in _build_shared_tables)
+        num_news_items = getattr(self, '_num_news_items', 1)
+        
         metadata = TensorCacheMetadata(
             config_hash=self.config_hash,
             data_config=self.config,
@@ -1563,7 +1774,8 @@ class TensorCacheGenerator:
             dtypes={name: spec['dtype'] for name, spec in INDEXED_ARRAY_SPECS.items()},
             cache_format=TensorCacheMetadata.FORMAT_INDEXED,
             shared_shapes=shared_shapes,
-            entity_info=entity_info
+            entity_info=entity_info,
+            num_news_items=num_news_items
         )
         metadata.save(self.cache_dir / 'metadata.json')
 
@@ -1742,22 +1954,29 @@ class TensorCacheDataset(Dataset):
         1. Get x_indices and y_indices for this sample
         2. Use indices to look up data from shared tables
         3. Apply hetero_stride to embedding indices (matches normal dataloader behavior)
-        4. Add num_items dimension to embeddings (model expects 3D per sample)
+        4. Handle num_news_items dimension in embeddings (N=1 or N=2)
         5. Return reconstructed sample tuple
         
-        SHAPE HANDLING - CRITICAL DISTINCTION:
-        - Embeddings are stored as (L, embed_dim) and returned as (L, 1, embed_dim)
-        - The middle dimension is num_news_items (N), NOT n_features (C)!
-        - N = number of news items per timestep (can be 1, which is our case)
-        - C = number of time series channels (comes from channel_description, not news_emb)
+        EMBEDDING SHAPE HANDLING:
+        The embeddings are stored differently based on metadata.num_news_items:
+        
+        - N=1 (no downtime in training): stored as (L, D), returned as (L, 1, D)
+          We add the N dimension with expand_dims
+          
+        - N=2 (downtime in training): stored as (L, 2, D), returned as (L, 2, D)
+          Already has the N dimension, no expansion needed
+        
+        The original dataloader produces (L, 2, D) where:
+        - [:, 0, :] = text embedding
+        - [:, 1, :] = downtime indicator (non-zero if sensor was down)
         
         The text_encoder does cross-attention where:
         - Query: channel_description [B, L, C, D] - C channels
         - Key/Value: news_emb [B, L, N, D] - N news items per timestep
         
-        Each channel attends to all N news items. With N=1, each channel attends
-        to the single news embedding - semantically equivalent to having the same
-        text for all channels (which is what the dataset provides).
+        Each channel attends to all N news items. With N=2, the model can learn
+        to use downtime information. With N=1, we save 50% memory and the model
+        only sees text embeddings (appropriate when no downtime in training).
         
         See docs/tensor_cache_embedding_shapes.md for detailed explanation.
         
@@ -1793,24 +2012,27 @@ class TensorCacheDataset(Dataset):
         y_hetero_idx = y_idx[::self.hetero_stride]
         
         # Look up embeddings from shared table using STRIDED indices
-        # Models expect (L, num_news_items, embed_dim) - we use num_news_items=1
-        # IMPORTANT: num_news_items (N) is NOT the same as n_features (C)!
-        # - N = number of news items per timestep (we always have 1 per timestamp)
-        # - C = number of time series channels (comes from channel_description)
-        # The text_encoder uses cross-attention: channels (query) attend to news (key/value)
-        # See docs/tensor_cache_embedding_shapes.md for detailed explanation.
+        # Shape depends on num_news_items in metadata:
+        # - N=1: stored as (L, D), needs expansion to (L, 1, D)
+        # - N=2: stored as (L, 2, D), already has N dimension
         hetero_x = self.shared['embeddings'][x_hetero_idx] if 'embeddings' in self.shared else None
         hetero_y = self.shared['embeddings'][y_hetero_idx] if 'embeddings' in self.shared else None
         
-        # Add num_news_items dimension: (L_strided, D) -> (L_strided, 1, D)
-        # We do NOT repeat to n_features - that was a misunderstanding of the shape semantics
+        # Get num_news_items from metadata (default to 1 for old caches)
+        num_news_items = getattr(self.metadata, 'num_news_items', 1)
+        
+        # Handle embedding shape based on num_news_items
         if hetero_x is not None:
-            # Shape: (ceil(input_len/stride), embed_dim) -> (ceil(input_len/stride), 1, embed_dim)
             # BEGIN DEBUG
             if _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
                 print(f"[DEBUG]   hetero_x before expand: shape={hetero_x.shape}")
             # END DEBUG
-            hetero_x = np.expand_dims(hetero_x, axis=1)
+            
+            if num_news_items == 1:
+                # N=1: stored as (L, D) -> expand to (L, 1, D)
+                hetero_x = np.expand_dims(hetero_x, axis=1)
+            # else: N=2, already stored as (L, 2, D), no expansion needed
+            
             # BEGIN DEBUG
             if _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
                 hetero_x_mb = hetero_x.nbytes / (1024 ** 2)
@@ -1818,8 +2040,11 @@ class TensorCacheDataset(Dataset):
             # END DEBUG
         
         if hetero_y is not None:
-            # Shape: (ceil(output_len/stride), embed_dim) -> (ceil(output_len/stride), 1, embed_dim)
-            hetero_y = np.expand_dims(hetero_y, axis=1)
+            if num_news_items == 1:
+                # N=1: stored as (L, D) -> expand to (L, 1, D)
+                hetero_y = np.expand_dims(hetero_y, axis=1)
+            # else: N=2, already stored as (L, 2, D), no expansion needed
+            
             # BEGIN DEBUG
             if _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
                 hetero_y_mb = hetero_y.nbytes / (1024 ** 2)
