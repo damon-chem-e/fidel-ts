@@ -432,6 +432,10 @@ def _infer_dim(arr: Optional[np.ndarray], axis: int = -1) -> Optional[int]:
     """
     Infer dimension size from array along specified axis.
     
+    For embedding inference:
+    - 1D array (768,) means static embedding with dim=768 (axis=-1 returns 768)
+    - 2D array (360, 768) means per-timestep embeddings with dim=768 (axis=-1 returns 768)
+    
     Args:
         arr: Input array or None
         axis: Axis to get size from (default: last axis)
@@ -442,7 +446,8 @@ def _infer_dim(arr: Optional[np.ndarray], axis: int = -1) -> Optional[int]:
     if arr is None or arr.ndim == 0:
         return None
     if arr.ndim == 1:
-        return 1 if axis == -1 else arr.shape[0]
+        # For 1D arrays, the embedding dimension is the array length
+        return arr.shape[0]
     return arr.shape[axis]
 
 
@@ -582,7 +587,11 @@ def _register_timestamp_data(
     
     # Store embedding (with fallback to zeros)
     if embedding is not None:
-        collector.embeddings.append(np.asarray(embedding).flatten())
+        emb_flat = np.asarray(embedding).flatten()
+        collector.embeddings.append(emb_flat)
+        # Update embed_dim if not yet set (ensures consistency)
+        if collector.shapes.embed_dim is None:
+            collector.shapes.embed_dim = len(emb_flat)
     else:
         embed_dim = collector.shapes.embed_dim or 768
         collector.embeddings.append(np.zeros(embed_dim, dtype=np.float32))
@@ -676,7 +685,18 @@ def _process_sample_for_collection(
         for i, ts in enumerate(x_time_flat):
             # Extract value at position i (handling different array shapes)
             ts_val = seq_x[i] if seq_x is not None and i < len(seq_x) else None
-            emb = hetero_x[i] if hetero_x is not None and hetero_x.ndim > 1 and i < len(hetero_x) else None
+            
+            # Handle embeddings: 2D (per-timestep) or 1D (static/repeated)
+            if hetero_x is not None:
+                if hetero_x.ndim > 1 and i < len(hetero_x):
+                    emb = hetero_x[i]  # Per-timestep embedding
+                elif hetero_x.ndim == 1:
+                    emb = hetero_x  # Static embedding (same for all timesteps)
+                else:
+                    emb = None
+            else:
+                emb = None
+            
             htf = hetero_x_time[i] if hetero_x_time is not None and hetero_x_time.ndim > 1 and i < len(hetero_x_time) else None
             
             _register_timestamp_data(collector, ts, ts_val, emb, htf)
@@ -691,7 +711,18 @@ def _process_sample_for_collection(
         
         for i, ts in enumerate(y_time_flat):
             ts_val = seq_y[i] if seq_y is not None and i < len(seq_y) else None
-            emb = hetero_y[i] if hetero_y is not None and hetero_y.ndim > 1 and i < len(hetero_y) else None
+            
+            # Handle embeddings: 2D (per-timestep) or 1D (static/repeated)
+            if hetero_y is not None:
+                if hetero_y.ndim > 1 and i < len(hetero_y):
+                    emb = hetero_y[i]  # Per-timestep embedding
+                elif hetero_y.ndim == 1:
+                    emb = hetero_y  # Static embedding (same for all timesteps)
+                else:
+                    emb = None
+            else:
+                emb = None
+            
             htf = hetero_y_time[i] if hetero_y_time is not None and hetero_y_time.ndim > 1 and i < len(hetero_y_time) else None
             
             _register_timestamp_data(collector, ts, ts_val, emb, htf)
