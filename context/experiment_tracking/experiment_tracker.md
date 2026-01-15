@@ -34,7 +34,8 @@
 ## Current Work
 
 > - HETERO STRIDE: Plan rerun of all text-using experiments without hetero striding (full-resolution text); only TimeCMA LLM embeddings are kept as-is.
-> - tensor_cache test (small dataset first, then large dataset, both on cpu interactive) -> cache on engaging cpu -> speed ups on high compute -> spin up high compute jobs with tensor cache scp to pods
+> --- rerunning time mmd ttc lynx_film_raw with full resolution
+> - tensor_cache test (small dataset first, then large dataset, both on cpu interactive) -> cache on engaging cpu -> speed ups on high compute -> spin up high compute jobs with tensor cache scp to pods -- testing on jena_atmospheric... 
 > - once it's tested and works, add a tcache column to all of the tracking in this document -> checkmark when tensor cache generated, which should always be done before running the experiment
 > -- tensor cache works, but the cacheing takes up too much space (over 1TB just for bear room) due to lots of duplication. Looking into solutions. Once implemented, test again on Bear room (on a non-gpu node) then if it works properly, we proceed with high compute jobs.
 > - lynx_film_enhanced working -> low compute -> analysis
