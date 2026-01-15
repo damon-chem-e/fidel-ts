@@ -19,9 +19,14 @@ time_zone: Europe/Berlin
 hetero_info:
   hetero_type: all_for_one  # all_for_one, each_subset
   root_path: ./data/Germany_Renewable_Power_Grid/weather/merged_report_embedding
-  formatter: fast_general_formal_embeddings_????.pkl
+  formatter: merged_general_weather_report.json  # Raw text (re-embedded with new system)
   matching: backward
   input_format: embedding
-  static_path: static_info_embeddings.pkl
+  static_path: static_info_embeddings.pkl  # Path resolver overrides this for re-embedding
   # Timestamp semantics: t_about means timestamps represent WHAT TIME the text DESCRIBES
   timestamp_semantics: t_about
+  # Use new embedding system with BERT (generates 768-dim embeddings consistently)
+  use_old_embeddings: false
+  embedding_config:
+    model_name: bert-base-uncased  # 768-dim embeddings
+    aggregation_method: cls  # Use [CLS] token embedding

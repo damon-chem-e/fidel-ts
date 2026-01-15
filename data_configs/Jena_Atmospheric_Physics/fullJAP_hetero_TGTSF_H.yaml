@@ -16,9 +16,15 @@ base_T: 24
 hetero_info:
   hetero_type: all_for_one  # all_for_one, each_subset
   root_path: ./data/Jena_Atmospheric_Physics/weather/report_embedding/formal_report
-  formatter: wm_messages_v1.pkl
+  formatter: wm_messages_v3.json  # Raw text (re-embedded with new system)
   matching: backward
   input_format: embedding
-  static_path: static_info_embeddings.pkl
+  static_path: static_info_embeddings.pkl  # Path resolver overrides this for re-embedding
   # Timestamp semantics: t_about means timestamps represent WHAT TIME the text DESCRIBES
   timestamp_semantics: t_about
+  # Use new embedding system with BERT (generates 768-dim embeddings consistently)
+  # Set use_old_embeddings: true to use legacy .pkl files instead
+  use_old_embeddings: false
+  embedding_config:
+    model_name: bert-base-uncased  # 768-dim embeddings
+    aggregation_method: cls  # Use [CLS] token embedding
