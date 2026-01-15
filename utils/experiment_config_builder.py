@@ -3,9 +3,9 @@ Centralized experiment configuration builder.
 
 This module provides a single source of truth for building experiment args
 from suite/experiment configs, ensuring consistent override application across:
-- Tensor cache generation
+- Training (runs/pytorch.py)
+- Tensor cache generation (cli/tensor_cache.py)
 - Profiling tools
-- (Future) Training, evaluation
 
 The key function is `build_experiment_args()` which:
 1. Loads base data config from YAML file
@@ -15,7 +15,8 @@ The key function is `build_experiment_args()` which:
 5. Computes effective hetero_stride from text_embedding_stride config
 6. Builds complete args dotdict
 
-This ensures tensor cache generation uses the SAME effective config as training.
+This ensures tensor cache generation uses the SAME effective config as training,
+preventing hash mismatches between cache generation and training runtime.
 
 Usage:
     from utils.experiment_config_builder import build_experiment_args
@@ -28,7 +29,7 @@ Usage:
 import yaml
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional
 
 from utils.tools import dotdict
 from utils.config_utils import merge_configs
@@ -190,24 +191,23 @@ def load_and_merge_model_config(
 
 def build_experiment_args(
     experiment_config: Dict[str, Any],
-    include_gpu: bool = True
+    include_gpu: bool = True,
+    include_training: bool = True
 ) -> dotdict:
     """
     Build complete experiment args from merged experiment config.
     
     This is the SINGLE SOURCE OF TRUTH for building args from experiment configs.
-    Tools like tensor_cache and profile_dataloader should use this function.
-    
-    IMPORTANT: Training code (runs/pytorch.py, etc.) has its own config_to_args()
-    function that is intentionally NOT changed. This function replicates the
-    same logic to ensure tensor cache uses identical config to training.
+    All tools (tensor_cache, profile_dataloader, training) should use this function
+    to ensure consistent config handling, especially for hetero_stride computation.
     
     Args:
         experiment_config: Merged experiment config (template + overrides from suite)
         include_gpu: Whether to include GPU-related args (default: True)
+        include_training: Whether to include full training args like epochs, lr (default: True)
     
     Returns:
-        Complete args dotdict ready for Data_Provider
+        Complete args dotdict ready for Data_Provider and training
         
     Config structure expected:
         model:
@@ -223,6 +223,8 @@ def build_experiment_args(
         training:
             input_len: 24
             output_len: 6
+            epochs: 50
+            learning_rate: 0.001
             ...
     """
     args = dotdict()
@@ -235,6 +237,9 @@ def build_experiment_args(
     args.model = model_section.get('name', 'unknown')
     args.model_config = load_and_merge_model_config(model_config_path, model_config_overrides)
     
+    # Store model_config_overrides for downstream use (e.g., LLM embedding validation)
+    args.model_config_overrides = model_config_overrides or {}
+    
     # === Data config (with overrides) - THE CRITICAL FIX ===
     data_section = experiment_config.get('data', {})
     data_config_path = data_section.get('config_path', '')
@@ -242,6 +247,7 @@ def build_experiment_args(
     base_data_path = experiment_config.get('base_data_path')
     
     args.data = data_section.get('name', 'unknown')
+    args.data_name = args.data  # Alias for backward compatibility
     args.data_config = load_and_merge_data_config(
         data_config_path,
         data_config_overrides,
@@ -252,10 +258,19 @@ def build_experiment_args(
     args.data_config.config_path = data_config_path
     args.data_config.name = data_section.get('name', 'unknown')
     
-    # === Training config ===
+    # Store base_data_path for LLM embedding provider
+    args.base_data_path = base_data_path or './data/'
+    
+    # === Training config (core parameters) ===
+    # NOTE: Use `or` pattern for fields that may be None in Pydantic model_dump()
+    # This ensures we get the fallback when the value is None, not just missing
     training = experiment_config.get('training', {})
-    args.input_len = training.get('input_len', 336)
-    args.output_len = training.get('output_len', 96)
+    
+    # input_len/output_len can be None in Pydantic - use 1000 fallback to match old behavior
+    args.input_len = training.get('input_len') or 1000
+    args.output_len = training.get('output_len') or 1000
+    
+    # Boolean and numeric fields with proper defaults
     args.scale = training.get('scale', True)
     args.disable_buffer = training.get('disable_buffer', False)
     args.preload_hetero = training.get('preload_hetero', False)
@@ -263,7 +278,7 @@ def build_experiment_args(
     args.noise = training.get('noise', 0.0)
     args.downsample = training.get('downsample', None)
     args.num_workers = training.get('num_workers', 0)
-    args.batch_size = training.get('batch_size', 32)
+    args.batch_size = training.get('batch_size', 96)  # Pydantic default is 96
     args.truncate_train_for_purge = training.get('truncate_train_for_purge', False)
     args.ahead = training.get('ahead', None)
     
@@ -287,12 +302,46 @@ def build_experiment_args(
     if args.data_config is not None:
         args.data_config['hetero_stride'] = args.hetero_stride
     
+    # === Tensor cache settings ===
+    args.use_tensor_cache = training.get('use_tensor_cache', False)
+    args.tensor_cache_dir = training.get('tensor_cache_dir', None)
+    
+    # === PyTorch compile settings ===
+    args.torch_compile = training.get('torch_compile', False)
+    args.compile_mode = training.get('compile_mode', 'reduce-overhead')
+    
+    # === Full training parameters (epochs, learning rate, etc.) ===
+    # NOTE: Defaults match Pydantic TrainingConfig defaults for consistency
+    if include_training:
+        args.train_epochs = training.get('epochs', 20)  # Pydantic default is 20
+        args.patience = training.get('patience', 3)
+        args.learning_rate = training.get('learning_rate', 5e-4)  # Pydantic default is 5e-4
+        args.loss = training.get('loss', 'mse')
+        args.lradj = training.get('lradj', 'type3')  # Pydantic default is 'type3'
+        args.track_per_sample = training.get('track_per_sample', False)
+        args.evaluate_test_during_training = training.get('evaluate_test_during_training', False)
+    
+    # === Extract model architecture parameters from model config ===
+    # (Used by model-specific trainers for loss computation)
+    args.patch_len = args.model_config.get('patch_len', 16)
+    args.stride = args.model_config.get('stride', 8)
+    
     # === GPU config (optional) ===
     if include_gpu:
         import torch
         device_config = experiment_config.get('device', {})
         args.use_gpu = device_config.get('use_gpu', torch.cuda.is_available())
         args.gpu = device_config.get('gpu', 0)
+        args.use_multi_gpu = device_config.get('use_multi_gpu', False)
+        args.devices = device_config.get('devices', '0')
+    
+    # === LLM embedding config ===
+    llm_embedding = experiment_config.get('llm_embedding')
+    args.llm_embedding = llm_embedding if llm_embedding else None
+    
+    # === Environment variables ===
+    args.hf_mirror = experiment_config.get('hf_mirror', False)
+    args.hf_offline = experiment_config.get('hf_offline', False)
     
     return args
 

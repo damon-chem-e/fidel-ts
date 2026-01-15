@@ -16,19 +16,73 @@ from utils.gpu_monitor import gpu_monitoring_context
 from exp.exp_universal import Experiment
 from cli.config.models import ExperimentConfig
 from exp.manager import ExperimentManager
-from utils.config_utils import merge_configs
-from utils.experiment_config_builder import (
-    load_and_merge_data_config,
-    load_and_merge_model_config,
-)
+from utils.experiment_config_builder import build_experiment_args
+
+
+def pydantic_config_to_dict(config: ExperimentConfig) -> Dict[str, Any]:
+    """
+    Convert Pydantic ExperimentConfig to dict format for build_experiment_args.
+    
+    This bridges the gap between Pydantic config models and the centralized
+    config builder that expects dict input.
+    
+    Args:
+        config: Pydantic ExperimentConfig instance
+    
+    Returns:
+        Dict in the format expected by build_experiment_args
+    """
+    # Start with base model dump
+    config_dict = config.model_dump() if hasattr(config, 'model_dump') else dict(config)
+    
+    # Ensure training section has all fields from Pydantic model
+    # (Pydantic config uses 'epochs' but build_experiment_args expects it in training section)
+    if 'training' not in config_dict:
+        config_dict['training'] = {}
+    
+    # The Pydantic model has training as a nested object, ensure it's a dict
+    training = config_dict.get('training', {})
+    if hasattr(training, 'model_dump'):
+        config_dict['training'] = training.model_dump()
+    elif not isinstance(training, dict):
+        config_dict['training'] = dict(training)
+    
+    # Same for model section
+    model = config_dict.get('model', {})
+    if hasattr(model, 'model_dump'):
+        config_dict['model'] = model.model_dump()
+    elif not isinstance(model, dict):
+        config_dict['model'] = dict(model)
+    
+    # Same for data section
+    data = config_dict.get('data', {})
+    if hasattr(data, 'model_dump'):
+        config_dict['data'] = data.model_dump()
+    elif not isinstance(data, dict):
+        config_dict['data'] = dict(data)
+    
+    # Same for device section
+    device = config_dict.get('device', {})
+    if hasattr(device, 'model_dump'):
+        config_dict['device'] = device.model_dump()
+    elif not isinstance(device, dict):
+        config_dict['device'] = dict(device)
+    
+    # Handle llm_embedding (can be Pydantic model or None)
+    llm_embedding = config_dict.get('llm_embedding')
+    if llm_embedding is not None and hasattr(llm_embedding, 'model_dump'):
+        config_dict['llm_embedding'] = llm_embedding.model_dump()
+    
+    return config_dict
 
 
 def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     """
     Convert ExperimentConfig to argparse-like args object.
     
-    This function bridges the gap between the new Pydantic config system
-    and the existing Experiment class that expects argparse args.
+    Uses the centralized build_experiment_args to ensure consistent config handling
+    across all tools (CLI, training, tensor cache). This fixes the hetero_stride
+    hash mismatch between tensor cache generation and training.
     
     Args:
         config: ExperimentConfig instance containing experiment configuration
@@ -37,97 +91,24 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     Returns:
         dotdict object compatible with Experiment class
     """
-    args = dotdict()
+    # Convert Pydantic config to dict format
+    config_dict = pydantic_config_to_dict(config)
     
-    # Model config
-    args.model = config.model.name
-    args.model_config = config.model.config_path
+    # Use centralized builder for consistent config handling
+    # This ensures hetero_stride is computed the same way as CLI tools
+    args = build_experiment_args(config_dict, include_gpu=True, include_training=True)
     
-    # Data config
-    args.data = config.data.name
-    args.data_config = config.data.config_path
+    # === Runtime-specific overrides ===
+    # These are set by ExperimentManager and aren't part of the config file
     args.checkpoints = str(exp_manager.get_checkpoint_dir())
-    args.scale = config.training.scale
-    args.disable_buffer = config.training.disable_buffer
-    args.preload_hetero = config.training.preload_hetero
-    args.prefetch_factor = config.training.prefetch_factor
-    args.noise = config.training.noise
-    args.downsample = config.training.downsample
     
-    # Forecasting task
-    args.ahead = config.training.ahead
-    args.output_len = config.training.output_len or 1000
-    args.input_len = config.training.input_len or 1000
-    
-    # Optimization
-    args.num_workers = config.training.num_workers
-    args.train_epochs = config.training.epochs
-    args.batch_size = config.training.batch_size
-    args.patience = config.training.patience
-    args.learning_rate = config.training.learning_rate
-    args.loss = config.training.loss
-    args.lradj = config.training.lradj
-    args.track_per_sample = config.training.track_per_sample
-    args.evaluate_test_during_training = config.training.evaluate_test_during_training
-    args.truncate_train_for_purge = config.training.truncate_train_for_purge
-
-    # Tensor cache for fast data loading
-    args.use_tensor_cache = getattr(config.training, 'use_tensor_cache', False)
-    args.tensor_cache_dir = getattr(config.training, 'tensor_cache_dir', None)
-
-    # PyTorch Compile (PyTorch 2.0+) - optional, defaults to False for backward compatibility
-    args.torch_compile = getattr(config.training, 'torch_compile', False)
-    args.compile_mode = getattr(config.training, 'compile_mode', 'reduce-overhead')
-    
-    # Apply model-specific training configs (e.g., LeRet two-stage training)
-    # This abstracts away model-specific config handling
+    # === Apply model-specific training configs ===
+    # (e.g., LeRet two-stage training)
     from cli.config.model_training import apply_model_configs_to_args
     apply_model_configs_to_args(args, config.training, config.model.name)
     
-    # GPU
-    args.use_gpu = config.device.use_gpu
-    args.gpu = config.device.gpu
-    args.use_multi_gpu = config.device.use_multi_gpu
-    args.devices = config.device.devices
-    
-    # Environment variables
-    args.hf_mirror = config.hf_mirror
-    args.hf_offline = config.hf_offline
-    
-    # Load model config using centralized loader (handles overrides)
-    args.model_config = load_and_merge_model_config(
-        model_config_path=config.model.config_path,
-        model_config_overrides=config.model_config_overrides
-    )
-    
-    # Extract model architecture parameters from model config
-    # (These are used by model-specific trainers for loss computation)
-    args.patch_len = args.model_config.get('patch_len', 16)
-    args.stride = args.model_config.get('stride', 8)
-    
-    # Extract data_config overrides from ExperimentConfig
-    # Pydantic models with extra="allow" store extra fields in model_extra or model_dump()
-    data_config_overrides = None
-    if hasattr(config, 'model_dump'):
-        config_dict = config.model_dump()
-        if 'data_config' in config_dict and isinstance(config_dict['data_config'], dict):
-            data_config_overrides = config_dict['data_config']
-    # Also check if data_config is directly accessible (for backwards compatibility)
-    elif hasattr(config, 'data_config') and isinstance(config.data_config, dict):
-        data_config_overrides = config.data_config
-    
-    # Load data config using centralized loader (handles overrides and path substitution)
-    args.data_config = load_and_merge_data_config(
-        data_config_path=config.data.config_path,
-        data_config_overrides=data_config_overrides,
-        base_data_path=config.base_data_path
-    )
-    
-    # Store config_path in data_config for LLM embedding provider path resolution
-    args.data_config.config_path = config.data.config_path
-    args.data_config.name = config.data.name
-    
-    # Handle ahead task
+    # === Handle ahead task parsing ===
+    # Override input_len/output_len if ahead task is specified
     if args.ahead is not None:
         assert args.ahead in ['day', 'week', 'month'], 'ahead task not supported, or add your own parser'
         try:
@@ -135,35 +116,16 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
         except:
             raise ValueError('sampling rate not found in data config, fall back to default, input output length')
     
-    # Set GPU availability
+    # === GPU availability check ===
+    # Override use_gpu based on actual CUDA availability
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
     
-    # Configure device IDs for multi-GPU training
+    # === Configure device IDs for multi-GPU training ===
     if args.use_gpu and args.use_multi_gpu:
         args.devices = args.devices.replace(' ', '')
         device_ids = args.devices.split(',')
         args.device_ids = [int(id_) for id_ in device_ids]
         args.gpu = args.device_ids[0]
-    
-    # LLM Embedding configuration (for TimeCMA-style models)
-    # This is passed to Data_Provider to load precomputed LLM embeddings
-    if config.llm_embedding is not None:
-        # Convert Pydantic model to dict for Data_Provider
-        args.llm_embedding = config.llm_embedding.model_dump() if hasattr(config.llm_embedding, 'model_dump') else dict(config.llm_embedding)
-    else:
-        args.llm_embedding = None
-    
-    # Store base_data_path for LLM embedding provider
-    args.base_data_path = config.base_data_path or './data/'
-    
-    # Store model_config_overrides for LLM embedding validation
-    if config.model_config_overrides is not None:
-        args.model_config_overrides = config.model_config_overrides
-    else:
-        args.model_config_overrides = {}
-    
-    # Store data.name for LLM embedding provider (dataset name)
-    args.data_name = config.data.name
     
     return args
 
