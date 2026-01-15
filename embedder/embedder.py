@@ -263,11 +263,24 @@ class TextEmbedder:
         Returns:
             embeddings array if all keys found in cache, None otherwise
         """
-        if not self.cache_manager or self.force_reembed:
+        # Return None with reason tracking for diagnostics
+        if not self.cache_manager:
+            self._cache_miss_reason = "No cache_manager configured (cache_root not provided)"
+            return None
+        
+        if self.force_reembed:
+            self._cache_miss_reason = "force_reembed=True, skipping cache"
             return None
         
         cache_dir = self.cache_manager.find_existing_cache(metadata)
         if cache_dir is None:
+            # Provide detailed reason for cache miss
+            expected_hash = metadata.compute_hash()
+            self._cache_miss_reason = (
+                f"No matching cache found. Looking for embeddings_{expected_hash[:16]} in {self.cache_manager.cache_base}. "
+                f"Config: model={metadata.model_name}, aggregation={metadata.aggregation_method}, "
+                f"dim={metadata.embedding_dim}, max_len={metadata.max_length}"
+            )
             return None
         
         try:
@@ -281,11 +294,41 @@ class TextEmbedder:
                     # Convert to array in correct order
                     emb_list = [cached_embeddings[key] for key in text_keys]
                     result = np.stack(emb_list, axis=0)
+                    self._cache_miss_reason = None  # Clear any previous reason
                     return result
+                else:
+                    # Some keys missing
+                    missing_keys = [k for k in text_keys if k not in cached_embeddings]
+                    self._cache_miss_reason = (
+                        f"Cache found at {cache_dir} but {len(missing_keys)}/{len(text_keys)} keys missing. "
+                        f"First missing: {missing_keys[:3]}"
+                    )
         except Exception as e:
-            print(f"[ warning ] Failed to load from cache: {e}. Recomputing embeddings.")
+            self._cache_miss_reason = f"Failed to load from cache {cache_dir}: {e}"
+            print(f"[ warning ] {self._cache_miss_reason}. Recomputing embeddings.")
         
         return None
+    
+    def _check_gpu_available(self) -> bool:
+        """
+        Check if GPU is available for embedding computation.
+        
+        Returns:
+            True if device is 'cpu' or CUDA is available for cuda devices, False otherwise
+        """
+        # CPU always available
+        if self.device == 'cpu':
+            return True
+        
+        # For CUDA devices, check availability
+        if self.device.startswith('cuda') or self.device.startswith('gpu'):
+            try:
+                return torch.cuda.is_available()
+            except Exception:
+                return False
+        
+        # Unknown device type - assume available and let it fail naturally
+        return True
     
     def _save_to_cache(self, embeddings: np.ndarray, text_keys: List[str], metadata: EmbeddingMetadata):
         """
@@ -344,6 +387,20 @@ class TextEmbedder:
             if return_metadata:
                 return cached_result, metadata
             return cached_result
+        
+        # Cache miss - check if we can compute embeddings
+        # If device is CUDA but no GPU available, fail with clear error
+        if self.device != 'cpu' and not self._check_gpu_available():
+            cache_reason = getattr(self, '_cache_miss_reason', 'Unknown reason')
+            raise RuntimeError(
+                f"Embeddings not found in cache and no CUDA GPU available to compute them.\n"
+                f"Cache miss reason: {cache_reason}\n\n"
+                f"Solutions:\n"
+                f"  1. Generate embeddings on a GPU node first:\n"
+                f"     python -m cli.embeddings generate <config>\n"
+                f"  2. Or set device='cpu' to compute on CPU (slow but works)\n"
+                f"  3. Or use pre-computed embeddings with use_old_pkl=True"
+            )
         
         # Compute embeddings
         all_embeddings = []

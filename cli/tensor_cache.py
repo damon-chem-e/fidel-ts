@@ -196,7 +196,7 @@ def build_cache_config(args: dotdict) -> dict:
     return build_cache_config_centralized(args)
 
 
-def _check_embeddings_cached(args: dotdict) -> bool:
+def _check_embeddings_cached(args: dotdict) -> Tuple[bool, str]:
     """
     Check if embeddings are cached for the given experiment configuration.
     
@@ -206,12 +206,16 @@ def _check_embeddings_cached(args: dotdict) -> bool:
     
     How it works:
     -------------
-    1. Extracts hetero_info from args (contains embedding configuration)
-    2. Creates a FidelTSEmbeddingLoader with the same config
-    3. Calls has_cached_embeddings() which:
-       - Uses lookup table for embedding dimensions (no model loading)
-       - Searches for cache directories matching the metadata hash
-       - Returns True if valid cache found
+    1. For Fidel-TS datasets (with hetero_info):
+       - Creates a FidelTSEmbeddingLoader with the same config
+       - Calls has_cached_embeddings()
+    
+    2. For Time-MMD datasets (with timemmd_text_output: embedding):
+       - Uses TextEmbedder's cache manager directly
+       - Checks for matching embeddings_{hash} directory
+    
+    3. For datasets without embeddings:
+       - Returns True (no embeddings needed)
     
     Why this is important:
     ----------------------
@@ -224,45 +228,110 @@ def _check_embeddings_cached(args: dotdict) -> bool:
         args: Experiment arguments (dotdict) containing data_config
     
     Returns:
-        True if embeddings are cached and ready to load, False otherwise
+        Tuple of (is_cached, message)
+        - is_cached: True if embeddings are cached and ready to load, False otherwise
+        - message: Descriptive message about cache status
     """
     from embedder.fidel_ts_embedder import FidelTSEmbeddingLoader
+    from embedder.cache_manager import EmbeddingCacheManager
+    from embedder.metadata import EmbeddingMetadata
+    from embedder.embedder import TextEmbedder
+    from pathlib import Path
     
-    # Get hetero_info from args (embedding configuration)
+    # Get hetero_info from args (embedding configuration for Fidel-TS datasets)
     hetero_info = args.data_config.get('hetero_info', {})
     
-    if not hetero_info:
-        # No hetero_info means no embeddings needed (time_mmd or non-hetero dataset)
-        # In this case, we don't need to check for embedding cache
-        return True
+    # Check if this is a Time-MMD dataset with embedding output format
+    timemmd_text_output = args.data_config.get('timemmd_text_output', 'text')
+    is_time_mmd_embedding = (timemmd_text_output == 'embedding')
     
-    # Extract embedding-related parameters from hetero_info
-    dataset_name = args.data  # e.g., 'Bear_room'
-    root_path = args.data_config.get('root_path', './data')
-    embed_model_name = hetero_info.get('embed_model_name', 'bert-base-uncased')
-    aggregation_method = hetero_info.get('aggregation_method', 'cls')
-    use_old_embeddings = hetero_info.get('use_old_embeddings', False)
-    
-    try:
-        # Create loader (does NOT load any models)
-        loader = FidelTSEmbeddingLoader(
-            dataset_name=dataset_name,
-            hetero_info=hetero_info,
-            base_data_path=root_path,
-            embed_model_name=embed_model_name,
-            aggregation_method=aggregation_method,
-            device='cpu',  # Device doesn't matter for cache check
-            hf_cache_dir=args.get('hf_cache_dir', './HF_cache/'),
-            use_old_embeddings=use_old_embeddings
-        )
+    # =========================================================================
+    # CASE 1: Time-MMD dataset with embedding output
+    # =========================================================================
+    if is_time_mmd_embedding:
+        root_path = args.data_config.get('root_path', './data')
+        embed_model_name = args.data_config.get('timemmd_embed_model', 'bert-base-uncased')
+        aggregation_method = args.data_config.get('aggregation_method', 'cls')
+        max_length = 512  # Default max_length
         
-        # Check if embeddings are cached (lightweight, no model loading)
-        return loader.has_cached_embeddings()
+        # Get embedding dimension from lookup table (no model loading)
+        embedding_dim = TextEmbedder._get_embedding_dim_without_model(embed_model_name)
+        if embedding_dim is None:
+            return False, f"Unknown model '{embed_model_name}' - cannot check cache without loading model"
+        
+        # Create metadata to compute expected hash
+        metadata = EmbeddingMetadata(
+            tokenizer_name=embed_model_name,
+            model_name=embed_model_name,
+            aggregation_method=aggregation_method,
+            embedding_dim=embedding_dim,
+            max_length=max_length
+        )
+        expected_hash = metadata.compute_hash()[:16]
+        
+        # Check if cache directory exists
+        cache_base = Path(root_path)
+        if not cache_base.exists():
+            return False, f"Cache base directory does not exist: {cache_base}"
+        
+        # Look for embeddings_{hash} directories
+        expected_dir = cache_base / f"embeddings_{expected_hash}"
+        if expected_dir.exists():
+            # Verify metadata file exists
+            metadata_path = expected_dir / 'metadata.json'
+            embeddings_path = expected_dir / 'embeddings.pkl'
+            
+            if metadata_path.exists() and embeddings_path.exists():
+                return True, f"Found Time-MMD embeddings at {expected_dir}"
+            else:
+                return False, f"Cache directory exists but incomplete: {expected_dir}"
+        
+        # Cache not found - list what IS available for debugging
+        available_caches = [d.name for d in cache_base.iterdir() if d.is_dir() and d.name.startswith('embeddings_')]
+        if available_caches:
+            return False, (
+                f"Time-MMD embedding cache not found. "
+                f"Looking for: embeddings_{expected_hash} in {cache_base}\n"
+                f"Available caches: {available_caches}\n"
+                f"Config: model={embed_model_name}, aggregation={aggregation_method}, dim={embedding_dim}"
+            )
+        else:
+            return False, f"No embedding caches found in {cache_base}. Expected: embeddings_{expected_hash}"
     
-    except Exception as e:
-        # If we can't even check, assume not cached
-        logger.warning(f"Error checking embedding cache: {e}")
-        return False
+    # =========================================================================
+    # CASE 2: Fidel-TS dataset with hetero_info
+    # =========================================================================
+    if hetero_info:
+        dataset_name = args.data
+        root_path = args.data_config.get('root_path', './data')
+        embed_model_name = hetero_info.get('embed_model_name', 'bert-base-uncased')
+        aggregation_method = hetero_info.get('aggregation_method', 'cls')
+        use_old_embeddings = hetero_info.get('use_old_embeddings', False)
+        
+        try:
+            loader = FidelTSEmbeddingLoader(
+                dataset_name=dataset_name,
+                hetero_info=hetero_info,
+                base_data_path=root_path,
+                embed_model_name=embed_model_name,
+                aggregation_method=aggregation_method,
+                device='cpu',
+                hf_cache_dir=args.get('hf_cache_dir', './HF_cache/'),
+                use_old_embeddings=use_old_embeddings
+            )
+            
+            if loader.has_cached_embeddings():
+                return True, "Found Fidel-TS embeddings in cache"
+            else:
+                return False, "Fidel-TS embeddings not found in cache"
+        
+        except Exception as e:
+            return False, f"Error checking Fidel-TS embedding cache: {e}"
+    
+    # =========================================================================
+    # CASE 3: No embeddings needed
+    # =========================================================================
+    return True, "No embeddings needed for this dataset configuration"
 
 
 def resolve_cache_dir(args: dotdict, explicit_dir: Optional[str] = None) -> Path:
@@ -454,18 +523,19 @@ def generate(
                     console.print("  [yellow]CPU-only mode: Validating embedding cache...[/yellow]")
                     
                     # Check if embeddings are cached (without loading model)
-                    embeddings_cached = _check_embeddings_cached(exp_args)
+                    embeddings_cached, cache_message = _check_embeddings_cached(exp_args)
                     
                     if not embeddings_cached:
                         console.print("  [red]✗ Embeddings NOT cached![/red]")
+                        console.print(f"  [red]  {cache_message}[/red]")
                         console.print("  [red]  CPU-only mode requires pre-computed embeddings.[/red]")
                         console.print("  [yellow]  Solutions:[/yellow]")
                         console.print("  [yellow]    1. Run without --cpu-only on a GPU node first[/yellow]")
                         console.print("  [yellow]    2. Generate embeddings separately on GPU[/yellow]")
-                        console.print("  [yellow]    3. Check embedding cache path exists[/yellow]")
+                        console.print("  [yellow]    3. Check embedding cache path and config hash match[/yellow]")
                         continue  # Skip this cache group
                     
-                    console.print("  [green]✓ Embeddings found in cache[/green]")
+                    console.print(f"  [green]✓ {cache_message}[/green]")
                     
                     # Set device to CPU
                     original_device = exp_args.device
