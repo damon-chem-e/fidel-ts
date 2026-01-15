@@ -298,7 +298,9 @@ class Model(nn.Module):
         # iTransformerFilm expects [B, C, L, text_dim]
         # Text encoder output is [B, L, C, text_dim], so we permute.
         # We do not pool over L, preserving sequence info.
-        text_emb = text_emb.permute(0, 2, 1, 3) # [B, C, L, D]
+        # Ensure contiguity after permute for torch.compile compatibility
+        # The compiled attention kernels require contiguous tensors
+        text_emb = text_emb.permute(0, 2, 1, 3).contiguous()  # [B, C, L, D]
         
         # Step 4: Get Raw Prediction from iTransformerFilm
         # Pass normalized input and text embeddings
