@@ -1745,11 +1745,21 @@ class TensorCacheDataset(Dataset):
         4. Add num_items dimension to embeddings (model expects 3D per sample)
         5. Return reconstructed sample tuple
         
-        SHAPE HANDLING:
-        - Embeddings are stored as (L, embed_dim) but models expect (L, num_items, embed_dim)
-        - The num_items dimension corresponds to n_features from timeseries
-        - We add this dimension via np.expand_dims to match original dataset format
-        - hetero_stride reduces embedding timesteps: input_len -> ceil(input_len/stride)
+        SHAPE HANDLING - CRITICAL DISTINCTION:
+        - Embeddings are stored as (L, embed_dim) and returned as (L, 1, embed_dim)
+        - The middle dimension is num_news_items (N), NOT n_features (C)!
+        - N = number of news items per timestep (can be 1, which is our case)
+        - C = number of time series channels (comes from channel_description, not news_emb)
+        
+        The text_encoder does cross-attention where:
+        - Query: channel_description [B, L, C, D] - C channels
+        - Key/Value: news_emb [B, L, N, D] - N news items per timestep
+        
+        Each channel attends to all N news items. With N=1, each channel attends
+        to the single news embedding - semantically equivalent to having the same
+        text for all channels (which is what the dataset provides).
+        
+        See docs/tensor_cache_embedding_shapes.md for detailed explanation.
         
         HETERO STRIDE:
         - The normal dataloader (data_loader.py) applies hetero_stride to reduce
@@ -1771,12 +1781,6 @@ class TensorCacheDataset(Dataset):
         seq_x = self.shared['timeseries'][x_idx] if 'timeseries' in self.shared else None
         seq_y = self.shared['timeseries'][y_idx] if 'timeseries' in self.shared else None
         
-        # Determine n_features (num_items) from timeseries shape
-        # This is used to add the missing dimension to embeddings
-        n_features = 1  # Default
-        if 'timeseries' in self.shared and self.shared['timeseries'].ndim > 1:
-            n_features = self.shared['timeseries'].shape[1]
-        
         # Look up timestamps from shared table
         x_time = self.shared['timestamps'][x_idx] if 'timestamps' in self.shared else None
         y_time = self.shared['timestamps'][y_idx] if 'timestamps' in self.shared else None
@@ -1789,37 +1793,37 @@ class TensorCacheDataset(Dataset):
         y_hetero_idx = y_idx[::self.hetero_stride]
         
         # Look up embeddings from shared table using STRIDED indices
-        # SHAPE FIX: Models expect (L, num_items, embed_dim) but we store (L, embed_dim)
-        # Add the num_items dimension to match original dataset format
+        # Models expect (L, num_news_items, embed_dim) - we use num_news_items=1
+        # IMPORTANT: num_news_items (N) is NOT the same as n_features (C)!
+        # - N = number of news items per timestep (we always have 1 per timestamp)
+        # - C = number of time series channels (comes from channel_description)
+        # The text_encoder uses cross-attention: channels (query) attend to news (key/value)
+        # See docs/tensor_cache_embedding_shapes.md for detailed explanation.
         hetero_x = self.shared['embeddings'][x_hetero_idx] if 'embeddings' in self.shared else None
         hetero_y = self.shared['embeddings'][y_hetero_idx] if 'embeddings' in self.shared else None
         
-        # Add num_items dimension: (L_strided, D) -> (L_strided, N, D) where N = n_features
+        # Add num_news_items dimension: (L_strided, D) -> (L_strided, 1, D)
+        # We do NOT repeat to n_features - that was a misunderstanding of the shape semantics
         if hetero_x is not None:
-            # Shape: (ceil(input_len/stride), embed_dim) -> (ceil(input_len/stride), n_features, embed_dim)
+            # Shape: (ceil(input_len/stride), embed_dim) -> (ceil(input_len/stride), 1, embed_dim)
             # BEGIN DEBUG
             if _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
-                print(f"[DEBUG]   hetero_x before expand: shape={hetero_x.shape}, n_features={n_features}")
+                print(f"[DEBUG]   hetero_x before expand: shape={hetero_x.shape}")
             # END DEBUG
             hetero_x = np.expand_dims(hetero_x, axis=1)
-            if n_features > 1:
-                # Repeat along the num_items dimension if multiple features
-                hetero_x = np.repeat(hetero_x, n_features, axis=1)
             # BEGIN DEBUG
             if _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
                 hetero_x_mb = hetero_x.nbytes / (1024 ** 2)
-                print(f"[DEBUG]   hetero_x after repeat: shape={hetero_x.shape}, size={hetero_x_mb:.2f}MB")
+                print(f"[DEBUG]   hetero_x after expand: shape={hetero_x.shape}, size={hetero_x_mb:.2f}MB")
             # END DEBUG
         
         if hetero_y is not None:
-            # Shape: (ceil(output_len/stride), embed_dim) -> (ceil(output_len/stride), n_features, embed_dim)
+            # Shape: (ceil(output_len/stride), embed_dim) -> (ceil(output_len/stride), 1, embed_dim)
             hetero_y = np.expand_dims(hetero_y, axis=1)
-            if n_features > 1:
-                hetero_y = np.repeat(hetero_y, n_features, axis=1)
             # BEGIN DEBUG
             if _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
                 hetero_y_mb = hetero_y.nbytes / (1024 ** 2)
-                print(f"[DEBUG]   hetero_y after repeat: shape={hetero_y.shape}, size={hetero_y_mb:.2f}MB")
+                print(f"[DEBUG]   hetero_y after expand: shape={hetero_y.shape}, size={hetero_y_mb:.2f}MB")
             # END DEBUG
         
         # Look up hetero time features from shared table (also strided)
