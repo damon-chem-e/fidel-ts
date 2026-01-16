@@ -43,6 +43,22 @@
 
 ---
 
+## Tensor Cache Generation
+
+**Status:** 🟡 In Progress  
+**Purpose:** Generate tensor caches for all fidel-ts datasets to speed up training runs
+
+| Dataset | Status | Compute |
+|---------|--------|---------|
+| Canada Photovoltaics | ⏳ Pending | RunPod (pod:canada) |
+| Germany Renewable | 🟡 In Progress | RunPod (pod:germany) |
+| NYC Traffic Speed | 🟡 In Progress | RunPod (pod:nyc_traffic) |
+| California ISO | ⏳ Pending | RunPod (pod:caiso) |
+| Bear Room | ⏳ Pending | RunPod (pod:bear_room) |
+| Jena Atmospheric Physics | ✅ Complete | RunPod (pod:jena) |
+
+---
+
 ## High Priority Experiments
 
 ### Priority 1: iTransformer Pretraining (Baselines)

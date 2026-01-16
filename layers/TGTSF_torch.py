@@ -191,6 +191,13 @@ class text_encoder(nn.Module):
         # MHA expects 3D masks with shape [batch * num_heads, tgt_len, src_len].
         # This avoids the internal broadcast and keeps all tensors contiguous.
         # ----------------------------------------------------------------------
+
+        # ----------------------------------------------------------------------
+        # this is what was replaced with the below code (for transparency)
+        # if not news_mask.is_contiguous():
+        #     news_mask = news_mask.contiguous()
+        # text_emb=self.cross_encoder(tgt=text_emb, memory=news_emb, memory_key_padding_mask=news_mask)
+        # ----------------------------------------------------------------------
         
         # Get dimensions for mask expansion
         batch_size = text_emb.shape[0]  # B*L
