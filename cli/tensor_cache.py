@@ -385,7 +385,8 @@ def generate(
     splits: str = typer.Option("train,val,test", "--splits", help="Comma-separated splits to generate"),
     force: bool = typer.Option(False, "--force", help="Overwrite existing cache"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be generated without generating"),
-    cpu_only: bool = typer.Option(False, "--cpu-only", help="CPU-only mode: requires pre-computed embeddings")
+    cpu_only: bool = typer.Option(False, "--cpu-only", help="CPU-only mode: requires pre-computed embeddings"),
+    use_polars: bool = typer.Option(True, "--use-polars/--no-polars", help="Use polars-optimized implementation (default: enabled)")
 ):
     """
     Generate tensor cache for all experiments in a suite.
@@ -441,6 +442,7 @@ def generate(
             console.print(f"  Filter: [yellow]'{filter_experiments}'[/yellow]")
         if cpu_only:
             console.print(f"  Device: [yellow]CPU-only mode (GPU disabled)[/yellow]")
+        console.print(f"  Implementation: [green]{'polars-optimized' if use_polars else 'standard'}[/green]")
         console.print()
 
         # Analyze experiments and group by config hash (deduplication)
@@ -552,7 +554,8 @@ def generate(
                     config=cache_config,
                     chunk_size=chunk_size,
                     verbose=True,
-                    console=console  # Enable Rich nested progress bars
+                    console=console,  # Enable Rich nested progress bars
+                    use_polars=use_polars
                 )
 
                 console.print(f"  [yellow]Generating for splits: {split_list}[/yellow]")

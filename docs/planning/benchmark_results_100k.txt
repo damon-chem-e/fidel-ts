@@ -1,0 +1,15 @@
+Tensor Cache Generation Benchmark Results
+================================================================================
+
+Dataset: 100,000 samples, 96 input + 48 output, 768D embeddings
+Unique timestamps: 100,143
+Deduplication ratio: 143.8:1
+
+Timing Results:
+--------------------------------------------------------------------------------
+Phase                          Standard        Polars          Speedup   
+--------------------------------------------------------------------------------
+Shared table building               25.61s         24.64s      1.04x
+Index generation (est)               6.62s          5.79s      1.14x
+TOTAL                               32.22s         30.43s      1.06x
+--------------------------------------------------------------------------------

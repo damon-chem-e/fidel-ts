@@ -1236,7 +1236,8 @@ class TensorCacheGenerator:
         config: dict,
         chunk_size: int = 10000,
         verbose: bool = True,
-        console: Optional[Any] = None
+        console: Optional[Any] = None,
+        use_polars: bool = True
     ):
         """
         Initialize tensor cache generator.
@@ -1248,6 +1249,9 @@ class TensorCacheGenerator:
             chunk_size: Number of samples to process per chunk (memory management)
             verbose: Whether to show progress bars
             console: Optional Rich Console for enhanced progress display
+            use_polars: Whether to use polars-optimized implementation (default: True)
+                        Polars version uses vectorized operations for deduplication
+                        and index lookup, providing better performance.
         """
         self.data_provider = data_provider
         self.cache_dir = Path(cache_dir)
@@ -1256,6 +1260,7 @@ class TensorCacheGenerator:
         self.verbose = verbose
         self.console = console
         self.config_hash = compute_config_hash(config)
+        self.use_polars = use_polars
 
     def generate(self, flags: List[str] = None) -> Path:
         """
@@ -1306,14 +1311,14 @@ class TensorCacheGenerator:
     ) -> Tuple[Dict[str, np.ndarray], dict]:
         """
         Build shared tables by collecting unique data across all splits.
-        
+
         ALGORITHM:
         1. Detect if training data has downtime (determines num_news_items)
         2. Create SharedTableCollector with appropriate num_news_items setting
         3. Iterate through all splits and entities
         4. For each sample, register unique timestamps and entity data
         5. Convert collected lists to numpy arrays
-        
+
         DOWNTIME DETECTION:
         - If training data has non-zero downtime indicators: num_news_items=2
           (stores embedding + downtime indicator)
@@ -1321,10 +1326,14 @@ class TensorCacheGenerator:
           (stores only embedding, 50% memory savings)
         - Rationale: If model doesn't see downtime during training, it won't
           learn to use it anyway, so storing it wastes memory
-        
+
         Returns:
             Tuple of (shared_tables dict, index_mappings dict)
         """
+        # Use polars-optimized implementation if enabled
+        if self.use_polars:
+            return self._build_shared_tables_polars(flags)
+
         # Step 1: Detect downtime in training data to determine num_news_items
         _debug_memory("_build_shared_tables: START")
         has_downtime = _detect_downtime_in_training(self.data_provider)
@@ -1520,6 +1529,73 @@ class TensorCacheGenerator:
         
         return shared_tables, index_mappings
 
+    def _build_shared_tables_polars(
+        self,
+        flags: List[str]
+    ) -> Tuple[Dict[str, np.ndarray], dict]:
+        """
+        Build shared tables using polars-optimized implementation.
+
+        This method uses the polars library for vectorized deduplication and
+        index assignment, providing better performance than the dict-based
+        Python implementation for large datasets.
+
+        Args:
+            flags: List of splits to process
+
+        Returns:
+            Tuple of (shared_tables dict, index_mappings dict)
+        """
+        from .tensor_cache_polars import PolarsSharedTableBuilder
+
+        _debug_memory("_build_shared_tables_polars: START")
+
+        # Detect downtime to determine num_news_items
+        has_downtime = _detect_downtime_in_training(self.data_provider)
+        gc.collect()
+
+        num_news_items = 2 if has_downtime else 1
+        self._num_news_items = num_news_items
+
+        # Log the decision
+        if has_downtime:
+            logger.info(
+                "[ info ] Downtime detected in training data - storing num_news_items=2 "
+                "(embedding + downtime indicator)."
+            )
+            print(
+                "[ info ] Downtime detected in training data - storing embeddings with "
+                "downtime indicators (N=2). Using polars-optimized implementation."
+            )
+        else:
+            logger.info(
+                "[ info ] No downtime in training data - storing num_news_items=1 "
+                "(embedding only). Using polars-optimized implementation."
+            )
+            print(
+                "[ info ] No downtime in training data - storing embeddings without "
+                "downtime indicators (N=1). Using polars-optimized implementation."
+            )
+
+        # Build using polars
+        builder = PolarsSharedTableBuilder(
+            data_provider=self.data_provider,
+            num_news_items=num_news_items,
+            verbose=self.verbose
+        )
+        shared_tables, index_mappings = builder.build(flags)
+
+        _debug_memory("_build_shared_tables_polars: END")
+
+        n_unique = len(shared_tables.get('timestamps', []))
+        n_entities = len(index_mappings.get('entity_to_idx', {}))
+        logger.info(
+            f"Built shared tables (polars): {n_unique} unique timestamps, "
+            f"{n_entities} entities"
+        )
+
+        return shared_tables, index_mappings
+
     def _save_shared_tables(
         self,
         shared_dir: Path,
@@ -1527,23 +1603,23 @@ class TensorCacheGenerator:
     ) -> Dict[str, List[int]]:
         """
         Save shared tables to disk and return shapes.
-        
+
         Args:
             shared_dir: Directory for shared tables
             shared_tables: Dict of arrays to save
-            
+
         Returns:
             Dict of {table_name: shape_list}
         """
         shared_shapes = {}
-        
+
         for name, data in shared_tables.items():
             if data is not None and len(data) > 0:
                 filepath = shared_dir / f"{name}.npy"
                 np.save(filepath, data)
                 shared_shapes[name] = list(data.shape)
                 logger.info(f"Saved shared table {name}: {data.shape}")
-        
+
         return shared_shapes
 
     def _save_index_mappings(self, shared_dir: Path, index_mappings: dict) -> None:
