@@ -350,6 +350,58 @@ suite:
         wandb:
           enabled: false
     
+    # MMTSFlib with FEDformer encoder on Time-MMD Traffic dataset
+    - name: "mmtsflib_fedformer_time_mmd"
+      description: "MMTSFlib with FEDformer encoder on Time-MMD Traffic (1 epoch test)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "MMTSFlib"
+          config_path: "model_configs/general/MMTSFlib.yaml"
+        model_config_overrides:
+          unimodal_model_type: "FEDformer"
+          seq_len: 24
+          pred_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
+          d_model: 512
+          n_heads: 8
+          e_layers: 2
+          d_layers: 1
+          d_ff: 2048
+          modes: 32  # Number of frequency modes to keep
+          mode_select: "random"  # Mode selection: 'random' or 'low'
+          moving_avg: 25  # Kernel size for trend extraction
+          embed: "timeF"  # Embedding type for time features
+          freq: "h"  # Time frequency for embeddings
+          input_text_dim: 768  # GPT-2 base hidden dimension
+          prompt_weight_mode: "fixed"
+          prompt_weight: 0.01
+          pool_type: "avg"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          input_len: 24
+          output_len: 6  # Smaller prediction length for time-mmd dataset (faster testing)
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 1
+          track_per_sample: false
+          evaluate_test_during_training: false
+        llm_embedding:
+          model_name: "gpt2"
+          cache_dir: "./LLM_cache/"
+          extraction_mode: "last_token"
+          max_length: 512
+          prompt_template: "mmtsflib_v1"
+          batch_size: 64
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/mmtsflib_test"
+        wandb:
+          enabled: false
+    
     # ============================================================================
     # Pooling Strategy Tests (using Time-MMD for faster testing)
     # ============================================================================
