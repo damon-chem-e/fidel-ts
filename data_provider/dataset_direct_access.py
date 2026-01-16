@@ -31,7 +31,40 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RawDataArrays:
-    """Container for raw dataset arrays."""
+    """
+    Container for raw dataset arrays used in direct access optimizations.
+
+    This dataclass holds references to the underlying numpy arrays from a dataset,
+    enabling vectorized operations that bypass the per-sample __getitem__ overhead.
+
+    IMPORTANT - Hetero Time Disambiguation:
+    ----------------------------------------
+    There are TWO different "hetero time" concepts in this codebase that share
+    similar names but have completely different meanings:
+
+    1. MATCHED TIMESTAMPS (Universal_Dataset.hetero_time):
+       - Type: List[str] of format 'YYYYMMDDHHMMSS'
+       - Content: When heterogeneous events (news articles) were actually published
+       - Purpose: Temporal alignment - maps time series timestamps to nearest news
+       - Example: ['20230615120000', '20230615130000', ...]
+       - NOT stored in RawDataArrays (would be wrong data type and semantics)
+
+    2. HETERO TIME FEATURES (RawDataArrays.hetero_time) - THIS FIELD:
+       - Type: np.ndarray of shape (N, n_features), dtype float32
+       - Content: Numeric features describing temporal properties of hetero data
+       - Purpose: Model input features (e.g., day-of-week, hour, is_weekend)
+       - Example: [[0.5, 1.0, 0.0], [0.6, 0.0, 1.0], ...]
+       - Currently NOT populated - would require explicit feature extraction
+
+    The naming collision is historical. Do NOT confuse these concepts:
+    - Universal_Dataset.hetero_time = matched timestamps (List[str])
+    - RawDataArrays.hetero_time = time features (np.ndarray or None)
+
+    See Also:
+        - Universal_Dataset.__init__: Where matched timestamps are stored
+        - HeteroDataGetter.get_hetero_data: Where matched timestamps originate
+        - tensor_cache.py SAMPLE_IDX_HETERO_X_TIME: Expected shape documentation
+    """
 
     # Core time series data
     data: np.ndarray                    # (N, n_features), float32
@@ -48,7 +81,7 @@ class RawDataArrays:
 
     # Hetero data (optional)
     embeddings: Optional[np.ndarray] = None      # (N, num_news_items, D) or (N, D)
-    hetero_time: Optional[np.ndarray] = None     # (N, n_htf)
+    hetero_time: Optional[np.ndarray] = None     # (N, n_htf) - TIME FEATURES, not timestamps!
     hetero_general: Optional[np.ndarray] = None  # (D,)
     hetero_channel: Optional[np.ndarray] = None  # (D,)
     hetero_stride: int = 1
@@ -92,6 +125,28 @@ class DirectAccessMixin:
 
     This is a NON-BREAKING addition to existing dataset classes.
     All existing functionality continues to work unchanged.
+
+    IMPORTANT - Attribute Naming Note:
+    -----------------------------------
+    This mixin is designed for Universal_Dataset which has an attribute naming
+    collision for 'hetero_time':
+
+    - self.hetero_time in Universal_Dataset = matched timestamps (List[str])
+      These are the publication times of news articles matched to each timestamp.
+      Returned by HeteroDataGetter.get_hetero_data() as the first tuple element.
+
+    - RawDataArrays.hetero_time = numeric time features (np.ndarray)
+      These would be model input features like day-of-week, hour, etc.
+      Currently NOT populated because Universal_Dataset doesn't compute them.
+
+    The get_raw_arrays() method explicitly does NOT copy self.hetero_time to
+    raw.hetero_time because they are semantically different data, not just
+    different types. Copying would result in wrong data, not just a type error.
+
+    If hetero time features are needed in the future:
+    1. Compute them from matched timestamps (extract temporal features)
+    2. Store in a NEW attribute (e.g., self.hetero_time_features)
+    3. Update get_raw_arrays() to copy that new attribute with validation
     """
 
     def supports_direct_access(self) -> bool:
@@ -107,6 +162,39 @@ class DirectAccessMixin:
             hasattr(self, 'pred_len')
         )
 
+    def _validate_hetero_time_features(self, data) -> Optional[np.ndarray]:
+        """
+        Validate that data is suitable for hetero time features.
+
+        Hetero time features must be a 2D numpy array of numeric values,
+        NOT the matched timestamps (List[str]) that Universal_Dataset.hetero_time
+        actually contains.
+
+        Args:
+            data: The data to validate
+
+        Returns:
+            The data if valid for hetero time features, None otherwise.
+
+        Note:
+            This method exists to prevent the common mistake of copying
+            Universal_Dataset.hetero_time (matched timestamps) to
+            RawDataArrays.hetero_time (time features). These are semantically
+            different concepts that unfortunately share similar names.
+        """
+        if data is None:
+            return None
+        if not isinstance(data, np.ndarray):
+            # Reject lists, tuples, etc. - matched timestamps are List[str]
+            return None
+        if data.ndim != 2:
+            # Must be (N, n_features), not 1D timestamps
+            return None
+        if not np.issubdtype(data.dtype, np.number):
+            # Must be numeric, not string timestamps
+            return None
+        return data
+
     def get_raw_arrays(self) -> RawDataArrays:
         """
         Get direct access to underlying arrays.
@@ -117,6 +205,25 @@ class DirectAccessMixin:
 
         Raises:
             RuntimeError: If direct access is not supported
+
+        IMPORTANT - What This Method Does NOT Copy:
+        -------------------------------------------
+        This method deliberately does NOT copy self.hetero_time to raw.hetero_time.
+
+        Reason: Universal_Dataset.hetero_time contains MATCHED TIMESTAMPS
+        (List[str] like ['20230615120000', ...]), which are semantically different
+        from RawDataArrays.hetero_time which expects TIME FEATURES (np.ndarray
+        of shape (N, n_features) with numeric values like day-of-week, hour, etc.).
+
+        Copying self.hetero_time would not just cause a type error - it would
+        populate raw.hetero_time with completely wrong data. The tensor cache
+        would then try to use timestamp strings as numeric features, which is
+        nonsensical.
+
+        If you need hetero time features for direct access:
+        1. Compute numeric features from the matched timestamps
+        2. Store them in a new attribute (e.g., self.hetero_time_features)
+        3. Add explicit copying here with _validate_hetero_time_features()
         """
         if not self.supports_direct_access():
             raise RuntimeError(
@@ -141,13 +248,24 @@ class DirectAccessMixin:
             n_samples=n_samples,
         )
 
-        # Add hetero data if available (from preload)
+        # Add hetero embeddings if available (from preload)
         if hasattr(self, 'full_hetero') and getattr(self, 'full_hetero', None) is not None:
             raw.embeddings = self.full_hetero
             raw.hetero_stride = getattr(self, 'hetero_stride', 1)
 
-        if hasattr(self, 'hetero_time') and getattr(self, 'hetero_time', None) is not None:
-            raw.hetero_time = self.hetero_time
+        # DELIBERATELY NOT COPYING self.hetero_time
+        # -----------------------------------------
+        # self.hetero_time contains matched timestamps (List[str]), NOT time features.
+        # RawDataArrays.hetero_time expects numeric time features (np.ndarray).
+        # These are semantically different - copying would be wrong data, not just wrong type.
+        #
+        # If a future attribute stores actual hetero time features, add it here:
+        # if hasattr(self, 'hetero_time_features'):
+        #     validated = self._validate_hetero_time_features(
+        #         getattr(self, 'hetero_time_features', None)
+        #     )
+        #     if validated is not None:
+        #         raw.hetero_time = validated
 
         if hasattr(self, 'hetero_general'):
             raw.hetero_general = getattr(self, 'hetero_general', None)
@@ -366,6 +484,10 @@ def build_shared_tables_direct(
     else:
         embed_dim = 768  # Default
 
+    # NOTE: first_raw.hetero_time will be None because get_raw_arrays() deliberately
+    # does NOT copy Universal_Dataset.hetero_time (matched timestamps as List[str]).
+    # RawDataArrays.hetero_time expects numeric time features, not timestamps.
+    # See RawDataArrays class docstring for full explanation of this naming collision.
     n_htf = first_raw.hetero_time.shape[1] if first_raw.hetero_time is not None else 0
 
     # Pre-allocate shared table arrays

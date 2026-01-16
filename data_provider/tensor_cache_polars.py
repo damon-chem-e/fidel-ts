@@ -736,6 +736,11 @@ class PolarsSharedTableBuilder:
             embed_dim = 768  # Default BERT dimension
 
         # Determine hetero time features dimension
+        # NOTE: first_raw.hetero_time will be None because DirectAccessMixin.get_raw_arrays()
+        # deliberately does NOT copy Universal_Dataset.hetero_time (which contains matched
+        # timestamps as List[str], not time features). RawDataArrays.hetero_time expects
+        # numeric time features (np.ndarray), which Universal_Dataset doesn't compute.
+        # See RawDataArrays docstring for full explanation of this naming collision.
         n_htf = first_raw.hetero_time.shape[1] if first_raw.hetero_time is not None else 0
 
         # Pre-allocate shared table arrays

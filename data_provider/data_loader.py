@@ -57,7 +57,32 @@ class Universal_Dataset(DirectAccessMixin, Dataset):
         timestamp: Processed timestamps as numpy array
         scaler: StandardScaler for data normalization
         custom_input: List of input components to include in batches
-    
+
+    IMPORTANT - Hetero Time Attribute Naming:
+    -----------------------------------------
+    This class has an attribute naming collision that can cause confusion:
+
+    self.hetero_time: Contains MATCHED TIMESTAMPS (List[str]), NOT time features!
+        - Type: List[str] with format 'YYYYMMDDHHMMSS'
+        - Content: Publication times of news articles matched to time series timestamps
+        - Origin: First element of tuple from hetero_data_getter(timestamps)
+        - Set in: __init__ when preload_hetero=True (line ~293)
+        - Used in: __getitem__ for slicing hetero data windows
+
+    This is DIFFERENT from RawDataArrays.hetero_time in dataset_direct_access.py:
+        - Type: np.ndarray of shape (N, n_features), dtype float32
+        - Content: Numeric time FEATURES (day-of-week, hour, etc.)
+        - Currently: Always None (would require explicit feature extraction)
+
+    The naming collision is historical. The DirectAccessMixin.get_raw_arrays()
+    method deliberately does NOT copy self.hetero_time to raw.hetero_time
+    because they are semantically different data (timestamps vs features).
+
+    See Also:
+        - HeteroDataGetter.get_hetero_data(): Where matched timestamps originate
+        - RawDataArrays: Documentation of the time features concept
+        - DirectAccessMixin: Why self.hetero_time is not copied
+
     Example:
         ```python
         dataset = Universal_Dataset(

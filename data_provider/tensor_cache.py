@@ -59,7 +59,9 @@ tensor_cache/{hash}/
 │   ├── timeseries.npy         # (N_unique, n_features) - raw time series
 │   ├── timestamps.npy         # (N_unique,) - timestamp values
 │   ├── embeddings.npy         # (N_unique, embed_dim) - text embeddings
-│   ├── hetero_time.npy        # (N_unique, n_time_features) - hetero time features
+│   ├── hetero_time.npy        # (N_unique, n_tf) - hetero time FEATURES (optional)
+│   │                          # NOTE: This is TIME FEATURES, not timestamps!
+│   │                          # Currently often empty - see HETERO TIME INDICES docs.
 │   ├── entity_general.npy     # (N_entities, embed_dim) - static general
 │   ├── entity_channel.npy     # (N_entities, embed_dim) - static channel
 │   └── index_mappings.json    # {timestamp: idx}, {entity_id: idx}
@@ -438,12 +440,34 @@ SAMPLE_IDX_X_TIME = 3           # (input_len,): input timestamps (int64)
 SAMPLE_IDX_Y_TIME = 4           # (output_len,): output timestamps (int64)
 SAMPLE_IDX_HETERO_X = 5         # (input_len, embed_dim): input embeddings
 SAMPLE_IDX_HETERO_Y = 6         # (output_len, embed_dim): output embeddings
-SAMPLE_IDX_HETERO_X_TIME = 7    # (input_len, n_tf): input hetero time features
-SAMPLE_IDX_HETERO_Y_TIME = 8    # (output_len, n_tf): output hetero time features
 SAMPLE_IDX_HETERO_GENERAL = 9   # (embed_dim,): entity-level general embedding
 SAMPLE_IDX_HETERO_CHANNEL = 10  # (embed_dim,): entity-level channel embedding
 SAMPLE_IDX_X_TIME_FEATURES = 11 # (input_len, n_tf): input time features
 SAMPLE_IDX_Y_TIME_FEATURES = 12 # (output_len, n_tf): output time features
+
+# HETERO TIME INDICES - NAMING DISAMBIGUATION:
+# --------------------------------------------
+# These indices point to hetero_x_time/hetero_y_time in the sample tuple.
+# IMPORTANT: The actual content varies by context!
+#
+# FROM Universal_Dataset.__getitem__():
+#   - Type: List[str] of format 'YYYYMMDDHHMMSS'
+#   - Content: MATCHED TIMESTAMPS - when news articles were actually published
+#   - These are sliced from Universal_Dataset.hetero_time (also List[str])
+#   - NOT time features! The (input_len, n_tf) shape comment below is aspirational.
+#
+# FROM TensorCacheDataset.__getitem__():
+#   - Type: np.ndarray or None
+#   - Content: TIME FEATURES if stored during cache generation, else None
+#   - Loaded from shared['hetero_time'] which expects (N_unique, n_tf) numeric data
+#
+# The tensor cache ATTEMPTS to store numeric time features but currently gets
+# nothing useful because Universal_Dataset doesn't compute actual time features
+# for hetero data - it only stores matched timestamps.
+#
+# See also: RawDataArrays.hetero_time documentation in dataset_direct_access.py
+SAMPLE_IDX_HETERO_X_TIME = 7    # See above: matched timestamps OR time features
+SAMPLE_IDX_HETERO_Y_TIME = 8    # See above: matched timestamps OR time features
 
 
 @dataclass
