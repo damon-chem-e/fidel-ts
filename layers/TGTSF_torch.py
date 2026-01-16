@@ -121,6 +121,7 @@ class text_encoder(nn.Module):
         super(text_encoder, self).__init__()
         self.pred_len = pred_len
         self.stride = stride
+        self.num_heads = num_heads  # Store for mask expansion in forward()
         cross_encoder_layer = nn.TransformerDecoderLayer(d_model=embedding_dim,
                                                     nhead=num_heads,
                                                     dropout=dropout,
@@ -185,8 +186,9 @@ class text_encoder(nn.Module):
         # The mem-efficient SDPA kernel requires the bias's last dimension to be
         # contiguous, causing: RuntimeError: (*bias): last dimension must be contiguous
         #
-        # SOLUTION: Pre-expand the mask to its final 3D shape ourselves and use
-        # memory_mask (explicit 3D mask) instead of memory_key_padding_mask.
+        # SOLUTION: Pre-expand the mask to its final shape ourselves and use
+        # memory_mask (explicit mask) instead of memory_key_padding_mask.
+        # MHA expects 3D masks with shape [batch * num_heads, tgt_len, src_len].
         # This avoids the internal broadcast and keeps all tensors contiguous.
         # ----------------------------------------------------------------------
         
@@ -195,21 +197,31 @@ class text_encoder(nn.Module):
         tgt_len = text_emb.shape[1]     # C (channels = query length)
         src_len = news_mask.shape[1]    # N (news count = memory length)
         
-        # Pre-expand mask: [B*L, N] -> [B*L, C, N]
+        # Expand mask: [batch, src_len] -> [batch * num_heads, tgt_len, src_len]
+        # Step 1: [batch, src_len] -> [batch, 1, 1, src_len] (add head and tgt dims)
+        # Step 2: expand to [batch, num_heads, tgt_len, src_len]
+        # Step 3: reshape to [batch * num_heads, tgt_len, src_len]
         # Using expand().contiguous() materializes the full tensor, avoiding stride-0 views
-        memory_mask_3d = news_mask.unsqueeze(1).expand(batch_size, tgt_len, src_len).contiguous()
+        memory_mask_expanded = (
+            news_mask
+            .unsqueeze(1)  # [batch, 1, src_len]
+            .unsqueeze(1)  # [batch, 1, 1, src_len]
+            .expand(batch_size, self.num_heads, tgt_len, src_len)  # [batch, heads, tgt, src]
+            .reshape(batch_size * self.num_heads, tgt_len, src_len)  # [batch*heads, tgt, src]
+            .contiguous()
+        )
         
         # Convert bool mask to additive float mask for attention
         # True (padding) -> -inf (ignore), False (valid) -> 0.0 (attend)
         memory_mask = torch.zeros(
-            memory_mask_3d.shape, 
+            memory_mask_expanded.shape, 
             dtype=text_emb.dtype, 
             device=text_emb.device
         )
-        memory_mask.masked_fill_(memory_mask_3d, float('-inf'))
+        memory_mask.masked_fill_(memory_mask_expanded, float('-inf'))
 
         # Use memory_mask (3D explicit mask) instead of memory_key_padding_mask
-        # This is fully compatible with all SDPA kernels (flash, mem-efficient, math)
+        # Shape: [batch * num_heads, tgt_len, src_len] - compatible with all SDPA kernels
         text_emb = self.cross_encoder(
             tgt=text_emb,
             memory=news_emb,

@@ -45,7 +45,7 @@ suite:
           prompt_weight: 0.01
           pool_type: "avg"
         data:
-          name: "NYC_traffic_speed"
+          name: "fidel_NYC_traffic_speed:fullNYCTS_hetero_TGTSF_H"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
         training:
           input_len: 96
