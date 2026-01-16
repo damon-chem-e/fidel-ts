@@ -1578,6 +1578,263 @@ class TestPolarsImplementation:
 
 
 # =============================================================================
+# DIRECT ACCESS MIXIN TESTS
+# =============================================================================
+
+class TestDirectAccessMixin:
+    """Tests for DirectAccessMixin functionality."""
+
+    def test_mock_dataset_supports_direct_access(self, mock_dataset):
+        """Test that MockDataset supports direct access."""
+        # MockDataset has the required attributes
+        assert hasattr(mock_dataset, 'all_timeseries')  # data analog
+        assert hasattr(mock_dataset, 'timestamps')
+        assert hasattr(mock_dataset, 'input_len')  # seq_len analog
+        assert hasattr(mock_dataset, 'output_len')  # pred_len analog
+
+    def test_direct_access_mixin_integration(self):
+        """Test that DirectAccessMixin can be used with mock data."""
+        from data_provider.dataset_direct_access import DirectAccessMixin, RawDataArrays
+
+        # Create a mock dataset that has the mixin
+        class MockDirectAccessDataset(DirectAccessMixin):
+            def __init__(self):
+                self.data = np.random.randn(1000, 5).astype(np.float32)
+                self.timestamp = np.arange(1000, 2000, dtype=np.int64)
+                self.seq_len = 96
+                self.pred_len = 48
+                self.stride = 1
+                self.entity_id = "test_entity"
+                self.full_hetero = np.random.randn(1000, 768).astype(np.float32)
+                self.hetero_time = np.random.randn(1000, 4).astype(np.float32)
+                self.hetero_general = np.random.randn(768).astype(np.float32)
+                self.hetero_channel = np.random.randn(768).astype(np.float32)
+                self.hetero_stride = 1
+
+            def __len__(self):
+                return (len(self.data) - self.seq_len - self.pred_len) // self.stride + 1
+
+        dataset = MockDirectAccessDataset()
+
+        # Test supports_direct_access
+        assert dataset.supports_direct_access()
+
+        # Test get_raw_arrays
+        raw = dataset.get_raw_arrays()
+        assert isinstance(raw, RawDataArrays)
+        assert raw.data.shape == (1000, 5)
+        assert raw.timestamps.shape == (1000,)
+        assert raw.seq_len == 96
+        assert raw.pred_len == 48
+        assert raw.n_samples == len(dataset)
+        assert raw.entity_id == "test_entity"
+        assert raw.embeddings.shape == (1000, 768)
+        assert raw.hetero_general.shape == (768,)
+
+    def test_get_raw_timestamps_for_samples(self):
+        """Test get_raw_timestamps_for_samples returns correct timestamps."""
+        from data_provider.dataset_direct_access import DirectAccessMixin
+
+        class MockDirectAccessDataset(DirectAccessMixin):
+            def __init__(self):
+                self.data = np.random.randn(200, 3).astype(np.float32)
+                self.timestamp = np.arange(20000101000000, 20000101000200, dtype=np.int64)
+                self.seq_len = 8
+                self.pred_len = 4
+                self.stride = 1
+                self.entity_id = "test"
+
+            def __len__(self):
+                return len(self.data) - self.seq_len - self.pred_len + 1
+
+            def __getitem__(self, idx):
+                x_start = idx
+                x_end = x_start + self.seq_len
+                y_start = x_end
+                y_end = y_start + self.pred_len
+                return (
+                    f"sample_{idx}",
+                    self.data[x_start:x_end],
+                    self.data[y_start:y_end],
+                    self.timestamp[x_start:x_end],
+                    self.timestamp[y_start:y_end],
+                    None, None, None, None, None, None, None, None
+                )
+
+        dataset = MockDirectAccessDataset()
+
+        # Get timestamps using direct access
+        ts_data = dataset.get_raw_timestamps_for_samples()
+
+        # Verify shape
+        n_samples = len(dataset)
+        assert ts_data['x_time'].shape == (n_samples, 8)
+        assert ts_data['y_time'].shape == (n_samples, 4)
+
+        # Verify content matches __getitem__
+        for i in range(min(10, n_samples)):
+            sample = dataset[i]
+            np.testing.assert_array_equal(ts_data['x_time'][i], sample[3])
+            np.testing.assert_array_equal(ts_data['y_time'][i], sample[4])
+
+    def test_get_all_unique_timestamps(self):
+        """Test get_all_unique_timestamps returns correct unique set."""
+        from data_provider.dataset_direct_access import DirectAccessMixin
+
+        class MockDirectAccessDataset(DirectAccessMixin):
+            def __init__(self):
+                self.data = np.random.randn(100, 2).astype(np.float32)
+                self.timestamp = np.arange(1000, 1100, dtype=np.int64)
+                self.seq_len = 8
+                self.pred_len = 4
+                self.stride = 1
+                self.entity_id = "test"
+
+            def __len__(self):
+                return len(self.data) - self.seq_len - self.pred_len + 1
+
+        dataset = MockDirectAccessDataset()
+
+        # Get unique timestamps
+        unique_ts = dataset.get_all_unique_timestamps()
+
+        # Calculate expected unique timestamps manually
+        n_samples = len(dataset)
+        total_window = dataset.seq_len + dataset.pred_len
+        max_accessed_idx = (n_samples - 1) * dataset.stride + total_window
+
+        # For contiguous timestamps with stride=1, should be first max_accessed_idx timestamps
+        expected_unique = dataset.timestamp[:max_accessed_idx]
+
+        np.testing.assert_array_equal(unique_ts, np.unique(expected_unique))
+
+    def test_build_shared_tables_direct(self):
+        """Test build_shared_tables_direct produces correct output."""
+        from data_provider.dataset_direct_access import DirectAccessMixin, build_shared_tables_direct
+
+        class MockDirectAccessDataset(DirectAccessMixin):
+            def __init__(self, entity_id):
+                self.data = np.random.randn(200, 3).astype(np.float32)
+                self.timestamp = np.arange(1000, 1200, dtype=np.int64)
+                self.seq_len = 8
+                self.pred_len = 4
+                self.stride = 1
+                self.entity_id = entity_id
+                self.full_hetero = np.random.randn(200, 768).astype(np.float32)
+                self.hetero_time = np.random.randn(200, 4).astype(np.float32)
+                self.hetero_general = np.random.randn(768).astype(np.float32)
+                self.hetero_channel = np.random.randn(768).astype(np.float32)
+                self.hetero_stride = 1
+
+            def __len__(self):
+                return len(self.data) - self.seq_len - self.pred_len + 1
+
+        # Create two datasets
+        datasets = {
+            'entity_A': MockDirectAccessDataset('entity_A'),
+            'entity_B': MockDirectAccessDataset('entity_B'),
+        }
+
+        # Build shared tables
+        shared_tables, index_mappings = build_shared_tables_direct(datasets, num_news_items=1, verbose=False)
+
+        # Verify structure
+        assert 'timestamps' in shared_tables
+        assert 'timeseries' in shared_tables
+        assert 'embeddings' in shared_tables
+        assert 'hetero_time' in shared_tables
+        assert 'entity_general' in shared_tables
+        assert 'entity_channel' in shared_tables
+
+        assert 'timestamp_to_idx' in index_mappings
+        assert 'entity_to_idx' in index_mappings
+
+        # Verify entity indices
+        assert 'entity_A' in index_mappings['entity_to_idx']
+        assert 'entity_B' in index_mappings['entity_to_idx']
+
+        # Timestamps should be sorted
+        timestamps = shared_tables['timestamps']
+        assert np.all(timestamps[:-1] <= timestamps[1:])
+
+        # Index mapping should match
+        for str_ts, idx in index_mappings['timestamp_to_idx'].items():
+            ts = int(str_ts)
+            assert shared_tables['timestamps'][idx] == ts
+
+
+class TestDirectAccessPerformance:
+    """Performance comparison tests for direct access vs __getitem__."""
+
+    @pytest.mark.slow
+    def test_direct_access_faster_than_getitem(self):
+        """Verify direct access is significantly faster than per-sample iteration."""
+        import time
+        from data_provider.dataset_direct_access import DirectAccessMixin
+
+        class LargeDirectAccessDataset(DirectAccessMixin):
+            def __init__(self, n_timestamps=50000):
+                self.data = np.random.randn(n_timestamps, 5).astype(np.float32)
+                self.timestamp = np.arange(n_timestamps, dtype=np.int64)
+                self.seq_len = 96
+                self.pred_len = 48
+                self.stride = 1
+                self.entity_id = "test"
+                self.full_hetero = np.random.randn(n_timestamps, 768).astype(np.float32)
+                self.hetero_stride = 1
+
+            def __len__(self):
+                return len(self.data) - self.seq_len - self.pred_len + 1
+
+            def __getitem__(self, idx):
+                x_start = idx
+                x_end = x_start + self.seq_len
+                y_start = x_end
+                y_end = y_start + self.pred_len
+                return (
+                    f"sample_{idx}",
+                    self.data[x_start:x_end],
+                    self.data[y_start:y_end],
+                    self.timestamp[x_start:x_end],
+                    self.timestamp[y_start:y_end],
+                    self.full_hetero[x_start:x_end],
+                    self.full_hetero[y_start:y_end],
+                    None, None, None, None, None, None
+                )
+
+        dataset = LargeDirectAccessDataset(n_timestamps=50000)
+        n_samples = len(dataset)
+
+        print(f"\nBenchmark: {n_samples:,} samples")
+
+        # Method 1: Per-sample __getitem__ (current slow method)
+        start = time.perf_counter()
+        all_x_times_getitem = []
+        for i in range(n_samples):
+            sample = dataset[i]
+            all_x_times_getitem.append(sample[3])
+        getitem_time = time.perf_counter() - start
+
+        # Method 2: Direct access (new fast method)
+        start = time.perf_counter()
+        ts_data = dataset.get_raw_timestamps_for_samples()
+        direct_time = time.perf_counter() - start
+
+        speedup = getitem_time / direct_time
+
+        print(f"  __getitem__ iteration: {getitem_time:.2f}s")
+        print(f"  Direct access: {direct_time:.2f}s")
+        print(f"  Speedup: {speedup:.1f}x")
+
+        # Verify correctness
+        all_x_times_getitem_arr = np.stack(all_x_times_getitem)
+        np.testing.assert_array_equal(all_x_times_getitem_arr, ts_data['x_time'])
+
+        # Direct access should be at least 2x faster (typically 5-10x)
+        assert speedup >= 2.0, f"Expected at least 2x speedup, got {speedup:.1f}x"
+
+
+# =============================================================================
 # TEST RUNNER CONFIGURATION
 # =============================================================================
 

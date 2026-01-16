@@ -17,13 +17,14 @@ from typing import Optional, Dict, Any
 from utils.timefeatures import time_features
 from rich.console import Console
 from data_provider.profiling import DataloaderProfiler, timed_operation
+from data_provider.dataset_direct_access import DirectAccessMixin
 
 warnings.filterwarnings('ignore')
 
 # Set up logger for dataset operations
 logger = logging.getLogger(__name__)
 
-class Universal_Dataset(Dataset):
+class Universal_Dataset(DirectAccessMixin, Dataset):
     """
     PyTorch Dataset for universal time series forecasting with cross-modal data support.
     
