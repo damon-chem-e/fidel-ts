@@ -96,6 +96,19 @@ NEW APPROACH (V2 - indexed):
 - Total: ~3 GB instead of ~400 GB
 
 ================================================================================
+DEBUG OUTPUT
+================================================================================
+
+Debug output is DISABLED by default to keep logs clean. Enable selectively via
+environment variables:
+
+  TENSOR_CACHE_DEBUG=1          Enable general debug prints (file loading, shapes)
+  TENSOR_CACHE_DEBUG_MEMORY=1   Enable memory usage tracking (RSS/VMS stats)
+  FIDEL_DEBUG=1                 Enable model-level debug output
+
+See docs/tensor_cache.md for detailed debugging documentation.
+
+================================================================================
 CHECKPOINTING & RESUMABILITY
 ================================================================================
 
@@ -156,6 +169,17 @@ def _debug_memory(label: str, force_gc: bool = False, collector: Optional[Any] =
                 f"hetero_time={len(collector.hetero_time)}")
     
     print(msg)
+
+def _should_debug() -> bool:
+    """
+    Check if debug mode is enabled for tensor cache operations.
+
+    Enable via environment variable: TENSOR_CACHE_DEBUG=1
+
+    Returns:
+        True if debug mode is enabled, False otherwise
+    """
+    return os.environ.get('TENSOR_CACHE_DEBUG', '0') == '1'
 
 _DEBUG_GETITEM_COUNT = 0
 _DEBUG_GETITEM_LIMIT = 5  # Only print first N __getitem__ calls
@@ -2127,15 +2151,17 @@ class TensorCacheDataset(Dataset):
             filepath = shared_dir / f"{name}.npy"
             if filepath.exists():
                 # BEGIN DEBUG
-                file_size_mb = filepath.stat().st_size / (1024 ** 2)
-                print(f"[DEBUG] Loading shared/{name}.npy (file size: {file_size_mb:.1f}MB)")
+                if _should_debug():
+                    file_size_mb = filepath.stat().st_size / (1024 ** 2)
+                    print(f"[DEBUG] Loading shared/{name}.npy (file size: {file_size_mb:.1f}MB)")
                 # END DEBUG
                 # Load to RAM for fast lookup
                 self.shared[name] = np.load(filepath, mmap_mode=None)
                 # BEGIN DEBUG
-                arr = self.shared[name]
-                arr_size_mb = arr.nbytes / (1024 ** 2)
-                print(f"[DEBUG]   -> shape={arr.shape}, dtype={arr.dtype}, memory={arr_size_mb:.1f}MB")
+                if _should_debug():
+                    arr = self.shared[name]
+                    arr_size_mb = arr.nbytes / (1024 ** 2)
+                    print(f"[DEBUG]   -> shape={arr.shape}, dtype={arr.dtype}, memory={arr_size_mb:.1f}MB")
                 _debug_memory(f"  After loading {name}")
                 # END DEBUG
         
@@ -2150,8 +2176,9 @@ class TensorCacheDataset(Dataset):
             if filepath.exists():
                 self.arrays[name] = np.load(filepath, mmap_mode='r', allow_pickle=True)
                 # BEGIN DEBUG
-                arr = self.arrays[name]
-                print(f"[DEBUG] Loaded {self.flag}/{name}.npy: shape={arr.shape}, dtype={arr.dtype}")
+                if _should_debug():
+                    arr = self.arrays[name]
+                    print(f"[DEBUG] Loaded {self.flag}/{name}.npy: shape={arr.shape}, dtype={arr.dtype}")
                 # END DEBUG
         
         # BEGIN DEBUG
@@ -2294,29 +2321,29 @@ class TensorCacheDataset(Dataset):
         # Handle embedding shape based on num_news_items
         if hetero_x is not None:
             # BEGIN DEBUG
-            if _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
+            if _should_debug() and _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
                 print(f"[DEBUG]   hetero_x before expand: shape={hetero_x.shape}")
             # END DEBUG
-            
+
             if num_news_items == 1:
                 # N=1: stored as (L, D) -> expand to (L, 1, D)
                 hetero_x = np.expand_dims(hetero_x, axis=1)
             # else: N=2, already stored as (L, 2, D), no expansion needed
-            
+
             # BEGIN DEBUG
-            if _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
+            if _should_debug() and _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
                 hetero_x_mb = hetero_x.nbytes / (1024 ** 2)
                 print(f"[DEBUG]   hetero_x after expand: shape={hetero_x.shape}, size={hetero_x_mb:.2f}MB")
             # END DEBUG
-        
+
         if hetero_y is not None:
             if num_news_items == 1:
                 # N=1: stored as (L, D) -> expand to (L, 1, D)
                 hetero_y = np.expand_dims(hetero_y, axis=1)
             # else: N=2, already stored as (L, 2, D), no expansion needed
-            
+
             # BEGIN DEBUG
-            if _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
+            if _should_debug() and _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
                 hetero_y_mb = hetero_y.nbytes / (1024 ** 2)
                 print(f"[DEBUG]   hetero_y after expand: shape={hetero_y.shape}, size={hetero_y_mb:.2f}MB")
             # END DEBUG

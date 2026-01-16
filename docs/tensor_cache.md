@@ -443,6 +443,89 @@ rm -rf data/fidel-ts/germany_renewable/tensor_cache/a1b2c3d4e5f67890/
 
 **Speedup: 100-1000x for data loading, 6-12x for total training time**
 
+## Debugging
+
+The tensor cache system includes optional debug output that is **disabled by default** to keep logs clean during training. Debug output can be selectively enabled using environment variables:
+
+### Environment Variables
+
+| Variable | Purpose | Output |
+|----------|---------|--------|
+| `TENSOR_CACHE_DEBUG` | Enable general tensor cache debug prints | File loading details, array shapes, expansion operations |
+| `TENSOR_CACHE_DEBUG_MEMORY` | Enable memory usage tracking | RSS/VMS memory stats at key operations |
+| `FIDEL_DEBUG` | Enable general FIDEL-TS debug output | Model shape logs, buffer clearing notices |
+
+### Usage Examples
+
+**Enable all tensor cache debugging:**
+```bash
+export TENSOR_CACHE_DEBUG=1
+export TENSOR_CACHE_DEBUG_MEMORY=1
+python -m cli.suite run configs/experiment_suites/lynx_film_raw/nyc_traffic_speed.yaml
+```
+
+**Enable only memory tracking:**
+```bash
+export TENSOR_CACHE_DEBUG_MEMORY=1
+python -m cli.tensor_cache generate configs/experiment_suites/lynx_film_raw/nyc_traffic_speed.yaml
+```
+
+**Enable model-level debugging:**
+```bash
+export FIDEL_DEBUG=1
+python -m cli.suite run configs/experiment_suites/lynx_film_raw/nyc_traffic_speed.yaml
+```
+
+### Debug Output Examples
+
+**`TENSOR_CACHE_DEBUG=1`** shows:
+```
+[DEBUG] Loading shared/timeseries.npy (file size: 0.3MB)
+[DEBUG]   -> shape=(73662, 1), dtype=float32, memory=0.3MB
+[DEBUG] Loading shared/embeddings.npy (file size: 431.6MB)
+[DEBUG]   -> shape=(73662, 2, 768), dtype=float32, memory=431.6MB
+[DEBUG] Loaded train/sample_ids.npy: shape=(2237562,), dtype=<U64
+[DEBUG]   hetero_x before expand: shape=(360, 2, 768)
+[DEBUG]   hetero_x after expand: shape=(360, 2, 768), size=2.11MB
+```
+
+**`TENSOR_CACHE_DEBUG_MEMORY=1`** shows:
+```
+[DEBUG MEM] After loading timeseries: RSS=1.71GB, VMS=18.98GB
+[DEBUG MEM] After loading all shared tables (test): RSS=2.13GB, VMS=19.40GB
+[DEBUG MEM] __getitem__(2005918) START: RSS=2.21GB, VMS=24.68GB
+[DEBUG MEM] __getitem__(2005918) END: RSS=2.22GB, VMS=24.68GB
+[DEBUG MEM] tensor_cache_collate_fn START (batch_size=128): RSS=2.61GB, VMS=25.05GB
+```
+
+**`FIDEL_DEBUG=1`** shows:
+```
+[ info ] LYNX-FiLM-raw: y_hetero (news) shape: torch.Size([128, 168, 2, 768])
+[ info ] Buffer cleared
+```
+
+### When to Use Debug Flags
+
+- **`TENSOR_CACHE_DEBUG`**: Troubleshooting cache loading issues, understanding data shapes
+- **`TENSOR_CACHE_DEBUG_MEMORY`**: Diagnosing OOM errors, optimizing memory usage during generation
+- **`FIDEL_DEBUG`**: Model debugging, understanding data flow through the model
+
+### Disabling Debug Output
+
+Debug output is **off by default**. To explicitly disable if environment variables are set:
+```bash
+unset TENSOR_CACHE_DEBUG
+unset TENSOR_CACHE_DEBUG_MEMORY
+unset FIDEL_DEBUG
+```
+
+Or set to `0`:
+```bash
+export TENSOR_CACHE_DEBUG=0
+export TENSOR_CACHE_DEBUG_MEMORY=0
+export FIDEL_DEBUG=0
+```
+
 ## Limitations
 
 1. **No raw Dataset access**: Tensor cache only returns DataLoaders, not Dataset objects

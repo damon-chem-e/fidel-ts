@@ -72,12 +72,13 @@ class data_buffer():
     def clear(self):
         """
         Clears all cached data from memory buffer.
-        
+
         This method is useful for freeing memory when switching between different
         datasets or when the cached data is no longer needed.
         """
         self.buffer = {}
-        print('[ info ] Buffer cleared')
+        if os.environ.get('FIDEL_DEBUG', '0') == '1':
+            print('[ info ] Buffer cleared')
         
 
 def ratio_spliter(split=(7,1,2),seq_len=0, df=None):

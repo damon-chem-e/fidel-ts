@@ -317,7 +317,8 @@ class Experiment(Exp_Basic):
         
         # Release raw file buffer to save memory
         self.data_provider.data_buffer.clear()
-        print("[ info ] Buffer cleared")
+        if os.environ.get('FIDEL_DEBUG', '0') == '1':
+            print("[ info ] Buffer cleared")
         
         # Determine checkpoint directory path
         if self.exp_manager is not None:

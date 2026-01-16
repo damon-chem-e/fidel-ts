@@ -35,6 +35,7 @@ For t_known:
 from torch import nn
 import torch
 import copy
+import os
 import numpy as np
 from layers.TGTSF_torch import text_encoder
 from layers.lynx_film_layers import iTransformerFilm
@@ -474,7 +475,7 @@ class Model(nn.Module):
             y_hetero = self._convert_text_embedding_to_tensor(y_hetero, device, name="y_hetero")
         
         # Log shape of the relevant text embedding once (on first batch)
-        if not self._logged_text_shape:
+        if not self._logged_text_shape and os.environ.get('FIDEL_DEBUG', '0') == '1':
             if self.timestamp_semantics == 't_about' and y_hetero is not None:
                 print(f'[ info ] LYNX-FiLM-raw: y_hetero (news) shape: {y_hetero.shape}')
                 self._logged_text_shape = True
