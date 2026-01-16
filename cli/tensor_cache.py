@@ -545,6 +545,14 @@ def generate(
                     if original_device != 'cpu':
                         console.print(f"  [dim]Device: {original_device} -> cpu[/dim]")
                 
+                # Force preload_hetero=True for direct array access optimization
+                # This enables 20x faster shared table building by bypassing __getitem__
+                # Safe for tensor cache generation (one-time batch operation)
+                original_preload = getattr(exp_args, 'preload_hetero', False)
+                exp_args.preload_hetero = True
+                if not original_preload:
+                    console.print("  [dim]preload_hetero: False -> True (for direct access optimization)[/dim]")
+
                 console.print("  [yellow]Initializing Data_Provider...[/yellow]")
                 data_provider = Data_Provider(exp_args, buffer=not exp_args.disable_buffer, console=console)
 

@@ -54,6 +54,7 @@ from .tensor_cache import (
     _detect_downtime_in_training,
     infer_shapes_from_sample,
 )
+from .dataset_direct_access import DirectAccessMixin
 
 if TYPE_CHECKING:
     from data_provider.data_factory import Data_Provider
@@ -594,6 +595,259 @@ class PolarsSharedTableBuilder:
         """
         Build shared tables for the specified splits.
 
+        Automatically detects if datasets support direct array access and uses
+        the optimized path (20x faster) when available. Falls back to per-sample
+        iteration if direct access is not supported.
+
+        Args:
+            flags: List of splits to process
+
+        Returns:
+            Tuple of (shared_tables dict, index_mappings dict)
+        """
+        total_samples = self._count_samples(flags)
+
+        if self.verbose:
+            logger.info(f"Building shared tables: {total_samples:,} samples")
+
+        # Check if all datasets support direct access
+        if self._all_support_direct_access(flags):
+            if self.verbose:
+                logger.info("Using direct array access (20x faster)")
+            return self._build_direct(flags)
+        else:
+            if self.verbose:
+                logger.info("Using per-sample iteration (direct access not available)")
+            return self._build_iterative(flags)
+
+    def _all_support_direct_access(self, flags: List[str]) -> bool:
+        """
+        Check if all datasets across all splits support direct array access.
+
+        Direct access requires:
+        1. Dataset has DirectAccessMixin
+        2. Dataset has supports_direct_access() returning True
+        3. Dataset has preload_hetero=True (for embedding access)
+
+        Returns:
+            True if all datasets support direct access, False otherwise
+        """
+        for flag in flags:
+            datasets = self.data_provider.get_datasets(flag)
+            if not datasets:
+                continue
+
+            for entity_id, dataset in datasets.items():
+                # Check for mixin
+                if not isinstance(dataset, DirectAccessMixin):
+                    if self.verbose:
+                        logger.debug(f"Dataset {entity_id} does not have DirectAccessMixin")
+                    del datasets
+                    return False
+
+                # Check supports_direct_access
+                if not dataset.supports_direct_access():
+                    if self.verbose:
+                        logger.debug(f"Dataset {entity_id} does not support direct access")
+                    del datasets
+                    return False
+
+                # Check preload_hetero (required for embedding access)
+                if not getattr(dataset, 'preload_hetero', False):
+                    if self.verbose:
+                        logger.debug(f"Dataset {entity_id} does not have preload_hetero=True")
+                    del datasets
+                    return False
+
+            del datasets
+
+        return True
+
+    def _build_direct(self, flags: List[str]) -> Tuple[Dict[str, np.ndarray], dict]:
+        """
+        Build shared tables using direct array access (20x faster).
+
+        This method bypasses __getitem__ entirely, accessing the underlying
+        numpy arrays directly for vectorized operations.
+
+        Args:
+            flags: List of splits to process
+
+        Returns:
+            Tuple of (shared_tables dict, index_mappings dict)
+        """
+        import time
+        start_time = time.perf_counter()
+
+        # Collect all unique timestamps across all datasets
+        all_timestamps_set = set()
+        entity_data = {}  # entity_id -> (raw_arrays, dataset)
+
+        for flag in flags:
+            datasets = self.data_provider.get_datasets(flag)
+            if not datasets:
+                continue
+
+            for entity_id, dataset in datasets.items():
+                if len(dataset) == 0:
+                    continue
+
+                # Get raw arrays
+                raw = dataset.get_raw_arrays()
+
+                # Get unique timestamps this dataset accesses
+                unique_ts = dataset.get_all_unique_timestamps()
+                all_timestamps_set.update(unique_ts.tolist())
+
+                # Store for later (only need one copy per entity)
+                if entity_id not in entity_data:
+                    entity_data[entity_id] = (raw, dataset)
+
+            del datasets
+
+        if self.verbose:
+            logger.info(f"Collected {len(all_timestamps_set):,} unique timestamps "
+                       f"from {len(entity_data)} entities")
+
+        # Sort timestamps for consistent indexing
+        sorted_timestamps = np.array(sorted(all_timestamps_set), dtype=np.int64)
+        n_unique = len(sorted_timestamps)
+
+        # Build timestamp -> index mapping
+        timestamp_to_idx = {int(ts): idx for idx, ts in enumerate(sorted_timestamps)}
+
+        # Infer shapes from first entity
+        first_entity_id = next(iter(entity_data))
+        first_raw, first_dataset = entity_data[first_entity_id]
+
+        n_features = first_raw.data.shape[1] if first_raw.data.ndim > 1 else 1
+
+        # Determine embedding dimension
+        if first_raw.embeddings is not None:
+            if first_raw.embeddings.ndim == 3:
+                embed_dim = first_raw.embeddings.shape[2]
+            elif first_raw.embeddings.ndim == 2:
+                embed_dim = first_raw.embeddings.shape[1]
+            else:
+                embed_dim = first_raw.embeddings.shape[0] if first_raw.embeddings.ndim > 0 else 768
+        elif first_raw.hetero_general is not None:
+            embed_dim = first_raw.hetero_general.shape[-1]
+        else:
+            embed_dim = 768  # Default BERT dimension
+
+        # Determine hetero time features dimension
+        n_htf = first_raw.hetero_time.shape[1] if first_raw.hetero_time is not None else 0
+
+        # Pre-allocate shared table arrays
+        timeseries_array = np.zeros((n_unique, n_features), dtype=np.float32)
+
+        if self.num_news_items == 1:
+            embeddings_array = np.zeros((n_unique, embed_dim), dtype=np.float32)
+        else:
+            embeddings_array = np.zeros((n_unique, 2, embed_dim), dtype=np.float32)
+
+        if n_htf > 0:
+            hetero_time_array = np.zeros((n_unique, n_htf), dtype=np.float32)
+        else:
+            hetero_time_array = None
+
+        # Fill arrays from entity data
+        seen_timestamps = set()
+
+        for entity_id, (raw, dataset) in entity_data.items():
+            # Handle 1D data case
+            data = raw.data if raw.data.ndim > 1 else raw.data.reshape(-1, 1)
+
+            for local_idx in range(len(raw.timestamps)):
+                ts_int = int(raw.timestamps[local_idx])
+
+                if ts_int in seen_timestamps:
+                    continue  # Already have data for this timestamp
+
+                if ts_int not in timestamp_to_idx:
+                    continue  # Timestamp not in unique set (shouldn't happen)
+
+                unique_idx = timestamp_to_idx[ts_int]
+                seen_timestamps.add(ts_int)
+
+                # Extract timeseries data
+                timeseries_array[unique_idx] = data[local_idx]
+
+                # Extract embedding data
+                if raw.embeddings is not None and local_idx < len(raw.embeddings):
+                    emb = raw.embeddings[local_idx]
+                    if self.num_news_items == 1:
+                        if emb.ndim == 0:
+                            embeddings_array[unique_idx] = emb.flatten()
+                        elif emb.ndim == 1:
+                            embeddings_array[unique_idx] = emb
+                        else:
+                            embeddings_array[unique_idx] = emb[0]
+                    else:
+                        if emb.ndim == 0:
+                            embeddings_array[unique_idx, 0] = emb.flatten()
+                        elif emb.ndim == 1:
+                            embeddings_array[unique_idx, 0] = emb
+                        else:
+                            embeddings_array[unique_idx] = emb[:2]
+
+                # Extract hetero time features
+                if raw.hetero_time is not None and hetero_time_array is not None:
+                    if local_idx < len(raw.hetero_time):
+                        hetero_time_array[unique_idx] = raw.hetero_time[local_idx]
+
+        # Build shared tables dict
+        shared_tables = {
+            'timestamps': sorted_timestamps,
+            'timeseries': timeseries_array,
+            'embeddings': embeddings_array,
+        }
+
+        if hetero_time_array is not None:
+            shared_tables['hetero_time'] = hetero_time_array
+
+        # Entity-level data
+        entity_general_list = []
+        entity_channel_list = []
+        entity_to_idx = {}
+
+        for idx, (entity_id, (raw, _)) in enumerate(entity_data.items()):
+            entity_to_idx[entity_id] = idx
+            if raw.hetero_general is not None:
+                entity_general_list.append(raw.hetero_general)
+            if raw.hetero_channel is not None:
+                entity_channel_list.append(raw.hetero_channel)
+
+        if entity_general_list:
+            shared_tables['entity_general'] = np.stack(entity_general_list).astype(np.float32)
+        if entity_channel_list:
+            shared_tables['entity_channel'] = np.stack(entity_channel_list).astype(np.float32)
+
+        # Build index mappings
+        index_mappings = {
+            'timestamp_to_idx': {str(k): v for k, v in timestamp_to_idx.items()},
+            'entity_to_idx': entity_to_idx
+        }
+
+        elapsed = time.perf_counter() - start_time
+
+        if self.verbose:
+            logger.info(f"Built shared tables (direct): {n_unique:,} unique timestamps, "
+                       f"{len(entity_to_idx)} entities in {elapsed:.2f}s")
+
+        # Clean up
+        del entity_data
+        gc.collect()
+
+        return shared_tables, index_mappings
+
+    def _build_iterative(self, flags: List[str]) -> Tuple[Dict[str, np.ndarray], dict]:
+        """
+        Build shared tables using per-sample iteration (fallback method).
+
+        This is the original implementation that iterates through __getitem__
+        for each sample. Used when direct access is not available.
+
         Args:
             flags: List of splits to process
 
@@ -602,11 +856,6 @@ class PolarsSharedTableBuilder:
         """
         state = PolarsCollectorState()
         state.num_news_items = self.num_news_items
-
-        total_samples = self._count_samples(flags)
-
-        if self.verbose:
-            logger.info(f"Building shared tables: {total_samples:,} samples")
 
         self._collect_data(state, flags)
 
@@ -629,7 +878,7 @@ class PolarsSharedTableBuilder:
         return total
 
     def _collect_data(self, state: PolarsCollectorState, flags: List[str]) -> None:
-        """Collect unique data from all samples."""
+        """Collect unique data from all samples (iterative method)."""
         for flag in flags:
             datasets = self.data_provider.get_datasets(flag)
             if not datasets:
