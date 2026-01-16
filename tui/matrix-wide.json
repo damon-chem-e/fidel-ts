@@ -1,0 +1,224 @@
+{
+  "document": {
+    "block_prefix": "\n",
+    "block_suffix": "\n",
+    "color": "46",
+    "margin": 2
+  },
+  "block_quote": {
+    "indent": 1,
+    "indent_token": "│ ",
+    "color": "34"
+  },
+  "paragraph": {
+    "color": "46"
+  },
+  "list": {
+    "level_indent": 2,
+    "color": "46"
+  },
+  "heading": {
+    "block_suffix": "\n",
+    "color": "83",
+    "bold": true
+  },
+  "h1": {
+    "prefix": " ",
+    "suffix": " ",
+    "color": "83",
+    "bold": true
+  },
+  "h2": {
+    "prefix": "## ",
+    "color": "42",
+    "bold": true
+  },
+  "h3": {
+    "prefix": "### ",
+    "color": "42",
+    "bold": true
+  },
+  "h4": {
+    "prefix": "#### ",
+    "color": "34"
+  },
+  "h5": {
+    "prefix": "##### ",
+    "color": "34"
+  },
+  "h6": {
+    "prefix": "###### ",
+    "color": "34",
+    "bold": false
+  },
+  "text": {
+    "color": "46"
+  },
+  "strikethrough": {
+    "crossed_out": true,
+    "color": "240"
+  },
+  "emph": {
+    "italic": true,
+    "color": "42"
+  },
+  "strong": {
+    "bold": true,
+    "color": "83"
+  },
+  "hr": {
+    "color": "34",
+    "format": "\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n"
+  },
+  "item": {
+    "block_prefix": "• ",
+    "color": "46"
+  },
+  "enumeration": {
+    "block_prefix": ". ",
+    "color": "46"
+  },
+  "task": {
+    "ticked": "[✓] ",
+    "unticked": "[ ] ",
+    "color": "42"
+  },
+  "link": {
+    "color": "51",
+    "underline": true
+  },
+  "link_text": {
+    "color": "83",
+    "bold": true
+  },
+  "image": {
+    "color": "42",
+    "underline": true
+  },
+  "image_text": {
+    "color": "240",
+    "format": "Image: {{.text}} →"
+  },
+  "code": {
+    "prefix": " ",
+    "suffix": " ",
+    "color": "42",
+    "background_color": "236"
+  },
+  "code_block": {
+    "color": "34",
+    "background_color": "236",
+    "margin": 2,
+    "chroma": {
+      "text": {
+        "color": "#00FF41"
+      },
+      "error": {
+        "color": "#F1F1F1",
+        "background_color": "#8F2F2F"
+      },
+      "comment": {
+        "color": "#008F11"
+      },
+      "comment_preproc": {
+        "color": "#00D787"
+      },
+      "keyword": {
+        "color": "#00FF41"
+      },
+      "keyword_reserved": {
+        "color": "#00D7AF"
+      },
+      "keyword_namespace": {
+        "color": "#00D787"
+      },
+      "keyword_type": {
+        "color": "#00AF87"
+      },
+      "operator": {
+        "color": "#00D7AF"
+      },
+      "punctuation": {
+        "color": "#008F11"
+      },
+      "name": {
+        "color": "#00FF41"
+      },
+      "name_builtin": {
+        "color": "#00D7AF"
+      },
+      "name_tag": {
+        "color": "#00AF87"
+      },
+      "name_attribute": {
+        "color": "#00D787"
+      },
+      "name_class": {
+        "color": "#00FFAF",
+        "underline": true,
+        "bold": true
+      },
+      "name_constant": {
+        "color": "#00D7AF"
+      },
+      "name_decorator": {
+        "color": "#00AF87"
+      },
+      "name_exception": {
+        "color": "#00FFAF"
+      },
+      "name_function": {
+        "color": "#00D787"
+      },
+      "name_other": {},
+      "literal": {
+        "color": "#00D7AF"
+      },
+      "literal_number": {
+        "color": "#00D7AF"
+      },
+      "literal_date": {
+        "color": "#00AF87"
+      },
+      "literal_string": {
+        "color": "#008F11"
+      },
+      "literal_string_escape": {
+        "color": "#00D787"
+      },
+      "generic_deleted": {
+        "color": "#8F2F2F"
+      },
+      "generic_emph": {
+        "italic": true
+      },
+      "generic_inserted": {
+        "color": "#00D787"
+      },
+      "generic_strong": {
+        "bold": true
+      },
+      "generic_subheading": {
+        "color": "#008F11"
+      },
+      "background": {
+        "background_color": "#1A1A1A"
+      }
+    }
+  },
+  "table": {
+    "color": "46"
+  },
+  "definition_list": {
+    "color": "46"
+  },
+  "definition_term": {
+    "color": "42"
+  },
+  "definition_description": {
+    "block_prefix": "\n→ ",
+    "color": "34"
+  },
+  "html_block": {},
+  "html_span": {}
+}

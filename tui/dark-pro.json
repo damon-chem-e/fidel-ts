@@ -1,0 +1,223 @@
+{
+  "document": {
+    "block_prefix": "\n",
+    "block_suffix": "\n",
+    "color": "252",
+    "margin": 2
+  },
+  "block_quote": {
+    "indent": 1,
+    "indent_token": "│ ",
+    "color": "240"
+  },
+  "paragraph": {
+    "color": "252"
+  },
+  "list": {
+    "level_indent": 2,
+    "color": "252"
+  },
+  "heading": {
+    "block_suffix": "\n",
+    "color": "255",
+    "bold": true
+  },
+  "h1": {
+    "prefix": " ",
+    "suffix": " ",
+    "color": "255",
+    "bold": true
+  },
+  "h2": {
+    "prefix": "## ",
+    "color": "250",
+    "bold": true
+  },
+  "h3": {
+    "prefix": "### ",
+    "color": "245",
+    "bold": true
+  },
+  "h4": {
+    "prefix": "#### ",
+    "color": "243"
+  },
+  "h5": {
+    "prefix": "##### ",
+    "color": "243"
+  },
+  "h6": {
+    "prefix": "###### ",
+    "color": "240",
+    "bold": false
+  },
+  "text": {
+    "color": "252"
+  },
+  "strikethrough": {
+    "crossed_out": true,
+    "color": "240"
+  },
+  "emph": {
+    "italic": true,
+    "color": "250"
+  },
+  "strong": {
+    "bold": true,
+    "color": "255"
+  },
+  "hr": {
+    "color": "240",
+    "format": "\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n"
+  },
+  "item": {
+    "block_prefix": "• ",
+    "color": "252"
+  },
+  "enumeration": {
+    "block_prefix": ". ",
+    "color": "252"
+  },
+  "task": {
+    "ticked": "[✓] ",
+    "unticked": "[ ] ",
+    "color": "250"
+  },
+  "link": {
+    "color": "75",
+    "underline": true
+  },
+  "link_text": {
+    "color": "111",
+    "bold": true
+  },
+  "image": {
+    "color": "212",
+    "underline": true
+  },
+  "image_text": {
+    "color": "243",
+    "format": "Image: {{.text}} →"
+  },
+  "code": {
+    "prefix": " ",
+    "suffix": " ",
+    "color": "186",
+    "background_color": "236"
+  },
+  "code_block": {
+    "color": "250",
+    "background_color": "236",
+    "margin": 2,
+    "chroma": {
+      "text": {
+        "color": "#D0D0D0"
+      },
+      "error": {
+        "color": "#F1F1F1",
+        "background_color": "#8F2F2F"
+      },
+      "comment": {
+        "color": "#808080"
+      },
+      "comment_preproc": {
+        "color": "#A8A8A8"
+      },
+      "keyword": {
+        "color": "#9ABBE8"
+      },
+      "keyword_reserved": {
+        "color": "#B8A7E8"
+      },
+      "keyword_namespace": {
+        "color": "#9ABBE8"
+      },
+      "keyword_type": {
+        "color": "#9ABBE8"
+      },
+      "operator": {
+        "color": "#D0D0D0"
+      },
+      "punctuation": {
+        "color": "#A8A8A8"
+      },
+      "name": {
+        "color": "#D0D0D0"
+      },
+      "name_builtin": {
+        "color": "#C7A57B"
+      },
+      "name_tag": {
+        "color": "#9ABBE8"
+      },
+      "name_attribute": {
+        "color": "#C7A57B"
+      },
+      "name_class": {
+        "color": "#E8D0A8",
+        "bold": true
+      },
+      "name_constant": {
+        "color": "#C7A57B"
+      },
+      "name_decorator": {
+        "color": "#A8A8A8"
+      },
+      "name_exception": {
+        "color": "#E89A9A"
+      },
+      "name_function": {
+        "color": "#E8D0A8"
+      },
+      "name_other": {},
+      "literal": {
+        "color": "#C7A57B"
+      },
+      "literal_number": {
+        "color": "#C7A57B"
+      },
+      "literal_date": {
+        "color": "#A8A8A8"
+      },
+      "literal_string": {
+        "color": "#A8C7A8"
+      },
+      "literal_string_escape": {
+        "color": "#C7A57B"
+      },
+      "generic_deleted": {
+        "color": "#E89A9A"
+      },
+      "generic_emph": {
+        "italic": true
+      },
+      "generic_inserted": {
+        "color": "#A8C7A8"
+      },
+      "generic_strong": {
+        "bold": true
+      },
+      "generic_subheading": {
+        "color": "#808080"
+      },
+      "background": {
+        "background_color": "#1A1A1A"
+      }
+    }
+  },
+  "table": {
+    "color": "252"
+  },
+  "definition_list": {
+    "color": "252"
+  },
+  "definition_term": {
+    "color": "250"
+  },
+  "definition_description": {
+    "block_prefix": "\n→ ",
+    "color": "243"
+  },
+  "html_block": {},
+  "html_span": {}
+}
