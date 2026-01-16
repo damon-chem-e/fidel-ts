@@ -1051,11 +1051,11 @@ class Data_Provider(object):
                         # Determine if time features should be generated (for FEDformer, Informer, etc.)
                         generate_time_features = self._should_generate_time_features()
                         time_feature_freq = getattr(self.args.model_config, 'freq', 'h') if hasattr(self.args, 'model_config') else 'h'
-                        dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path, 
-                                                    flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len, 
-                                                    spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col, 
-                                                    target=self.dataset_config.target, scale=self.args.scale, 
-                                                    data_buffer=self.data_buffer, hetero_data_getter=get_hetero_data, preload_hetero=self.args.preload_hetero, 
+                        dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path,
+                                                    flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len,
+                                                    spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col,
+                                                    target=self.dataset_config.target, scale=self.args.scale,
+                                                    data_buffer=self.data_buffer, hetero_data_getter=get_hetero_data, preload_hetero=self.args.preload_hetero,
                                                     hetero_stride=self._get_effective_hetero_stride(),
                                                     task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
                                                     timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample,
@@ -1063,7 +1063,8 @@ class Data_Provider(object):
                                                     generate_time_features=generate_time_features, time_feature_freq=time_feature_freq,
                                                     llm_embedding_provider=llm_embedding_provider,
                                                     truncate_train_for_purge=getattr(self.args, 'truncate_train_for_purge', False),
-                                                    console=self.console)
+                                                    console=self.console,
+                                                    verbose_hetero_preload=getattr(self.args, 'verbose_hetero_preload', False))
                     datasets[i] = dataset
                     # Collect indicator columns for aggregated logging
                     if hasattr(dataset, 'missing_indicators') and dataset.missing_indicators:
@@ -1091,10 +1092,10 @@ class Data_Provider(object):
                     generate_time_features = self._should_generate_time_features()
                     time_feature_freq = getattr(self.args.model_config, 'freq', 'h') if hasattr(self.args, 'model_config') else 'h'
                     dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path,
-                                                flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len, 
-                                                spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col, 
-                                                target=self.dataset_config.target, scale=self.args.scale, 
-                                                data_buffer=self.data_buffer, hetero_data_getter=get_hetero_data, preload_hetero=self.args.preload_hetero, 
+                                                flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len,
+                                                spliter=self.spliter, timestamp_col=self.dataset_config.timestamp_col,
+                                                target=self.dataset_config.target, scale=self.args.scale,
+                                                data_buffer=self.data_buffer, hetero_data_getter=get_hetero_data, preload_hetero=self.args.preload_hetero,
                                                 hetero_stride=self._get_effective_hetero_stride(),
                                                 task=self.args.model_config.task, custom_input=self.args.model_config.custom_input,
                                                 timezone=self.dataset_config.time_zone, downsample=self.dataset_config.downsample,
@@ -1102,7 +1103,8 @@ class Data_Provider(object):
                                                 generate_time_features=generate_time_features, time_feature_freq=time_feature_freq,
                                                 llm_embedding_provider=llm_embedding_provider,
                                                 truncate_train_for_purge=getattr(self.args, 'truncate_train_for_purge', False),
-                                                console=self.console)
+                                                console=self.console,
+                                                verbose_hetero_preload=getattr(self.args, 'verbose_hetero_preload', False))
                 datasets[i] = dataset
                 # Collect indicator columns for aggregated logging
                 if hasattr(dataset, 'missing_indicators') and dataset.missing_indicators:

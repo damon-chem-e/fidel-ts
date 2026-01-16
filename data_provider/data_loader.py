@@ -99,12 +99,13 @@ class Universal_Dataset(DirectAccessMixin, Dataset):
     """
     def __init__(self, root_path, flag='train', data_path='ETTh1.csv',
                  seq_len=24, pred_len=24, spliter=ratio_spliter, timestamp_col='date',
-                 target='OT', scale=True, data_buffer=None, hetero_data_getter=None, 
-                 preload_hetero=False, hetero_stride=1, task=None, custom_input=None, 
-                 timezone=None, downsample=None, entity_id=None, 
+                 target='OT', scale=True, data_buffer=None, hetero_data_getter=None,
+                 preload_hetero=False, hetero_stride=1, task=None, custom_input=None,
+                 timezone=None, downsample=None, entity_id=None,
                  missing_value_strategy='none', required_indicators=None,
                  generate_time_features=False, time_feature_freq='h',
-                 llm_embedding_provider=None, truncate_train_for_purge=False, console=None):
+                 llm_embedding_provider=None, truncate_train_for_purge=False, console=None,
+                 verbose_hetero_preload=False):
         # size [seq_len, label_len, pred_len]
         # info
         self.seq_len = seq_len
@@ -148,6 +149,9 @@ class Universal_Dataset(DirectAccessMixin, Dataset):
         
         # Rich Console for formatted output (integrates with progress bars)
         self.console = console if console is not None else Console()
+
+        # Verbose flag for hetero data preloading messages
+        self.verbose_hetero_preload = verbose_hetero_preload
 
         self.__read_data__()
         self.preload_hetero = preload_hetero
@@ -307,16 +311,18 @@ class Universal_Dataset(DirectAccessMixin, Dataset):
     def __preload_hetero__(self):
         """
         Preloads all heterogeneous data into memory for efficient batch processing.
-        
+
         When enabled, this method loads the complete heterogeneous dataset at initialization
         time rather than loading data on-demand during training. This improves training
         speed at the cost of increased memory usage.
         """
         if self.preload_hetero:
-            print('[ info ] Preloading the full heterogeneous data')
+            if self.verbose_hetero_preload:
+                print('[ info ] Preloading the full heterogeneous data')
             _ = time()
             self.hetero_time, self.hetero_general, self.hetero_channel, self.full_hetero = self.hetero_data_getter(self.timestamp)
-            print('[ info ] Preload the full heterogeneous data successfully, cost time: {:.2f}s'.format(time() - _))
+            if self.verbose_hetero_preload:
+                print('[ info ] Preload the full heterogeneous data successfully, cost time: {:.2f}s'.format(time() - _))
             del self.hetero_data_getter
             
     def __getitem__(self, index):

@@ -386,7 +386,8 @@ def generate(
     force: bool = typer.Option(False, "--force", help="Overwrite existing cache"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be generated without generating"),
     cpu_only: bool = typer.Option(False, "--cpu-only", help="CPU-only mode: requires pre-computed embeddings"),
-    use_polars: bool = typer.Option(True, "--use-polars/--no-polars", help="Use polars-optimized implementation (default: enabled)")
+    use_polars: bool = typer.Option(True, "--use-polars/--no-polars", help="Use polars-optimized implementation (default: enabled)"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output (hetero data loading messages)")
 ):
     """
     Generate tensor cache for all experiments in a suite.
@@ -552,6 +553,9 @@ def generate(
                 exp_args.preload_hetero = True
                 if not original_preload:
                     console.print("  [dim]preload_hetero: False -> True (for direct access optimization)[/dim]")
+
+                # Set verbose flag for hetero data preloading messages
+                exp_args.verbose_hetero_preload = verbose
 
                 console.print("  [yellow]Initializing Data_Provider...[/yellow]")
                 data_provider = Data_Provider(exp_args, buffer=not exp_args.disable_buffer, console=console)

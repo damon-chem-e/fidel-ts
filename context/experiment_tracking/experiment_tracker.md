@@ -1,5 +1,5 @@
 ╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
-║ EXPERIMENT TRACKER                                                                                                                         ║
+║ EXPERIMENT TRACKER                                                                                                                        ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
 
 **Last Updated:** 2025-01-13
@@ -7,7 +7,7 @@
 **Hetero stride note:** All multimodal experiments that use text need to be rerun without hetero striding (full-resolution text). TimeCMA LLM embeddings are not affected and remain valid.
 
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ OVERVIEW: PLANNED RESULTS                                                                                                                  │
+│ OVERVIEW: PLANNED RESULTS                                                                                                                 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 - **[Point A]** FIATS outperforms unimodal on fidel-ts test sets (except CAISO). Show efficiency and performance on big datasets, compare to other multimodal methods, show loss curves.
@@ -15,10 +15,10 @@
 - **[Point C]** Show that learning a residual can be damaging; learning the full signal is better.
 - **[Point D]** Show prediction level ensembles are useful, and present other methods for ensuring text is useful but doesn't pollute time series signal when alternative modality isn't useful.
 
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ PRIORITY SUMMARY                                                                                                                           │
+│ PRIORITY SUMMARY                                                                                                                          │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 ─── High Compute Priorities ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ CURRENT WORK                                                                                                                               │
+│ CURRENT WORK                                                                                                                              │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 > - HETERO STRIDE: Plan rerun of all text-using experiments without hetero striding (full-resolution text); only TimeCMA LLM embeddings are kept as-is.
@@ -179,7 +179,7 @@
 #### Hyperparameter Sweep (NYC Traffic)
 | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |----------|---------|--------|--------|----------|--------|
-| [||] Paused (new job submission) | `sweep_v2dy5lr5` | - | - | - | MIT Preemptable (L40s x 4) |
+| [-] Paused (new job submission) | `sweep_v2dy5lr5` | - | - | - | MIT Preemptable (L40s x 4) |
 
 **Notes:**
 - New job submission paused until tensor cache is working to speed up runs
@@ -318,7 +318,7 @@
 
 | Resource | Allocation | Status |
 |---------|--------|----------|
-| MIT Preemptable (L40s x 4) | Lynx Film Raw sweep (NYC Traffic) | [||] Paused (new job submission) |
+| MIT Preemptable (L40s x 4) | Lynx Film Raw sweep (NYC Traffic) | [-] Paused (new job submission) |
 | MIT Sloan (A100) | Time-LLM on Fidel-TS | [>>] |
 | MIT Sloan (A100) | TimeCMA on Fidel-TS | [✗] Crashed |
 | RunPod-Canada | iTransformer pretraining, TGTSF, LeRet, Lynx Film Raw, Lynx Film | [ ] |
@@ -373,5 +373,5 @@
 - [>>] Running
 - [ ] Pending
 - [✗] Failed / Blocked
-- [||] Paused
+- [-] Paused
 - [ERR] Error
