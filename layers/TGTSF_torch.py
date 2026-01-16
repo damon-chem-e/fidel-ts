@@ -167,13 +167,20 @@ class text_encoder(nn.Module):
         news_emb = news_emb.contiguous().view(B*L, news_emb.shape[2], D)  # [b*l, n, d]
         news_mask = news_emb.sum(dim=-1) == 0
         # Ensure mask is contiguous for compiled attention kernels (required by _scaled_dot_product_efficient_attention)
-        news_mask = news_mask.float().contiguous()
+        # Use boolean mask (more efficient) and ensure contiguity - critical for torch.compile
+        # TransformerDecoder expects (N, S) shape when batch_first=True, and mask must be contiguous
+        news_mask = news_mask.contiguous()
 
         # reshape the description_emb
         description_emb = description_emb.contiguous().view(B*L, description_emb.shape[2], D)  # [b*l, c, d]
 
         text_emb=description_emb
 
+        # Ensure mask is still contiguous right before use (defensive check for torch.compile)
+        # This is critical when running experiments sequentially in suites, as compiled cache may
+        # cause non-contiguous tensors from previous experiments to affect current execution
+        if not news_mask.is_contiguous():
+            news_mask = news_mask.contiguous()
         text_emb=self.cross_encoder(tgt=text_emb, memory=news_emb, memory_key_padding_mask=news_mask)
 
         # reshape the text_emb
