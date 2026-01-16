@@ -434,14 +434,6 @@ class Data_Provider(object):
             DataLoader configured for tensor cache
         """
         from data_provider.tensor_cache import get_tensor_cache_dataloader
-        
-        # BEGIN DEBUG
-        import psutil
-        import os
-        process = psutil.Process(os.getpid())
-        mem_before = process.memory_info().rss / (1024 ** 3)
-        print(f"[DEBUG MEM] Before creating {flag} DataLoader: RSS={mem_before:.2f}GB")
-        # END DEBUG
 
         # Log DataLoader creation start (this can take time with many workers)
         print(f"[ info ] Creating {flag} DataLoader from tensor cache (num_workers={self.args.num_workers})...")
@@ -455,12 +447,6 @@ class Data_Provider(object):
             shuffle=shuffle,
             preload_to_ram=False  # Memory-mapped is usually best
         )
-        
-        # BEGIN DEBUG
-        mem_after = process.memory_info().rss / (1024 ** 3)
-        mem_delta = mem_after - mem_before
-        print(f"[DEBUG MEM] After creating {flag} DataLoader: RSS={mem_after:.2f}GB (delta={mem_delta:+.2f}GB)")
-        # END DEBUG
         
         print(f"[ info ] {flag} DataLoader created successfully")
         return dataloader
