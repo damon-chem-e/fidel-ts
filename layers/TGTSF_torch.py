@@ -166,7 +166,8 @@ class text_encoder(nn.Module):
         # reshape the news_emb
         news_emb = news_emb.contiguous().view(B*L, news_emb.shape[2], D)  # [b*l, n, d]
         news_mask = news_emb.sum(dim=-1) == 0
-        news_mask = news_mask.float()
+        # Ensure mask is contiguous for compiled attention kernels (required by _scaled_dot_product_efficient_attention)
+        news_mask = news_mask.float().contiguous()
 
         # reshape the description_emb
         description_emb = description_emb.contiguous().view(B*L, description_emb.shape[2], D)  # [b*l, c, d]
