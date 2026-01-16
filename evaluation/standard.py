@@ -565,6 +565,15 @@ def _load_checkpoint_config(experiment_dir, eval_config, config):
         print(f"[Info] Applying model_config_overrides: {model_config_overrides}")
         for key, value in model_config_overrides.items():
             checkpoint_config.model_config[key] = value
+        
+        # Special handling for input_text_dim: if input_text_dim is set but text_dim is not
+        # explicitly overridden, set text_dim = input_text_dim to match checkpoint architecture
+        # This handles the case where checkpoint was saved without a projection layer
+        if 'input_text_dim' in model_config_overrides and 'text_dim' not in model_config_overrides:
+            input_text_dim = model_config_overrides['input_text_dim']
+            # Set text_dim to match input_text_dim (assumes no projection layer in checkpoint)
+            checkpoint_config.model_config['text_dim'] = input_text_dim
+            print(f"[Info] Set text_dim = input_text_dim = {input_text_dim} to match checkpoint architecture")
     
     # Load data config
     if data_config_path.exists():

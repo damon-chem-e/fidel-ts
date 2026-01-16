@@ -218,8 +218,27 @@ class Experiment(Exp_Basic):
                    - x_mark_dec: [B, label_len + pred_len, time_features] decoder temporal marks
         """
         # Check if model requires temporal marks
+        # Direct models: fedformer, informer, autoformer
+        # Wrapped models: MMTSFlib with FEDformer/Informer/Autoformer as unimodal_model_type
         model_name = getattr(self.args, 'model', '').lower()
-        if model_name not in ['fedformer', 'informer', 'autoformer']:
+        
+        # Check if this is a model that directly needs temporal marks
+        needs_temporal_marks = model_name in ['fedformer', 'informer', 'autoformer']
+        
+        # Check if MMTSFlib is wrapping a model that needs temporal marks
+        if not needs_temporal_marks and model_name == 'mmtsflib':
+            # Check if MMTSFlib has a unimodal_model_type that requires temporal marks
+            if hasattr(self.model, 'unimodal_model_type'):
+                unimodal_type = self.model.unimodal_model_type
+                if unimodal_type in ['FEDformer', 'Informer', 'Autoformer']:
+                    needs_temporal_marks = True
+            # Also check args/config for unimodal_model_type
+            elif hasattr(self.args, 'unimodal_model_type'):
+                unimodal_type = getattr(self.args, 'unimodal_model_type', '').lower()
+                if unimodal_type in ['fedformer', 'informer', 'autoformer']:
+                    needs_temporal_marks = True
+        
+        if not needs_temporal_marks:
             return None, None
         
         # If time features are not provided, return None (model will handle error)
@@ -244,13 +263,24 @@ class Experiment(Exp_Basic):
         # the last label_len timestamps from x_mark_enc and prepending to x_mark_dec
         # Get label_len from model, args, or calculate default (seq_len // 2)
         label_len = None
+        
+        # Try to get label_len from model (check wrapped model if MMTSFlib)
         if hasattr(self.model, 'label_len') and self.model.label_len is not None:
             label_len = self.model.label_len
+        # Check if MMTSFlib wraps a model with label_len
+        elif hasattr(self.model, 'ts_model') and hasattr(self.model.ts_model, 'label_len') and self.model.ts_model.label_len is not None:
+            label_len = self.model.ts_model.label_len
+        # Check args/config
         elif hasattr(self.args, 'label_len') and self.args.label_len is not None:
             label_len = self.args.label_len
+        # Try to get seq_len from model (check wrapped model if MMTSFlib)
         elif hasattr(self.model, 'seq_len') and self.model.seq_len is not None:
             # Default: label_len = seq_len // 2 (matching FEDformer/Informer default)
             label_len = self.model.seq_len // 2
+        # Check wrapped model's seq_len if MMTSFlib
+        elif hasattr(self.model, 'ts_model') and hasattr(self.model.ts_model, 'seq_len') and self.model.ts_model.seq_len is not None:
+            label_len = self.model.ts_model.seq_len // 2
+        # Check args/config
         elif hasattr(self.args, 'seq_len') and self.args.seq_len is not None:
             label_len = self.args.seq_len // 2
         elif hasattr(self.args, 'input_len') and self.args.input_len is not None:

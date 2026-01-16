@@ -450,6 +450,33 @@ class Data_Provider(object):
         
         print(f"[ info ] {flag} DataLoader created successfully")
         return dataloader
+    
+    def _should_generate_time_features(self):
+        """
+        Check if time features should be generated for the current model.
+        
+        Time features are required for:
+        - Direct models: FEDformer, Informer, Autoformer
+        - Wrapped models: MMTSFlib with FEDformer/Informer/Autoformer as unimodal_model_type
+        
+        Returns:
+            bool: True if time features should be generated, False otherwise
+        """
+        model_name = getattr(self.args, 'model', '').lower()
+        
+        # Check if this is a model that directly needs temporal marks
+        if model_name in ['fedformer', 'informer', 'autoformer']:
+            return True
+        
+        # Check if MMTSFlib is wrapping a model that needs temporal marks
+        if model_name == 'mmtsflib':
+            # Check model_config for unimodal_model_type
+            if hasattr(self.args, 'model_config') and hasattr(self.args.model_config, 'unimodal_model_type'):
+                unimodal_type = getattr(self.args.model_config, 'unimodal_model_type', '').lower()
+                if unimodal_type in ['fedformer', 'informer', 'autoformer']:
+                    return True
+        
+        return False
 
     def get_spliter(self):
         """
@@ -790,8 +817,7 @@ class Data_Provider(object):
         required_indicators = getattr(self, 'required_indicator_columns', [])
         
         # Determine if time features should be generated (for FEDformer, Informer, etc.)
-        model_name = getattr(self.args, 'model', '').lower()
-        generate_time_features = model_name in ['fedformer', 'informer', 'autoformer']
+        generate_time_features = self._should_generate_time_features()
         time_feature_freq = getattr(self.args.model_config, 'freq', 'h') if hasattr(self.args, 'model_config') else 'h'
         
         return TimeMMD_Dataset(
@@ -1023,9 +1049,7 @@ class Data_Provider(object):
                         required_indicators = getattr(self, 'required_indicator_columns', [])
                         
                         # Determine if time features should be generated (for FEDformer, Informer, etc.)
-                        # Check if model requires temporal marks
-                        model_name = getattr(self.args, 'model', '').lower()
-                        generate_time_features = model_name in ['fedformer', 'informer', 'autoformer']
+                        generate_time_features = self._should_generate_time_features()
                         time_feature_freq = getattr(self.args.model_config, 'freq', 'h') if hasattr(self.args, 'model_config') else 'h'
                         dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path, 
                                                     flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len, 
@@ -1064,9 +1088,7 @@ class Data_Provider(object):
                     required_indicators = getattr(self, 'required_indicator_columns', [])
                     
                     # Determine if time features should be generated (for FEDformer, Informer, etc.)
-                    # Check if model requires temporal marks
-                    model_name = getattr(self.args, 'model', '').lower()
-                    generate_time_features = model_name in ['fedformer', 'informer', 'autoformer']
+                    generate_time_features = self._should_generate_time_features()
                     time_feature_freq = getattr(self.args.model_config, 'freq', 'h') if hasattr(self.args, 'model_config') else 'h'
                     dataset = Universal_Dataset(root_path=self.dataset_config.root_path, data_path=data_path,
                                                 flag=flag, seq_len=self.args.input_len, pred_len=self.args.output_len, 
