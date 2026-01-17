@@ -1,0 +1,526 @@
+tgtsf test is a bit slow. lynx will also be slow. fixed the pretrained model path for lynx test. 
+
+a few speedups are in the works: (1) don't evaluate on test every epoch, (2) don't do per sample metrics tracking every epoch, we'll do it in a separate evaluation script after the model is fully trained, (3) we tried to speed up the patch reconstruction look in tgtsf (didn't seem to help much).
+
+>>>>>>>start training : 20251206-163409_c6abf40d0870>>>>>>>>>>>>>>>>>>>>>>>>>>
+Loading train datasets ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% • 87/87 0:01:01
+Loading val datasets ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% • 87/87 0:00:22
+Loading test datasets ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% • 87/87 0:00:59
+[ info ] Buffer cleared
+Epoch 1/50 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% • loss: 0.7103125 • speed: 0.7805s/iter • ETA: 1858.7m 0:38:13
+[12/06/25 17:14:52] INFO     Epoch: 1 cost time: 2293.69s
+Validating... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:09:55
+[GPU Monitor (last 30s)] Avg Util: 9.6%    Avg Mem: 10.17 GB   Max Mem: 10.17 GB   Mem Total: 44.99 GB
+                         Avg Power: 106W   Max Temp: 39°C      Time: 17:37:47
+Testing entities ━━━━━━━━━━━━━━━━━╺━━━━━━━━━━━━━━━━━━━━━━  44% 0:13:26
+  └─ 387         ━━━━━━━━━━━━━━━╸━━━━━━━━━━━━━━━━━━━━━━━━  39% 0:00:09salloc: Job 6981423 has exceeded its time limit and its allocation has been revoked.
+[GPU Monitor (last 30s)] Avg Util: 8.1%    Avg Mem: 10.17 GB   Max Mem: 10.17 GB   Mem Total: 44.99 GB
+                         Avg Power: 102W   Max Temp: 39°C      Time: 17:38:18
+Testing entities ━━━━━━━━━━━━━━━━━╸━━━━━━━━━━━━━━━━━━━━━━  45% 0:13:56
+  └─ 385         ━━━━━━━━━━━━━━━━━━━━━━━━━━━╸━━━━━━━━━━━━  69% 0:00:16srun: error: node3302: task 0: Killed
+
+looks like before (1-2) implemented a poch takes about 40 min to train and 10 minutes to validate (we aren't going to eval on test so we ignore that.) 6 hours on mit_normal_gpu gives maybe 6 epochs for a 6 hour run, then we just continue from there. Need to look at wandb to see how to pick up from where we left off for a given run and implement that (also in experiment manager, how to resume a given experiment and put the pause and resumption points in the metadata and keep everything in the same experiment folder)
+
+
+FiLM is sketched, but not tested. Could probably start testing it on a L40S and debugging it after I implement the above and test the above then get tgtsf and lynx running on long pause-resume runs on the test (single prediction window for NYC_traffic dataset). After FiLM and residual learning, we work on gating.
+
+---
+
+speedups implemented.
+
+Job resumption is pushed (not tested), and the first 6 hours is running for both lynx and tgtsf tests. While those are training (on lynx branch) I'll debug FiLM implementation (on a film branch for worktrees in damon-workspace). 
+
+Should clean up wandb runs... 
+
+FiLM ran into some issues with relative paths since it's the first I'm running in a worktree. That was debugged for a bit and pushed (and pulled into the worktree) but we need to test the latest push that added the base_data_path config option and set it for lynx_film_test.yaml. Hopefully that works. test on salloc interactive, and if it works, then keep testing film interactively to see what comes up and fix it up to the point it can get a 6 hour run going.
+
+there was another issue with the relative paths for experiment management that made lynx test not create the right experiment directory structure, but I believe we've fixed that on the lynx branch. Seems to have worked fine interactively. Fixed, then started a 6 hour run on sbatch.
+
+---
+
+testing lynx_film_test and testing tgtsf_test resumption.
+forgot to put the resumption information in lynx test so it's starting again from scratch, which is fine. we'll resume from this one (the previous one only did 3 epochs anyways)
+
+pushed (and pulled into fidel-ts main worktree on engaging) some changes to fix up suite resumption. untested, but will test on the next stage of training lynx and tgtsf.
+
+lynx_film had an error with tensors not on device. fixed and pushed locally, need to pull on engaging worktree and test again.
+
+---
+
+set up lynx_test to resume and started it again. tgtsf_test is also running again and doing quite well on the test dataset. 
+
+seems like lynx (obviously) started faster, but it might end not as good as tgtsf. curious why. it might need a more aggressive learning rate? Letting it run and seeing if it does end lower.
+
+could be that we need to add gating. but before adding gating, perhaps look at the distributions of unimodal vs multimodal after those runs complete. Also see how film does.
+
+now try looking at per sample metrics (get them first) then work on analysis to see if gating makes sense before implementing gating.
+also try doing raw lynx film. might want to spin up gpus elsewhere to keep all balls rolling (prototype and test elsewhere, and keep long runs on engaging, maybe eventually spin a lot of jobs up also on runpod when doing sweeps and all of the datasets).
+
+once I have per sample metrics working and raw film testing, then we start doing irrelevant text injection. make the text look similar to the text in the dataset (basically just provide it to an LLM and ask it to generate something plausibly similar but not including the same location perhaps), then inject at random times (poisson arrival) from a dataset of irrelevant text generated via LLM api. Can't let it be so simple that it can just look for a location token or weather. Just make it want to look similar but different location, or not about the weather (or even about the weather, no restrictions to be different with some probability). Can label these irrelevant but looks relevant text samples. This is interesting because we are controlling what is and is not real / relevant. Gives a controlled environment to test gating before going to real noisy environments where we don't know ex ante what is signal and what is noise. I really really like this.
+
+I think right now my priority is to get preemptable jobs up, merge lynx and film to get the experiment manager improvements everywhere, put the merged in a new worktree (so I can keep the current experiments running without interruption with disruptive changes), get film raw running, then start irrelevant text injection. Then work on getting good performance on that with possibly gating, possibly residual learning.
+
+---
+
+tgtsf_test ran, and it probably could still have a little juice but it's mostly done. lynx_test finished (early stopping). lynx_film_test is running, as is lynx_film_raw_test, neither on preemptable, but they will be moved to preemptable next. init on login node then run on another partition in resume mode is working.
+
+still debugging per sample metrics after training (pretty close) -- the job was killed. This actually takes a while. Schedule more than an hour (probably two) for an interactive job to run this. It's not the per sample metrics that is the issue, it's really the forward pass. It's probably best to let per sample metrics run while training to avoid forward pass overhead (it isn't really a drag on training). But certainly do this still (interactive) on the jobs that we have already run (and are running).
+
+lynx and film are merged into lynx.
+
+Now while we wait on film jobs, I build the irrelevant text injection, after which we test that on the single test dataset I've been using, then after playing with that I decide what experiments I want to send to all fidel-ts datasets and do a big run. Before doing the big run, probably set up a sweep on the dataset I'm playing with and maybe one more. Those sweeps will inform the hparams for the big run of experiments (for which I might recruit runpod jobs as well).
+
+noiseinjection has an initial commit and a new worktree locally (laptop). That worktree is on the new branch with the new plan and chat. Can work from there.
+
+---
+
+mmitransformer branch has sequence length and no sequence length text encoders, and my own version of mmitransformer with channel description prepending and K global text variate support. It also has the original mmitransformer. we will wait on that until we have a full run of film going and after noiseinjection is done (priorities).
+
+---
+
+lynx film  and lynx are not going to be worth it to run for film paper. we just use lynx film raw and tgtsf and the other benchmarks. we would have to train a unimodal model on the time mmd stuff and its just not worth it. ignore those for now. We learned our lesson and can put that in a blog post somewhere sometime down the road linking to rohan and lucas beyer's work.
+
+time mmd seems functional. on to ttc and mtbench (goal: friday). then on to getting the benchmarks down (goal: weekend)
+
+---
+
+friday: ttc basically functional, just need to finish out filtering ttc medical for the ones that don't have enough given input len output len and split. plan made, just need to implement and test with ttc_test.yaml suite. Then we bring in the benchmarks (weekend).
+
+---
+
+saturday: ttc finished and functional. plan made for ansari model(s) and embeddings improvements. those should be done ideally sunday, and by 23d we ideally have informer, fedformer, time-lllm, timecma, leret, timesfm-2.5, chronos, tirex, tempo, tiny-tsm, pfn-ts (should be straightforward to get the pretrained from HF, and the others should be straightforward ports given source code.). Goal is to have that by 22d (monday) and 23d (tuesday) set up configs and initialize runs then set going on preemptable.
+
+---
+
+sunday: embeddings improvements worked on and trying to more deeply understand the data provision. need to test and ensure it works properly, then implement ansari (should be pretty easy the model, the embedding updates were needed to be able to get average aggregated embeddings for ansari). Ideally that's done monday, and by tuesday we have the benchmarks, and set up some runs.
+
+---
+
+monday: embeddings test appears to be working on fidel ts. haven't re-tested ttc or time-mmd. still need to do that. Also now that average embeddings are working we can try the zhanghanbest test, and also start bringing in the rest of the benchmarks. then we can test them, then set up runs. 
+
+---
+
+12/28: ttc and time-mmd are running great. those were not broken. now testing zhanghanbest (ansari) and bringing in the rest of the benchmarks. 
+- zhanghanbest works on patchtst and dlinear, but does not work on sundial or time-moe due to cached code incompatibilities (you really have to make a repository and dependencies compatible with a pretrained, and that's time consuming.). so we will ignore those for now when implementing benchmarks including zhanghanbest. I have a plan in a chat to possibly create a separate set of requirements for time-moe, and a new option in dataloader for sundial to make these compatible, but that's lower priority than the non-foundation model benchmarks.
+- informer and fedformer are in the works. required adding some time features. testing fedformer, haven't tested informer yet. fedformer is pretty close to working, but should keep fixing (maybe a couple more bugs). after those are worked out, I think informer will be pretty straightforward since it uses the same temporal marks / time features as fedformer that are new to the repo.
+
+---
+
+01/02: fedformer and informer functional. leret functional on the benchmarks_leret branch. benchmarks branch has llm embeddings and is working on TimeCMA and Time-LLM and has general llm embedding support. Currently working on debugging `python -m cli.inference generate time_mmd_traffic model_configs/llm_embedding/gpt2.yaml` to get it working, then need to try other datasets to generate, then test timecma experiment suite, then test time-llm. Then we get jobs churning.
+
+for 01/03, should really get some jobs going for models that do run fine now on a worktree on engaging and get them going. that can be done in parallel to time-llm and timecma, and should get started now.
+
+---
+
+01/03: timecma working on time mmd datasets. llm embedding working, but takes a long time ane memory breaks on fidel-ts. need to fix that. time llm working on it, then going to set up and do the runs.
+
+having an issue where we ran out of disk space on chimera_proj. I need to remove a bunch of stuff in MM-TSFlib and mts (checkpoints) which means I need permissions all transferred to me from people who were previosuly in the project, and remove those people from the project. also increase quota. talked to helpdesk and I have to wait for STS on monday AM.  for now going to try running from orcd/scratch (copying entire fidel-ts to there then working there til monday morning)
+
+I currently have something with a venv and data on ~/orcd/scratch/fidel-ts. Can work there. Still need to test the `python -m cli.inference generate-suite configs/experiment_suites/timecma_test.yaml` to make sure it works there (everything works except the fidel-ts datasets, which are now configured to use chunking which is new and untested). `python -m cli.suite run configs/experiment_suites/timecma_test.yaml` also works, except the fidel-ts dataset. Test that, and also simultaneously test time-llm.
+
+timecma_test llm embeddings done on orcd/scratch/fidel-ts for everything but the fidel-ts dataset (nyc traffic speed), and that has a job queued for 6 hours on a h200 via sbatch.
+
+time llm also was taking forever on the forward llm pass (smallest gpt2 variant 124M params) so I gave it 6 hours on an l40s to try to see how far it gets, also via sbatch.
+
+mmtsflib is implemented but not tested. need to run the llm embeddings with the new prompt (on time mmd only for now), then run the test (on time mmd only for now). 
+
+I think by sunday we should have time-llm functional. timecma is functional except some stuff with memory on fidel-ts. trying to fix that tonight (saturday). THen starting the week we actually run everything. Also on Monday we put film in MMVision, test small, and run it in that repository.
+
+I think sunday first priority is to set up and start the runs for film raw on everything. one job per fidel-ts dataset, and one job for all of time mmd and ttc, all of those jobs initialized then put on preemptable. then back to getting time-llm and timecma up as well as mmtsflib.
+
+---
+
+01/04: set up runs for film raw on all datasets in configs/experiment_suites/lynx_film_raw/ and need to initialize then run those, but I want to do that *off scratch* so I wait til monday when engaging engineers can transfer permissions and expand quota to actually run these jobs (and destroy the old checkpoints from mmtsflib and mts that are hogging disk space)
+
+progress tracking and resumption for chunked llm embeddings untested and currently running 6 hour job on sbatch.
+
+mmtsflib appears to be working with llm embeddings. time llm appears to be working.
+
+tomorrow is fixing up chimera_proj (permissions and quota), running the fidel-ts jobs, then getting the other runs up and going (including on runpod where I have credits -- get through it all fast). need to verify that my implementations somewhat match original papers where tested on the same data, then run on fidel-ts datasets. As part of that, check whether my completed tgtsf run matches the original fidel ts paper. also monday is implementing and testing film on mmvision.
+
+the plan for film implementation is ready in MMVision. just get opus to implement, then test on h200. for vision we won't show the other methods, just ours to illustrate that it works.
+
+---
+
+01/05: timecma_llm_embedder put the llm_embeddings under the time series directory (but that's where it looks for them) so it's all good. I thought it wasn't working but it was, just I was looking in the wrong place. Verification of the progress works as well. Running the completion (train done, now working on val then test, hopefully done after the next 6 hour run. resumption looks good from the log.). I need to copy that llm embeddings directory back to chimera_proj after it completes in orcd/scratch.
+
+I got permissions fixed and 10 TB quota on chimera_proj, so moving back there. Can start jobs again.
+
+initializing fidel-ts lynx film raw runs on chimera_proj, but before I run those I want to hparam opt film on nyctraffic since the fidel-ts reported fiats is 0.407 and I'm not getting that, maybe some hparam opt can help us, particularly since the first epoch does all the work. working on getting hparam opt up since I need to be beating the reported in fiats on fidel ts. some hparam opt on nyctraffic, then apply those changes to the other fidel-ts, get it better than reported in fidel-ts, then we are in business.
+
+mmvision film is under implementation, then will test on engaging.
+
+---
+
+01/06: mostly working on sweep management particularly with job resumption due to slurm cluster. going to test those tomorrow on test sweeps (see test resumption sweep plan in context), then get actual sweeps on a couple time mmd and ttc. Then we will sweep nyc traffic on fidel ts. once we are happy with performance, we do the full runs with good hparams. then we get runs going for all the benchmarks on fidel-ts that we don't have from other papers. We also run fidel-ts on the time-mmd and ttc. 
+
+mmvision film also needs to be tested, and that can be done in parallel.
+
+
+---
+
+for time mmd traffic, looks like 0.0002-0.0003 learning rate, 8 batch size, d_model 512, e_layers 2, and n_heads doesn't really matter. more for low batch size, less for high batch size.
+
+trying ttc medical now. 
+
+working on simultaneous runs in a single location (engaging on my user, brianna's user, and phoebe's user) so we can run several jobs simultaneously for fidel-ts sweeps. in sweeps-lock branch.
+
+time mmd looks way way too good. looks like there was some lookahead bias. fidel-ts has a way to have known future events (like scheduled downtime) and that is usable in training to predict. I think we put the historical stuff (not known in advance) into that category (assumed known in advance) when doing time mmd. perhaps fidel-ts is fine and time-mmd is not fine. if that is the case, then clearly we need to fix time mmd and make the documentation much, much, much, much, much more precise and clear on these points and change the nomenclature of these inputs and make clear documentation about them.
+ 
+---
+
+01/10: fixing the timemmd and ttc lookahead bias issues and giving very clear documentation on timestamp semantics.
+
+once that is fixed, will merge in sweeps_lock [done], re-run time-mmd and ttc sweeps (testing multi-with-lock [done]), then ensure we are doing decent compared to benchmarks from original papers (also run the unimodal from original mmtsflib / time-mmd and ttc papers to see if those are also doing oddly well inside my repo, or if it's just lynx film raw). we know we are outperforming fiats on fidel-ts already so we are good there.
+
+then we spin up hparam sweeps on fidel-ts and run those. in parallel we keep tuning on timemmd and ttc until we are beating the benchmarks from original papers. we also run the benchmarks we want on on fidel-ts that are not run in the fidel-ts paper. 
+
+deadline to have all that spun up is monday 01/12. and have it spinning on runpod and with brianna and phoebe's users on mit as well as my users on preemptable.
+
+things I can do while waiting for implementation: make a list (and configs and sbatch scripts) for the benchmarks to run on fidel-ts.
+
+working on test set evaluation from experiment configs and suite configs at the moment.
+
+for 01/11: I think the main thing is to just take the good looking config from the sweeps on ttc and time mmd with our fixes, and run it across all time mmd and ttc. Should be quick. Compare to the original papers and ansari. Also run raw iTransformer and compare to the original papers and ansari. then set up the runs for lynx-film-raw and benchmarks on fidel-ts and get those going and ask phoebe and brianna to spin up some runs on their users. Basically now it's spinning up and monitoring jobs. Fixes are basically complete, except the cli fixes for evaluation on test, which I will work on while runs are going (spinning up runs is higher priority.)
+
+---
+
+01/11: test set evaluation is working now. I found the lookahead bias from the lack of a purge period between train and val, making val look too good, but test looks like the original papers (phew). we also yesterday fixed the y_hetero vs x_hetero and timestamp_semantics issues. We have added thorough documentation of all of these issues. 
+
+I am currently looking into using the same train/val/test splits as original papers (for consistency), but only training on [:-pred_len] of the train split to avoid the lookahead into the val set. I need to run the benchmarks on fidel-ts, and I need to run lynx-film-raw on all of time mmd and ttc. 
+
+I am concerned that lynx-film-raw is performant on large training data, but not on small training data. Perhaps with small training data (as I had originally imagined), the llms win out (closer to zero shot) like time-llm and informer and others. First things first, get everything done then I have some results. Once I have initial results, then we ensure we hparam tune benchmarks on fidel-ts to ensure we are playing apples-to-apples, and then we try tweaking lynx-film-raw on smaller data sets perhaps shoving in the text generated by timecma, informer, etc. into the text input to see if that is helpful. I think also a mental intuitive model of all the benchmarks will be useful to compile to understand the differences once we have the results.
+
+---
+
+01/12: see running_experiments.md for progress.
+
+I think a couple plots that would be nice would be average text sequence length vs performance, showing that I do well when there is a lot of text. Somewhere I am not doing well is not outperforming unimodal always on time mmd and ttc. Looking into options for that. I could show lynx_film (not lynx_film_raw), which is a nice result in itself (and ablation) showing that learning the residual is helpful, but you get better performance when text is useful by learning the entire signal. I would need to train lynx_film and lynx_film_raw on everything. Also looking into a hybrid with opus that could learn the entire signal *and* not underperform unimodal. 
+
+Something else possibly worth looking into is applying to patchtst.
+
+I think for now priority before running lynx_film_raw on fidel-ts is to get a few more sweeps on nyc traffic. I need a trained itransformer unimodal baseline on each fidel-ts dataset, so I should start those for sure and keep those checkpoints saved. Then I can run lynx_film on everything to compare. Note that this is far more important on time mmd and ttc than on fidel-ts, so actually let's get those itransformer results on time mmd and ttc first. Maybe a quick sweep for itransformer parameters. 
+
+planned results:
+- [point A] We know already that FIATS outperforms unimodal on fidel-ts test sets (except CAISO, where it underperforms). So we show that we do more efficient and more performant on these big datasets where we know multimodal is helpful, and compare to the other multimodal methods and show the loss curves and show we are better than other multimodal and multimodal outperforms unimodal.
+- [point B] Then for time mmd and ttc we show that we can beat unimodal every time, which multimodal consistently can't do as shown in ansari (zhanghan). However, time mmd method (prediction level ensemble) consistently does better multimodal than unimodal (naturally). But, we show that we do better than time mmd method on the big datasets (point A).
+- [point C] we show that learning a residual can be damaging to performance, and learning the full signal is better. 
+- [point D] we show that prediction level ensembles with unimodal baseline are useful (just like time mmd method), and present other methods for ensuring that text can be used, but does not pollute time series signal when alternative modality isn't useful. Hypothesis is that prediction level ensembles are most useful with low data, and the other methods can outperform with high data. We show ablations on various ways to mix with gating.
+
+so in summary we do better than alternatives when data is available (point A), and we consistently beat unimodal (point B). We show that learning a residual loses information (point C) and it's better to learn the full signal. We also show that prediction level ensembles are useful and present other methods for ensuring that the text signal is useful but not hampering the time series signal (point D).
+
+I think the priorites for high compute usage are the following:
+- (2) tgtsf loss curves on fidel-ts
+- (1) itransformer pretraining on fidel-ts
+- (3) other benchmarks on fidel-ts (leret, timecma, time-llm, zhanghanbest-patchtst, zhanghanbest-dlinear, mmtsflib-fedformer)
+- (4) lynx_film_raw initial on fidel-ts
+- (5) lynx_film on fidel-ts (after pretraining complete)
+- (6) lynx_film_enhanced select configurations on fidel-ts (after testing, low compute ablations, and itransformer pretraining complete)
+- (7) mmvision best configuration of lynx film enhanced or lynx film raw
+
+low compute quick runs:
+- (1) itransformer pretraining on time mmd and ttc [training complete, evaluation pending]
+- (2) lynx_film on time mmd and ttc [running]
+- (3) lynx_film_enhanced ablations on time mmd and ttc
+
+experimentation:
+- (-1) feed the gpu [in progress]
+- (0) lynx_film_enhanced working with all configurations
+- (1) mmtsflib working with fedformer (performant in original paper) -> able to run on fidel-ts
+- (2) zhanghanbest working with patchtst and dlinear (performant in original paper) -> able to run on fidel-ts
+- (3) mmvision best configuration of lynx film enhanced or lynx film raw
+
+
+high compute mapping:
+- [mit_preemptable, l40s x 4] [running] sweep lynx_film_raw nyc traffic (limit until wednesday)
+- [sched_mit_sloan_gpu_r8, a100] [running] timellm on fidel-ts
+- [sched_mit_sloan_gpu_r8, a100] [running canada, OOM caiso] timecma on fidel-ts (embeddings first)
+- [runpod, l4 x 6] [need to spin more up] itransformer pretraining on fidel-ts, using the bash configs (from original branch in workspace)
+- [runpod, a40 x 6] tgtsf (fiats) on fidel-ts, using the bash configs (from original branch in workspace)
+- [runpod, rtx 4000 ada x 5] leret on fidel-ts
+- [runpod, l40s x 5] lynx_film_raw initial (nyc_traffic already complete)
+... (completion)
+- [tbd, x5] lynx_film (after pretraining complete)
+- [tbd, x6 x nconfigurations] lynx_film_enhanced configurations (after testing and itransformer pretraining complete)
+- [tbd, x6] zhanghanbest-patchtst (after experimentation) 
+- [tbd, x6] zhanghanbest-dlinear (after experimentation)
+- [tbd, x6] mmtsflib-fedformer (after experimentation)
+- [tbd, x1] mmvision best configuration of lynx film enhanced or lynx film raw
+
+low compute mapping:
+- [mit_normal_gpu, l40s] low compute quick runs
+- [mit_normal_gpu, l40s] experimentation
+- [runpod, 1x] bumping gpu utilization up (testing, don't scp over results and don't log to wandb, use a config set to disable wnadb)
+
+rest of today:
+- mapping of compute to jobs for high compute usage
+- start of high compute jobs
+- test and verify lynx_film_enhanced functions
+
+tomorrow: 
+- low compute quick runs on one mit_normal_gpu 
+- experimentation on the other mit_normal_gpu (lynx film enhanced -> mmtsflib + zhanghanbest)
+- get that bumping gpu utilization up working
+
+runpod -> engaging:
+- runpod jobs will complete on their pod, then the results must be scp-ed to engaging (output subfolder recursive) so that other jobs can use them. 
+- a storage volume will contain the persistent storage of data and output for all runpod jobs, and will be attached to all pods (very cheap per month). this allows pods to be spun up and deleted at will without having loads of scp.
+- spin pods on community cloud for pricing and availability
+- one pod per fidel ts dataset, and run everything on that dataset on that pod (for storage reasons)
+- use <command> | tee /workspace/command.log to log output 
+- also use `capture-pane -S - -E -; save-buffer /workspace/session.log` after cntl-b to save entire tmux session to a log file
+- to scp, use `scp -P <port> -i ~/.ssh/id_ed25519 root@<IP>:/workspace/session.log ~/Downloads/` if the exposed TCP ssh command given in runpod is `ssh root@<IP> -p <port> -i ~/.ssh/id_ed25519`
+
+compute efficiency:
+- runpod shows that I'm using 20% cpu utilization and 0% gpu utilization. nvidia-smi shows 3-4% gpu utilization on average. this is for lynx_film on canada. I need to figure out how to bump that utilization waaaayyy up. that will make jobs go significantly faster and I can iterate faster. I'm using a lot of VRAM, but something is cpu bound, not gpu bound (bad)
+
+---
+
+01/15: tensor cache debugging. optimizing disk space and memory usage during cache generation. fixed issues with number of news items and shapes into models. fixed some issues with torch compile and noncontiguous arrays in models (all of lynx film raw time mmd ttc seems to run now). found and fixed an issue with hetero striding, and am ensuring everything has full text resolution.
+
+an issue: running each time mmd and ttc individually -> no contiguous errors. running them sequentially in suite -> contiguous errors.
+an issue: jena atmospheric -> cuda errors (related to many channels) -- solved. 
+
+a note: different batch sizes can use the same tensor cache.
+a note: the contiguous error has a chat open with auto and we can implement and test the time mmd ttc again to ensure it runs.
+a note: we can validate that tensor cache exists compatible with a job before submitting the job.
+a note: the contiguous progress should make it possible to use the pytorch compile on the high compute jobs.
+
+goals this afternoon:
+- tensor cache generated and trained from cache with high gpu utilization and good speed. (done)
+
+goals later today: 
+- have a runpod instance per fidel-ts dataset up, each running their respective tensor caching. 
+- have timecma llm embedding completed on the A100s (done) and start the MMTSFlib llm embeddings on the A100s. 
+- remove torch compile from ttc and time mmd and run those with full resolution on lynx_film_raw and lynx_film (itransformer doesn't need to be rerun). 
+
+state 1 am 01/16: 
+- tensor cache being generated on runpod-nyc-traffic (estimate: 2 days) and on runpod-germany (estimate: overnight) going to make sure it works on germany then spin up the rest of the pods.
+-- creating a plan to have tests to ensure a new tensor cache implementation matches the current one, and to be able to use that to write one in polars that would be 100x more efficient. if we can get that working tomorrow, we can iterate on tensor cache much faster (an hour maybe rather than 50 hours for nyc traffic) which would help us ensure we can get the deadline in the case we need to regenerate tensor cache
+- lynx_film_raw time mmd and ttc worked great on orcd/scratch and the resumption IDs are in the config, but cli.test suite (eval) still having issues -- working through that.
+- mmtsflib works great with itransformer as unimodal, but fedformer as unimodal is still having some issues.
+- still need to get to testing lynx film enhanced, mmvision, and zhanghanbest.
+
+---
+
+state 01/16 11 am:
+- tensor cache polars and direct data access optimizations lead to massive speed ups (20x) in tensor cache generation. -- nyc traffic speed on track to finish cache generation in like 10 minutes
+- using tensor cache in training on canada photovoltaics appears to be working great (but needed to reduce batch size since many channels on canada photovoltaics) -- canada photovoltaics doing about one epoch in 12 minutes and consistently at 50% gpu utilization on an ada 5000 (14% VRAM) so this could fit on a smaller GPU (half of ada 5000)
+ 
+state 01/16 11 pm:
+
+worktree monitor:
+- pytorch compile spinner
+- cli live monitors for step and batch level loss and gpu utilization, vram, cpu utilization, ram (these should all be time on x-axis and dynamic -- ideally a package exists -- wandb LEET)
+
+worktree tensor_cache_polars (in lynx home locally):
+- work on the experiment tracking and planning runs, and getting things that are broken to run properly.
+- create an orchestrator that does the following: runs training on a suite. then pulls up the saved metadata and experiments in that suite, runs evaluation on that suite and tees the results to the experiment directory. right now cli.test suite requires resumption ids. I think this makes sense as a flag in cli.suite run like --include-evals. evaluation is also not loading the right configs (model shapes) as training, making cli.test not work. this should address that and fix it. 
+
+principles:
+- get all initial runs done first before hparam optimization. hparam optimization feels feasible with speedups.
+- ideally we have all initial runs done with wandb offline and monitorable with wandb leet, then wandb sync.
+- once we have initial runs and some hparam optimization, we can also try the lower prediction horizon (lower priority)
+
+some planning:
+- before FIATS, lynx_film_raw, lynx_film runs and itransformer runs, we want the tensor caches generated. then we go sequential itransformer -> lynx_film, and lynx_film_raw can be done immediately. for lynx_film_raw keep early stopping really low like 2-3 since we know it should early stop fast. save compute.
+
+- time llm and timecma we don't really care. they don't use it. just do those on the Al00s. keep them going (only on fidel-ts).
+
+- we need to get mmtsflib-fedformer, zhanghanbest-patchtst, and zhanghanbest-dlinear working fine on interactive -> can set up the runs. those can be sequentially after itransformer, lynx_film, lynx_film_raw.
+
+- then we get lynx_film_enhanced working -> get those runs (possibly on new pods to ensure we get them done)
+
+- for mmtsflib, we can run llm embedding before we actually have it running with fedformer.
+
+- lynx_film_raw with the tensor cache on nyc traffic speed looked like the val loss was ridiculously low (like zero). not sure why. having opus look into that. hopefully not a big but with tensor cache.
+
+- for comparison with fidel-ts, we will need to keep the hetero stride in a version, and also have a version with full resolution to show the gains. the ones we will really care about are the ones with the full resolution. For the hetero stride, just compare FIATS and my models of choice. for the other benchmarks we use full resolution.
+
+- we are going to need to go through experiments saved to output and see whether they were generated with full resolution or not (for example, early timellm runs may not have had full resolution, though later might have had. just an example, I don't really remember if timellm uses hetero stride). Part of evaluating results.
+
+- test monitor branch on ttc -> merge into tensor_cache_polars
+
+so right now running:
+- timellm, mmtsflib llm embeddings (A100s)
+- [before I sleep] tensor cache generation for each fidel-ts dataset with the bug fix (on engaging)
+
+tomorrow running:
+- on mit_normal_gpu: make sure the test after train works seamlessly (important for all subsequent runs)
+- on mit_normal_gpu: test monitor -> use it on runpods (important for all subsequent runs, and for paper graphics and statistics)
+- ensure that we can use tensor cache for hetero stride
+- on mit_preemptable: FIATS (full resolution); FIATS (original resolution)
+- on mit_preemptable: leret (full resolution)
+- port tensor caches to runpods -> itransformer -> (check against fidel-ts paper) -> lynx_film_raw -> lynx_film (on runpods, all full resolution) -> lynx_film_raw (original resolution)
+- on mit_normal_gpu: look at whether lynx_film_raw and lynx_film stack up on time mmd and ttc against papers -> if not test lynx_film_enhanced -> lynx film enhanced ablations on time mmd ttc (with results all stored and tabulated) -> best on runpods
+- on mit_normal_gpu: make sure eval works on the completed timellm runs -> get the evals -> ensure reasonable 
+- on mit_normal_gpu: mmtsflib-fedformer, zhanghanbest-patchtst, zhanghanbest-dlinear working -> submit jobs with tensor cache on engaging or runpods, whichever free
+- on mit_normal_gpu: fix the resume error for nyc traffic for timellm and get that on A100 -> fix the timecma issues and get timecma running on A100s
+- on mit_normal_gpu test mmvision (H200) -> run on mit_normal_gpu (H200)
+
+---
+
+01/17 noon:
+- leret configs up, looking at running. tensor caches all generated. need to sleep before doing the monitor and test after train testing -> fiats, lynx_* runs. mmtsflib, timecma, zhanghanbest all require some sleep before experimentation then running.
+
+---
+
+
+[damonp@eosloan chimera_proj]$ du -h --max-depth=2 . | sort -h
+du: cannot read directory ‘./mts/data/TTC/Medical’: Permission denied
+0       ./git/sha1collisiondetection
+0       ./ls
+4.0K    ./chronos-forecasting/ci
+4.0K    ./git/sha1
+4.0K    ./mts/.locks
+8.0K    ./fidel-ts/text_noise_injection
+12K     ./chronos-forecasting-wasserstein/.github
+12K     ./damon-workspace/mts-amazon-monthly-branch
+12K     ./fidel-ts/requirements
+12K     ./git/bin-wrappers
+12K     ./git/block-sha1
+16K     ./amazon-data/docs
+16K     ./fidel-ts/experiments
+16K     ./fidel-ts/mit_sbatch
+20K     ./chronos-forecasting/.github
+20K     ./fidel-ts/examples
+20K     ./fidel-ts/filtering
+20K     ./mts/scripts
+20K     ./mts/utils
+24K     ./chronos-forecasting-wasserstein/src
+24K     ./fidel-ts/.pytest_cache
+24K     ./git/sha256
+24K     ./git/subprojects
+24K     ./MM-TSFlib/.pytest_cache
+24K     ./mts/configs
+28K     ./fidel-ts/analysis
+28K     ./mts/__pycache__
+32K     ./fidel-ts/visualization
+32K     ./git/negotiator
+36K     ./fidel-ts/prompt_templates
+36K     ./fidel-ts/scripts
+36K     ./fidel-ts/wandb
+40K     ./git/ewah
+40K     ./git/oss-fuzz
+40K     ./MM-TSFlib/scripts
+44K     ./git/.github
+48K     ./mts/data_provider
+56K     ./fidel-ts/docs
+56K     ./Time-Series-Library/data_provider
+56K     ./Time-Series-Library/exp
+72K     ./MM-TSFlib/tests
+76K     ./chronos-forecasting-wasserstein/test
+76K     ./Time-Series-Library/utils
+80K     ./git/ci
+84K     ./fidel-ts/sample_indexes
+88K     ./fidel-ts/notes
+96K     ./git/templates
+104K    ./chronos-forecasting-wasserstein/scripts
+116K    ./git/mergetools
+128K    ./git/sha1dc
+132K    ./mts/models
+136K    ./fidel-ts/model_configs
+136K    ./git/xdiff
+140K    ./chronos-forecasting/src
+140K    ./fidel-ts/evaluation
+140K    ./fidel-ts/tests
+156K    ./Time-Series-Library/pic
+160K    ./fidel-ts/runs
+160K    ./git/trace2
+164K    ./Time-Series-Library/layers
+172K    ./amazon-data/lib
+188K    ./MM-TSFlib/results
+192K    ./chronos-forecasting/test
+244K    ./fidel-ts/data_configs
+248K    ./fidel-ts/future
+260K    ./MM-TSFlib/data_provider
+272K    ./MM-TSFlib/utils
+296K    ./fidel-ts/cli
+296K    ./git/reftable
+300K    ./fidel-ts/configs
+300K    ./Time-Series-Library/models
+316K    ./git/refs
+340K    ./amazon-data/logs
+340K    ./git/perl
+352K    ./fidel-ts/data_provider
+364K    ./mmvision/preprocessed_features
+372K    ./MM-TSFlib/exp
+376K    ./mts/layers
+380K    ./git/gitweb
+388K    ./fidel-ts/utils
+436K    ./fidel-ts/embedder
+460K    ./fidel-ts/exp
+460K    ./MM-TSFlib/layers
+472K    ./fidel-ts/models
+500K    ./chronos-forecasting/figures
+612K    ./fidel-ts/layers
+668K    ./chronos-forecasting-wasserstein/figures
+856K    ./git/gitk-git
+912K    ./MM-TSFlib/models
+1004K   ./chronos-forecasting-wasserstein/.git
+1.1M    ./Time-Series-Library/scripts
+1.2M    ./git/contrib
+1.3M    ./git/compat
+1.5M    ./Time-Series-Library/tutorial
+1.7M    ./git/git-gui
+1.9M    ./chronos-forecasting-wasserstein
+2.7M    ./git/builtin
+3.2M    ./fidel-ts/logs
+4.1M    ./damon-workspace/fidel-ts-worktree-lynx
+4.4M    ./intraday/1h-bins
+4.9M    ./MM-TSFlib/test_results
+7.4M    ./mts/.git
+7.5M    ./git/Documentation
+7.9M    ./mts/results
+9.0M    ./chronos-forecasting/.git
+9.2M    ./mmvision/preprocessed_frames
+9.3M    ./MM-TSFlib/data
+9.9M    ./fidel-ts/.git
+10M     ./MM-TSFlib/.git
+14M     ./git/po
+17M     ./git/t
+21M     ./mmvision/logs
+45M     ./fidel-ts/sbatch_logs
+64M     ./mts/data
+79M     ./Time-Series-Library/.git
+82M     ./Time-Series-Library
+231M    ./damon-workspace/fidel-ts-worktree-film
+269M    ./git/.git
+323M    ./git
+421M    ./fidel-ts/HF_cache
+459M    ./fidel-ts/checkpoints
+526M    ./fidel-ts/LLM_cache
+655M    ./from-scratch
+655M    ./from-scratch/chronos-forecasting
+705M    ./models
+705M    ./models/run-ce-dominick
+995M    ./hannah_evals/run_62632863
+995M    ./hannah_evals/run_62632901
+1.1G    ./chronos-forecasting
+1.1G    ./chronos-forecasting/scripts
+2.0G    ./hannah_evals
+5.6G    ./mmvision/MMVision-worktree-branch-gatingexperts
+6.0G    ./fidel-ts/output
+6.4G    ./MM-TSFlib/.venv
+6.5G    ./mts/.venv
+6.6G    ./damon-workspace/mts-amazon
+6.8G    ./damon-workspace
+7.7G    ./fidel-ts/.venv
+9.3G    ./fidel-ts/data
+12G     ./mmvision/SEED-DV
+15G     ./mts/models--meta-llama--Llama-3.1-8B-Instruct
+25G     ./fidel-ts
+35G     ./intraday/1m-bins
+65G     ./MM-TSFlib/checkpoints
+71G     ./MM-TSFlib
+78G     ./chronos_datasets
+78G     ./chronos_datasets/hugging_face_datasets
+88G     ./amazon-data
+88G     ./amazon-data/processed_datasets
+261G    ./mmvision/MMVision
+278G    ./mmvision
+1.2T    ./mts/checkpoints
+1.3T    ./intraday/raw
+1.3T    ./mts
+1.4T    ./intraday
+3.1T    .
