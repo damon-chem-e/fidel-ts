@@ -550,28 +550,47 @@ def generate(
                 # This enables 20x faster shared table building by bypassing __getitem__
                 # Safe for tensor cache generation (one-time batch operation)
                 original_preload = getattr(exp_args, 'preload_hetero', False)
-                exp_args.preload_hetero = True
-                if not original_preload:
-                    console.print("  [dim]preload_hetero: False -> True (for direct access optimization)[/dim]")
 
-                # Set verbose flag for hetero data preloading messages
-                exp_args.verbose_hetero_preload = verbose
+                def _try_generate(force_preload: bool) -> Path:
+                    """Attempt tensor cache generation with specified preload setting."""
+                    if force_preload:
+                        exp_args.preload_hetero = True
+                        if not original_preload:
+                            console.print("  [dim]preload_hetero: False -> True (for direct access optimization)[/dim]")
+                    else:
+                        exp_args.preload_hetero = original_preload
 
-                console.print("  [yellow]Initializing Data_Provider...[/yellow]")
-                data_provider = Data_Provider(exp_args, buffer=not exp_args.disable_buffer, console=console)
+                    # Set verbose flag for hetero data preloading messages
+                    exp_args.verbose_hetero_preload = verbose
 
-                generator = TensorCacheGenerator(
-                    data_provider=data_provider,
-                    cache_dir=cache_dir,
-                    config=cache_config,
-                    chunk_size=chunk_size,
-                    verbose=True,
-                    console=console,  # Enable Rich nested progress bars
-                    use_polars=use_polars
-                )
+                    console.print("  [yellow]Initializing Data_Provider...[/yellow]")
+                    data_provider = Data_Provider(exp_args, buffer=not exp_args.disable_buffer, console=console)
 
-                console.print(f"  [yellow]Generating for splits: {split_list}[/yellow]")
-                cache_path = generator.generate(flags=split_list)
+                    generator = TensorCacheGenerator(
+                        data_provider=data_provider,
+                        cache_dir=cache_dir,
+                        config=cache_config,
+                        chunk_size=chunk_size,
+                        verbose=True,
+                        console=console,
+                        use_polars=use_polars
+                    )
+
+                    console.print(f"  [yellow]Generating for splits: {split_list}[/yellow]")
+                    return generator.generate(flags=split_list)
+
+                # Try with direct access optimization first, fallback to iterative if unsupported
+                try:
+                    cache_path = _try_generate(force_preload=True)
+                except ValueError as e:
+                    if "too many values to unpack" in str(e):
+                        console.print(
+                            "  [yellow]⚠ Dataset does not support direct access optimization "
+                            "(e.g., TimeMMD). Falling back to iterative mode.[/yellow]"
+                        )
+                        cache_path = _try_generate(force_preload=False)
+                    else:
+                        raise
 
                 # Show summary for this cache
                 metadata = TensorCacheMetadata.load(cache_path / 'metadata.json')

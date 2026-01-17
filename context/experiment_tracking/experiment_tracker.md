@@ -61,11 +61,11 @@
 | Dataset | Status | Compute |
 |--------|----------|--------|
 | Canada Photovoltaics | [ ] | RunPod (pod:canada) |
-| Germany Renewable | [~] | RunPod (pod:germany) |
-| NYC Traffic Speed | [~] | RunPod (pod:nyc_traffic) |
+| Germany Renewable | [ ] | RunPod (pod:germany) |
+| NYC Traffic Speed | [ ] | RunPod (pod:nyc_traffic) |
 | California ISO | [ ] | RunPod (pod:caiso) |
-| Bear Room | [ ] | RunPod (pod:bear_room) |
-| Jena Atmospheric Physics | [✓] | RunPod (pod:jena) |
+| Bear Room | [✓] | RunPod (chimera_proj [need to port]-> pod:bear_room) |
+| Jena Atmospheric Physics | [ ] | RunPod (pod:jena) |
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
