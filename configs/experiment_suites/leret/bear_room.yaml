@@ -34,10 +34,10 @@ suite:
           text_embedding_stride: "full"  # Full resolution (LeRet may not use hetero data, but safe to include)
           input_len: 288      # 1 day at 5-min intervals (288 = 24h * 12)
           output_len: 144     # 12 hours at 5-min intervals (second smallest: {12, 144, 288, 576})
-          batch_size: 768
+          batch_size: 128
           learning_rate: 8.66e-4
           patience: 5
-          epochs: 50  # Total epochs (pretrain + finetune)
+          epochs: 20  # Total epochs (pretrain + finetune)
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -46,7 +46,7 @@ suite:
           # LeRet-specific two-stage training
           leret:
             training_stage: "both"
-            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_epochs: 10  # 50% of total epochs (10/10 split)
             pretrain_loss: "mse"
             finetune_loss: "mse"
             pretrain_learning_rate: 1e-3
