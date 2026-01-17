@@ -74,11 +74,11 @@ def adjust_learning_rate(optimizer, epoch, args, return_rate=False):
 class EarlyStopping:
     """
     Early stopping utility to prevent overfitting during model training.
-    
+
     This class monitors validation loss and stops training when the loss stops
     improving for a specified number of epochs (patience). It also handles
     model checkpointing by saving the best model encountered during training.
-    
+
     Attributes:
         patience (int): Number of epochs to wait without improvement before stopping
         verbose (bool): Whether to print messages about validation loss improvements
@@ -87,11 +87,12 @@ class EarlyStopping:
         early_stop (bool): Flag indicating whether to stop training
         val_loss_min (float): Minimum validation loss encountered
         delta (float): Minimum change required to qualify as an improvement
+        best_epoch (int): Epoch number when the best checkpoint was saved (1-indexed)
     """
     def __init__(self, patience=7, verbose=False, delta=0):
         """
         Initialize the EarlyStopping monitor.
-        
+
         Args:
             patience (int, optional): Number of epochs to wait for improvement before
                                     stopping training. Defaults to 7.
@@ -107,29 +108,33 @@ class EarlyStopping:
         self.early_stop = False
         self.val_loss_min = np.inf
         self.delta = delta
+        self.best_epoch = None
 
-    def __call__(self, val_loss, model, path):
+    def __call__(self, val_loss, model, path, epoch=None):
         """
         Check if training should stop based on validation loss and save model if improved.
-        
+
         This method is called after each epoch to evaluate whether training should
         continue. It compares the current validation loss with the best seen so far
         and updates counters accordingly.
-        
+
         Args:
             val_loss (float): Current epoch's validation loss.
             model (torch.nn.Module): The model to be saved if improvement is detected.
             path (str): Directory path where the model checkpoint should be saved.
-        
+            epoch (int, optional): Current epoch number (1-indexed). If provided,
+                                   best_epoch will be tracked when checkpoint is saved.
+
         Side Effects:
             - Updates self.early_stop flag if patience is exceeded
             - Saves model checkpoint if validation loss improves
             - Updates internal counters and best score tracking
+            - Updates self.best_epoch when a new best checkpoint is saved
         """
         score = -val_loss
         if self.best_score is None:
             self.best_score = score
-            self.save_checkpoint(val_loss, model, path)
+            self.save_checkpoint(val_loss, model, path, epoch)
         elif score < self.best_score + self.delta:
             self.counter += 1
             print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
@@ -137,31 +142,39 @@ class EarlyStopping:
                 self.early_stop = True
         else:
             self.best_score = score
-            self.save_checkpoint(val_loss, model, path)
+            self.save_checkpoint(val_loss, model, path, epoch)
             self.counter = 0
 
-    def save_checkpoint(self, val_loss, model, path):
+    def save_checkpoint(self, val_loss, model, path, epoch=None):
         """
         Save the model checkpoint when validation loss improves.
-        
+
         This method saves the model's state dictionary to a checkpoint file
         when a new best validation loss is achieved. Handles torch.compile
         by saving the underlying model's state_dict (without _orig_mod prefix).
-        
+
         Args:
             val_loss (float): Current validation loss that represents an improvement.
             model (torch.nn.Module): The model whose state dict will be saved.
             path (str): Directory path where the checkpoint file will be saved.
                        The file will be saved as 'checkpoint.pth' in this directory.
-        
+            epoch (int, optional): Current epoch number (1-indexed). If provided,
+                                   updates self.best_epoch to track when the best
+                                   checkpoint was saved.
+
         Side Effects:
             - Saves model state dict to '{path}/checkpoint.pth'
             - Updates self.val_loss_min with the new minimum validation loss
+            - Updates self.best_epoch if epoch is provided
             - Prints improvement message if verbose mode is enabled
         """
         if self.verbose:
             print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
-        
+
+        # Track best epoch if provided
+        if epoch is not None:
+            self.best_epoch = epoch
+
         # Handle torch.compile: access underlying model to save state_dict without _orig_mod prefix
         # This ensures checkpoints are consistent regardless of compilation status
         # First check if model is wrapped in DataParallel
@@ -179,7 +192,7 @@ class EarlyStopping:
         else:
             # Model not compiled and not DataParallel - save normally
             state_dict = model.state_dict()
-        
+
         torch.save(state_dict, path + '/' + 'checkpoint.pth')
         self.val_loss_min = val_loss
 
@@ -296,6 +309,112 @@ class StandardScaler():
         return (data * self.std) + self.mean
 
 import psutil, os
+from datetime import datetime
+
+
+def format_test_results(per_entity_metrics, best_epoch, checkpoint_path):
+    """
+    Format test evaluation results into a standardized structure.
+
+    Creates a comprehensive results dictionary containing overall metrics (weighted
+    average across entities), per-entity metrics, and metadata for traceability.
+
+    Args:
+        per_entity_metrics: dict mapping entity_id to metrics dict with keys:
+            - 'mse_normalized': float
+            - 'mae_normalized': float
+            - 'mse_denormalized': float (optional)
+            - 'mae_denormalized': float (optional)
+            - 'num_samples': int
+        best_epoch: int, the epoch number of the best checkpoint
+        checkpoint_path: str, path to the checkpoint file used for evaluation
+
+    Returns:
+        dict: Standardized results with structure:
+            {
+                "overall": {
+                    "mse_normalized": float,
+                    "mae_normalized": float,
+                    "mse_denormalized": float (if available),
+                    "mae_denormalized": float (if available),
+                    "num_samples": int
+                },
+                "per_entity": {
+                    "entity_id": {...metrics...},
+                    ...
+                },
+                "metadata": {
+                    "timestamp": str (ISO format),
+                    "best_epoch": int,
+                    "best_checkpoint": str
+                }
+            }
+
+    Example:
+        >>> metrics = {
+        ...     'entity_1': {'mse_normalized': 0.01, 'mae_normalized': 0.05, 'num_samples': 100},
+        ...     'entity_2': {'mse_normalized': 0.02, 'mae_normalized': 0.08, 'num_samples': 200}
+        ... }
+        >>> results = format_test_results(metrics, best_epoch=15, checkpoint_path='checkpoint.pth')
+        >>> results['overall']['mse_normalized']  # Weighted average
+        0.0166...
+    """
+    if not per_entity_metrics:
+        return None
+
+    # Compute weighted averages across entities
+    total_samples = 0
+    total_mse_norm = 0.0
+    total_mae_norm = 0.0
+    total_mse_denorm = 0.0
+    total_mae_denorm = 0.0
+    has_denorm_metrics = False
+    denorm_samples = 0
+
+    for entity_id, metrics in per_entity_metrics.items():
+        num_samples = metrics.get('num_samples', 0)
+        if num_samples == 0:
+            continue
+
+        total_samples += num_samples
+        total_mse_norm += metrics.get('mse_normalized', 0.0) * num_samples
+        total_mae_norm += metrics.get('mae_normalized', 0.0) * num_samples
+
+        # Track denormalized metrics separately (may not be available for all entities)
+        if 'mse_denormalized' in metrics and metrics['mse_denormalized'] is not None:
+            has_denorm_metrics = True
+            total_mse_denorm += metrics['mse_denormalized'] * num_samples
+            total_mae_denorm += metrics.get('mae_denormalized', 0.0) * num_samples
+            denorm_samples += num_samples
+
+    if total_samples == 0:
+        return None
+
+    # Build overall metrics
+    overall = {
+        'mse_normalized': total_mse_norm / total_samples,
+        'mae_normalized': total_mae_norm / total_samples,
+        'num_samples': total_samples
+    }
+
+    # Only include denormalized metrics if available
+    if has_denorm_metrics and denorm_samples > 0:
+        overall['mse_denormalized'] = total_mse_denorm / denorm_samples
+        overall['mae_denormalized'] = total_mae_denorm / denorm_samples
+
+    # Build result structure
+    result = {
+        'overall': overall,
+        'per_entity': per_entity_metrics,
+        'metadata': {
+            'timestamp': datetime.now().isoformat(),
+            'best_epoch': best_epoch,
+            'best_checkpoint': str(checkpoint_path) if checkpoint_path else None
+        }
+    }
+
+    return result
+
 
 def log_memory_usage():
     """

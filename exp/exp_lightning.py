@@ -458,28 +458,181 @@ def train_lightning_model(args, exp_manager):
     
     # Final test using the best model checkpoint
     exp_manager.logger.info(f'>>>>>>>final testing on best model: {best_model_path}>>>>>>>>>>>>>>>>>>>>>>>>>>>')
-        
+
     data_module.setup(stage='test')
     test_loaders = data_module.test_dataloader()
 
-    info_results = {}
-    for i, (subset_id, loader) in enumerate(test_loaders.items()):
-        exp_manager.logger.info(f"Testing {subset_id}...")
-            
-        trainer.test(model, dataloaders=loader, ckpt_path=best_model_path)
-        
-        exp_manager.logger.info(f"Test loss for {subset_id}: {trainer.callback_metrics['test_loss'].item():.7f}")
-            
-        info_results[subset_id] = trainer.callback_metrics['test_loss'].item()
-    
-    if trainer.is_global_zero:  # Only the main process writes the file
-        exp_manager.logger.info(str(info_results))
-            
+    from utils.tools import format_test_results
+    from pathlib import Path
+
+    # Load best checkpoint for comprehensive evaluation
+    exp_manager.logger.info("Loading best checkpoint for comprehensive test evaluation...")
+    best_checkpoint = torch.load(best_model_path, map_location=device)
+
+    # Extract state dict from Lightning checkpoint and load into the Lightning model
+    if isinstance(best_checkpoint, dict) and 'state_dict' in best_checkpoint:
+        model.load_state_dict(best_checkpoint['state_dict'])
+    else:
+        # Fallback: load into underlying model
+        state_dict = {key.replace("model.", "", 1): value for key, value in best_checkpoint.items()}
+        model.model.load_state_dict(state_dict)
+
+    model.eval()
+
+    # Collect per-entity metrics
+    per_entity_metrics = {}
+    info_results = {}  # Legacy format for backward compatibility
+    total_entities = len(test_loaders)
+
+    with torch.inference_mode():
+        for idx, (subset_id, loader) in enumerate(test_loaders.items()):
+            exp_manager.logger.info(f"Final test evaluation: {subset_id} ({idx + 1}/{total_entities})")
+
+            # Get dataset from loader for scaler access
+            dataset = loader.dataset if hasattr(loader, 'dataset') else None
+            scaler = getattr(dataset, 'scaler', None) if dataset else None
+
+            # Accumulators for this entity
+            total_mse_norm = 0.0
+            total_mae_norm = 0.0
+            total_mse_denorm = 0.0
+            total_mae_denorm = 0.0
+            num_samples = 0
+
+            try:
+                for batch in loader:
+                    # Use the Lightning model's forward method (same as training)
+                    # Batch needs to be moved to device - extract and move tensors
+                    batch_on_device = tuple(
+                        t.to(device) if isinstance(t, torch.Tensor) else t for t in batch
+                    )
+                    output, gt = model.forward(batch_on_device)
+                    batch_size = gt.size(0)
+
+                    # Compute normalized metrics (MSE and MAE)
+                    mse = nn.MSELoss()(output, gt)
+                    mae = nn.L1Loss()(output, gt)
+
+                    total_mse_norm += mse.item() * batch_size
+                    total_mae_norm += mae.item() * batch_size
+                    num_samples += batch_size
+
+                    # Compute denormalized metrics if scaler available
+                    if scaler is not None and hasattr(scaler, 'inverse_transform'):
+                        try:
+                            # Reshape for scaler: (batch, seq, features) -> (batch*seq, features)
+                            pred_shape = output.shape
+                            pred_flat = output.cpu().numpy().reshape(-1, pred_shape[-1])
+                            gt_flat = gt.cpu().numpy().reshape(-1, pred_shape[-1])
+
+                            # Inverse transform
+                            pred_denorm = scaler.inverse_transform(pred_flat)
+                            gt_denorm = scaler.inverse_transform(gt_flat)
+
+                            # Reshape back and compute metrics
+                            pred_denorm = torch.from_numpy(pred_denorm.reshape(pred_shape)).to(device)
+                            gt_denorm = torch.from_numpy(gt_denorm.reshape(pred_shape)).to(device)
+
+                            mse_denorm = nn.MSELoss()(pred_denorm, gt_denorm)
+                            mae_denorm = nn.L1Loss()(pred_denorm, gt_denorm)
+
+                            total_mse_denorm += mse_denorm.item() * batch_size
+                            total_mae_denorm += mae_denorm.item() * batch_size
+                        except Exception:
+                            # Scaler failed, skip denormalized metrics
+                            scaler = None
+
+                if num_samples > 0:
+                    entity_metrics = {
+                        'mse_normalized': total_mse_norm / num_samples,
+                        'mae_normalized': total_mae_norm / num_samples,
+                        'num_samples': num_samples
+                    }
+
+                    # Add denormalized metrics if computed
+                    if total_mse_denorm > 0:
+                        entity_metrics['mse_denormalized'] = total_mse_denorm / num_samples
+                        entity_metrics['mae_denormalized'] = total_mae_denorm / num_samples
+
+                    per_entity_metrics[subset_id] = entity_metrics
+                    info_results[subset_id] = entity_metrics['mse_normalized']  # Legacy format
+
+                    exp_manager.logger.info(
+                        f"  {subset_id}: MSE={entity_metrics['mse_normalized']:.7f}, "
+                        f"MAE={entity_metrics['mae_normalized']:.7f}"
+                    )
+                else:
+                    exp_manager.logger.warning(f"  {subset_id}: No valid samples")
+
+            except Exception as e:
+                exp_manager.logger.error(f"  {subset_id}: Evaluation failed - {e}")
+                import traceback
+                traceback.print_exc()
+                continue
+
+    # Format results using helper function
+    # Get best epoch from checkpoint filename (Lightning saves epoch in filename)
+    best_epoch = trainer.current_epoch + 1 if hasattr(trainer, 'current_epoch') else args.train_epochs
+    if best_model_path and 'epoch=' in best_model_path:
+        try:
+            epoch_str = best_model_path.split('epoch=')[1].split('-')[0]
+            best_epoch = int(epoch_str) + 1  # Convert 0-indexed to 1-indexed
+        except (IndexError, ValueError):
+            pass
+
+    final_test_metrics = format_test_results(
+        per_entity_metrics=per_entity_metrics,
+        best_epoch=best_epoch,
+        checkpoint_path=best_model_path
+    )
+
+    if trainer.is_global_zero and final_test_metrics:  # Only the main process writes files
+        # Save to metrics/test_results.json (new location)
+        metrics_dir = Path(exp_manager.experiment_dir) / "metrics"
+        metrics_dir.mkdir(parents=True, exist_ok=True)
+        results_path = metrics_dir / "test_results.json"
+
+        with open(results_path, 'w') as f:
+            json.dump(final_test_metrics, f, indent=2)
+        exp_manager.logger.info(f"Test results saved to {results_path}")
+
+        # Log overall metrics
+        exp_manager.logger.info(
+            f"Final test MSE (normalized): {final_test_metrics['overall']['mse_normalized']:.7f}"
+        )
+        exp_manager.logger.info(
+            f"Final test MAE (normalized): {final_test_metrics['overall']['mae_normalized']:.7f}"
+        )
+        if 'mse_denormalized' in final_test_metrics['overall']:
+            exp_manager.logger.info(
+                f"Final test MSE (denormalized): {final_test_metrics['overall']['mse_denormalized']:.4f}"
+            )
+            exp_manager.logger.info(
+                f"Final test MAE (denormalized): {final_test_metrics['overall']['mae_denormalized']:.4f}"
+            )
+
+        # Log to WandB summary
+        if exp_manager.wandb_run is not None:
+            wandb_metrics = {
+                'test/mse_normalized': final_test_metrics['overall']['mse_normalized'],
+                'test/mae_normalized': final_test_metrics['overall']['mae_normalized'],
+                'test/num_samples': final_test_metrics['overall']['num_samples'],
+                'test/num_entities': len(per_entity_metrics)
+            }
+
+            if 'mse_denormalized' in final_test_metrics['overall']:
+                wandb_metrics['test/mse_denormalized'] = final_test_metrics['overall']['mse_denormalized']
+                wandb_metrics['test/mae_denormalized'] = final_test_metrics['overall']['mae_denormalized']
+
+            exp_manager.wandb_run.summary.update(wandb_metrics)
+            exp_manager.logger.info("Test metrics logged to WandB summary")
+
+        # Keep backward compatibility: also save legacy format to checkpoints/
         with open(os.path.join(checkpoint_path, 'test_results.json'), 'w') as f:
             json.dump(info_results, f)
         with open(os.path.join(checkpoint_path, 'test_results_average.json'), 'w') as f:
-            # average loss of all subsets
-            json.dump({'average loss of all subsets': np.mean(list(info_results.values()))}, f)
+            json.dump({'average loss of all subsets': final_test_metrics['overall']['mse_normalized']}, f)
+
     if args.test:
         return
     

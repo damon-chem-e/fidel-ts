@@ -623,9 +623,10 @@ class Experiment(Exp_Basic):
             self.exp_manager.log_metrics(metrics_dict, step=epoch + 1)
         
         # Check early stopping condition (only uses validation loss, not test)
-        early_stopping(vali_loss, self.model, path)
+        # Pass epoch+1 (1-indexed) so EarlyStopping tracks best_epoch
+        early_stopping(vali_loss, self.model, path, epoch=epoch + 1)
         should_stop = early_stopping.early_stop
-        
+
         if should_stop:
             print("Early stopping")
             # Log final metrics if early stopping
@@ -633,7 +634,7 @@ class Experiment(Exp_Basic):
                 # Set completion reason for sweep system
                 self.exp_manager.set_completion_reason("early_stopping")
                 final_metrics = {
-                    'best_epoch': epoch + 1,
+                    'best_epoch': early_stopping.best_epoch,
                     'final_train_loss': train_loss,
                     'final_val_loss': vali_loss,
                 }
@@ -886,6 +887,177 @@ class Experiment(Exp_Basic):
             }
             self.exp_manager.end_experiment(final_metrics)
 
+    def _run_final_test_evaluation(self, test_loader, best_epoch, checkpoint_path):
+        """
+        Run comprehensive test evaluation at end of training.
+
+        Uses the same forward pass logic as self.test() but computes comprehensive
+        metrics (MSE/MAE normalized and denormalized) for all test subsets.
+        Saves results to metrics/test_results.json and logs to WandB.
+
+        Args:
+            test_loader: Test data loader (dict of loaders by entity)
+            best_epoch: The epoch number of the best checkpoint
+            checkpoint_path: Path to the checkpoint directory
+
+        Returns:
+            dict: Test metrics with overall, per_entity, and metadata sections,
+                  or None if evaluation fails or no test data
+        """
+        from utils.tools import format_test_results
+        from pathlib import Path
+
+        if test_loader is None:
+            if self.exp_manager:
+                self.exp_manager.logger.info("No test data available - skipping final test evaluation")
+            return None
+
+        self.model.eval()
+
+        # Collect per-entity metrics
+        per_entity_metrics = {}
+
+        # Ensure test_loader is a dict
+        if not isinstance(test_loader, dict):
+            test_loader = {'default': test_loader}
+
+        total_entities = len(test_loader)
+
+        with torch.inference_mode():
+            for idx, (entity_id, loader) in enumerate(test_loader.items()):
+                if self.exp_manager:
+                    self.exp_manager.logger.info(f"Final test evaluation: {entity_id} ({idx + 1}/{total_entities})")
+
+                # Get dataset from loader for scaler access
+                dataset = loader.dataset if hasattr(loader, 'dataset') else None
+                scaler = getattr(dataset, 'scaler', None) if dataset else None
+
+                # Accumulators for this entity
+                total_mse_norm = 0.0
+                total_mae_norm = 0.0
+                total_mse_denorm = 0.0
+                total_mae_denorm = 0.0
+                num_samples = 0
+
+                try:
+                    for iter_data in loader:
+                        # Use the same forward pass as training/validation
+                        output, gt, _ = self._forward_step(iter_data)
+                        batch_size = gt.size(0)
+
+                        # Compute normalized metrics (MSE and MAE)
+                        mse = nn.MSELoss()(output, gt)
+                        mae = nn.L1Loss()(output, gt)
+
+                        total_mse_norm += mse.item() * batch_size
+                        total_mae_norm += mae.item() * batch_size
+                        num_samples += batch_size
+
+                        # Compute denormalized metrics if scaler available
+                        if scaler is not None and hasattr(scaler, 'inverse_transform'):
+                            try:
+                                # Reshape for scaler: (batch, seq, features) -> (batch*seq, features)
+                                pred_shape = output.shape
+                                pred_flat = output.cpu().numpy().reshape(-1, pred_shape[-1])
+                                gt_flat = gt.cpu().numpy().reshape(-1, pred_shape[-1])
+
+                                # Inverse transform
+                                pred_denorm = scaler.inverse_transform(pred_flat)
+                                gt_denorm = scaler.inverse_transform(gt_flat)
+
+                                # Reshape back and compute metrics
+                                pred_denorm = torch.from_numpy(pred_denorm.reshape(pred_shape)).to(self.device)
+                                gt_denorm = torch.from_numpy(gt_denorm.reshape(pred_shape)).to(self.device)
+
+                                mse_denorm = nn.MSELoss()(pred_denorm, gt_denorm)
+                                mae_denorm = nn.L1Loss()(pred_denorm, gt_denorm)
+
+                                total_mse_denorm += mse_denorm.item() * batch_size
+                                total_mae_denorm += mae_denorm.item() * batch_size
+                            except Exception:
+                                # Scaler failed, skip denormalized metrics
+                                scaler = None
+
+                    if num_samples > 0:
+                        entity_metrics = {
+                            'mse_normalized': total_mse_norm / num_samples,
+                            'mae_normalized': total_mae_norm / num_samples,
+                            'num_samples': num_samples
+                        }
+
+                        # Add denormalized metrics if computed
+                        if total_mse_denorm > 0:
+                            entity_metrics['mse_denormalized'] = total_mse_denorm / num_samples
+                            entity_metrics['mae_denormalized'] = total_mae_denorm / num_samples
+
+                        per_entity_metrics[entity_id] = entity_metrics
+
+                        if self.exp_manager:
+                            self.exp_manager.logger.info(
+                                f"  {entity_id}: MSE={entity_metrics['mse_normalized']:.7f}, "
+                                f"MAE={entity_metrics['mae_normalized']:.7f}"
+                            )
+                    else:
+                        if self.exp_manager:
+                            self.exp_manager.logger.warning(f"  {entity_id}: No valid samples")
+
+                except Exception as e:
+                    if self.exp_manager:
+                        self.exp_manager.logger.error(f"  {entity_id}: Evaluation failed - {e}")
+                    continue
+
+        if not per_entity_metrics:
+            if self.exp_manager:
+                self.exp_manager.logger.warning("Final test evaluation: No valid metrics collected")
+            return None
+
+        # Format results using helper function
+        final_test_metrics = format_test_results(
+            per_entity_metrics=per_entity_metrics,
+            best_epoch=best_epoch,
+            checkpoint_path=os.path.join(checkpoint_path, 'checkpoint.pth')
+        )
+
+        if final_test_metrics is None:
+            return None
+
+        # Save to metrics/test_results.json
+        try:
+            if self.exp_manager:
+                metrics_dir = Path(self.exp_manager.experiment_dir) / "metrics"
+                metrics_dir.mkdir(parents=True, exist_ok=True)
+                results_path = metrics_dir / "test_results.json"
+
+                with open(results_path, 'w') as f:
+                    json.dump(final_test_metrics, f, indent=2)
+
+                self.exp_manager.logger.info(f"Test results saved to {results_path}")
+        except Exception as e:
+            if self.exp_manager:
+                self.exp_manager.logger.error(f"Failed to save test results: {e}")
+
+        # Log to WandB summary
+        try:
+            if self.exp_manager and self.exp_manager.wandb_run is not None:
+                wandb_metrics = {
+                    'test/mse_normalized': final_test_metrics['overall']['mse_normalized'],
+                    'test/mae_normalized': final_test_metrics['overall']['mae_normalized'],
+                    'test/num_samples': final_test_metrics['overall']['num_samples'],
+                    'test/num_entities': len(per_entity_metrics)
+                }
+
+                if 'mse_denormalized' in final_test_metrics['overall']:
+                    wandb_metrics['test/mse_denormalized'] = final_test_metrics['overall']['mse_denormalized']
+                    wandb_metrics['test/mae_denormalized'] = final_test_metrics['overall']['mae_denormalized']
+
+                self.exp_manager.wandb_run.summary.update(wandb_metrics)
+                self.exp_manager.logger.info("Test metrics logged to WandB summary")
+        except Exception as e:
+            if self.exp_manager:
+                self.exp_manager.logger.error(f"Failed to log test metrics to WandB: {e}")
+
+        return final_test_metrics
+
     def train(self):
         """
         Executes the complete model training pipeline with comprehensive monitoring.
@@ -949,10 +1121,43 @@ class Experiment(Exp_Basic):
         
         # Finalize training: load best model and save final checkpoint
         self._finalize_training(path, model_optim, train_loss, vali_loss, test_loss)
-        
+
+        # Run final comprehensive test evaluation on best checkpoint
+        # Use best_epoch tracked by EarlyStopping (set when checkpoint was saved)
+        best_epoch = early_stopping.best_epoch if early_stopping.best_epoch is not None else self.current_epoch
+
+        final_test_metrics = None
+        if test_loader is not None:
+            try:
+                if self.exp_manager:
+                    self.exp_manager.logger.info("Running final test evaluation on best checkpoint...")
+                final_test_metrics = self._run_final_test_evaluation(test_loader, best_epoch, path)
+
+                if final_test_metrics:
+                    if self.exp_manager:
+                        self.exp_manager.logger.info(
+                            f"Final test MSE (normalized): {final_test_metrics['overall']['mse_normalized']:.7f}"
+                        )
+                        self.exp_manager.logger.info(
+                            f"Final test MAE (normalized): {final_test_metrics['overall']['mae_normalized']:.7f}"
+                        )
+
+                        if 'mse_denormalized' in final_test_metrics['overall']:
+                            self.exp_manager.logger.info(
+                                f"Final test MSE (denormalized): {final_test_metrics['overall']['mse_denormalized']:.4f}"
+                            )
+                            self.exp_manager.logger.info(
+                                f"Final test MAE (denormalized): {final_test_metrics['overall']['mae_denormalized']:.4f}"
+                            )
+            except Exception as e:
+                if self.exp_manager:
+                    self.exp_manager.logger.error(f"Failed to run final test evaluation: {e}")
+                import traceback
+                traceback.print_exc()
+
         # Register job end in job history
         self._register_job_end(path, train_loss, vali_loss)
-        
+
         return self.model
 
     def vali(self, loader, criterion):

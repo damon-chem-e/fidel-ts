@@ -122,11 +122,13 @@
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
 | California ISO | [✓] | `timellm_california_iso_20260112_141144` | `20260112-141144_a05ebe165526` | - | - | MIT Sloan (A100) |
-| NYC Traffic Speed | [ERR] (needs resume) | `timellm_nyc_traffic_speed_20260112_185045` | - | - | - | MIT Sloan (A100) |
+| NYC Traffic Speed | [~] (1) | `timellm_nyc_traffic_speed_20260112_185045` | - | - | - | MIT Sloan (A100) |
 | Canada Photovoltaics | [~] | - | - | - | - | MIT Sloan (A100) |
 | Germany Renewable | [~] | - | - | - | - | MIT Sloan (A100) |
 | Bear Room | [~] | - | - | - | - | MIT Sloan (A100) |
 | Jena Atmospheric Physics | [~] | - | - | - | - | MIT Sloan (A100) |
+
+(1): Had resumption error. Added `mark_last_job_complete: true` to config and tried resubmitting. 
 
 #### TimeCMA
 | Dataset | Status | LLM Embed | Suite ID | Experiment ID | Eval | Tables | Compute |
