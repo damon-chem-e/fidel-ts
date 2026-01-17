@@ -88,3 +88,4 @@ suite:
 
         # Resume configuration (experiment-level)
         resume_experiment_id: "20260112-185046_fe8c25cbf4dc"
+        mark_last_job_complete: true
