@@ -349,3 +349,57 @@ def general_move_to_device(batch_x, batch_y, timestamp_x, timestamp_y, batch_x_h
     batch_y = batch_y.float().to(device)
 
     return batch_x, batch_y, timestamp_x, timestamp_y, batch_x_hetero, batch_y_hetero, hetero_x_time, hetero_y_time, hetero_general, hetero_channel
+
+
+def compilation_spinner(text="Compiling model with torch.compile...", logger=None):
+    """
+    Context manager for progress spinner during torch.compile.
+
+    Uses Rich console.status() for spinner in TTY environments,
+    falls back to logger in non-TTY (Jupyter, SSH redirect).
+
+    Args:
+        text: Status text to display
+        logger: Optional logger for non-TTY environments
+
+    Example:
+        with compilation_spinner("Compiling model...", exp_manager.logger):
+            model = torch.compile(model, mode='reduce-overhead')
+        # Output (TTY): "⠋ Compiling model..." -> "✓ Compilation complete (3.2s)"
+    """
+    import sys
+    from contextlib import contextmanager
+    from rich.console import Console
+
+    @contextmanager
+    def _spinner_context():
+        is_tty = sys.stdout.isatty()
+        start_time = time.time()
+        console = Console()
+        status = None
+
+        if is_tty:
+            status = console.status(text, spinner="dots")
+            status.start()
+        else:
+            if logger:
+                logger.info(text)
+            else:
+                print(text)
+
+        try:
+            yield
+        finally:
+            elapsed = time.time() - start_time
+
+            if is_tty and status:
+                status.stop()
+                console.print(f"[green]✓[/green] Compilation complete ({elapsed:.1f}s)")
+            else:
+                message = f"Compilation complete ({elapsed:.1f}s)"
+                if logger:
+                    logger.info(message)
+                else:
+                    print(message)
+
+    return _spinner_context()

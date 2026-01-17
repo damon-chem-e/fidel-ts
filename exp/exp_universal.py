@@ -413,27 +413,35 @@ class Experiment(Exp_Basic):
     def _train_single_batch(self, iter, model_optim, criterion, track_per_sample):
         """
         Execute a single training batch: forward pass, loss, backward, update.
-        
+
         Args:
             iter: Batch data tuple from data loader
             model_optim: Optimizer for parameter updates
             criterion: Loss function
             track_per_sample: Whether to track per-sample metrics
-            
+
         Returns:
-            tuple: (loss_value, batch_size, sample_ids, output, gt)
+            tuple: (loss_value, batch_size, sample_ids, output, gt, grad_norm)
         """
         # Zero gradients before forward pass
         model_optim.zero_grad()
-        
+
         # Forward pass through model
         output, gt, sample_ids = self._forward_step(iter)
-        
+
         # Compute loss
         loss = criterion(output, gt)
-        
-        # Backward pass and optimizer step
+
+        # Backward pass
         loss.backward()
+
+        # Calculate gradient norm before optimizer step
+        grad_norm = torch.nn.utils.clip_grad_norm_(
+            self.model.parameters(),
+            max_norm=float('inf')  # Don't actually clip, just compute norm
+        ).item()
+
+        # Optimizer step
         model_optim.step()
         
         # Get batch size for loss accumulation
@@ -458,8 +466,8 @@ class Experiment(Exp_Basic):
                 channel_ids=channel_names,
                 per_channel_losses=per_sample_per_channel_loss
             )
-        
-        return loss_value, current_batch_size, sample_ids, output, gt
+
+        return loss_value, current_batch_size, sample_ids, output, gt, grad_norm
 
     def _update_training_progress(self, progress, task, time_now, iter_count, 
                                    epoch, train_steps, current_iter, loss_value):
@@ -503,11 +511,11 @@ class Experiment(Exp_Basic):
         # Reset iteration counter and update time for next iteration
         return time.time(), 0
 
-    def _train_single_epoch(self, epoch, train_loader, model_optim, criterion, 
+    def _train_single_epoch(self, epoch, train_loader, model_optim, criterion,
                            track_per_sample, train_steps):
         """
         Execute a complete training epoch with progress tracking.
-        
+
         Args:
             epoch: Current epoch number (0-indexed)
             train_loader: Training data loader
@@ -515,7 +523,7 @@ class Experiment(Exp_Basic):
             criterion: Loss function
             track_per_sample: Whether to track per-sample metrics
             train_steps: Total number of training steps per epoch
-            
+
         Returns:
             tuple: (train_loss, epoch_time_elapsed, total_samples)
         """
@@ -523,23 +531,41 @@ class Experiment(Exp_Basic):
         self.model.train()
         epoch_loss, total_samples, iter_count = 0.0, 0, 0
         epoch_time = time_now = time.time()
-        
+
+        # Batch logging configuration
+        batch_log_interval = getattr(
+            self.args.wandb, 'batch_log_interval', 10
+        ) if hasattr(self.args, 'wandb') else 10
+        total_batches = len(train_loader)
+
         # Mark epoch start in GPU monitor for epoch-level GPU utilization tracking
         if self.exp_manager and hasattr(self.exp_manager, 'gpu_monitor') and self.exp_manager.gpu_monitor:
             self.exp_manager.gpu_monitor.mark_epoch_start()
-        
+
         # Create progress bar for this epoch (includes logger)
         progress, task, logger, console = self._create_training_progress_bar(epoch, train_loader)
-        
+
         # Training loop over all batches
         with progress:
             for i, iter in enumerate(train_loader):
                 iter_count += 1
                 # Train on single batch and accumulate metrics
-                loss_value, batch_size, _, _, _ = \
+                loss_value, batch_size, _, _, _, grad_norm = \
                     self._train_single_batch(iter, model_optim, criterion, track_per_sample)
                 epoch_loss += loss_value * batch_size
                 total_samples += batch_size
+
+                # Log batch loss and gradient norm to wandb every N batches
+                if self.exp_manager and self.exp_manager.wandb_run:
+                    should_log = (i % batch_log_interval == 0) or (i == total_batches - 1)
+
+                    if should_log:
+                        global_step = epoch * total_batches + i
+                        self.exp_manager.log_metrics({
+                            'batch_loss': loss_value,
+                            'batch_grad_norm': grad_norm
+                        }, step=global_step)
+
                 # Update progress bar
                 time_now, iter_count = self._update_training_progress(
                     progress, task, time_now, iter_count, epoch, train_steps, i, loss_value
