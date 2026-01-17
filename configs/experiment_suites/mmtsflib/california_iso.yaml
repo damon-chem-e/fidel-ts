@@ -1,0 +1,87 @@
+# Experiment Suite: MMTSFlib on California_ISO
+# Description: Train MMTSFlib (prediction-level late fusion) with FEDformer on California_ISO dataset
+# Usage: python -m cli.suite run configs/experiment_suites/mmtsflib/california_iso.yaml
+# Note: California_ISO uses hourly sampling (downsampled to -h)
+#       Input: 360 samples = 15 days (half month), Output: 168 samples = 1 week (second smallest)
+#       Split points: {Jan. 1, 2021, Jan. 1, 2022}
+#
+# IMPORTANT: This suite requires pre-computed LLM embeddings!
+# Generate embeddings first:
+#   python -m cli.inference generate-suite configs/experiment_suites/mmtsflib/california_iso.yaml
+
+suite:
+  name: "mmtsflib_california_iso"
+  description: "Train MMTSFlib with FEDformer on California_ISO dataset with 15-day context, 1-week prediction"
+  tags: ["mmtsflib", "multimodal", "late-fusion", "fedformer", "pytorch", "fidel-ts", "california_iso"]
+
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/mmtsflib/california_iso"
+
+  # Experiments in this suite
+  experiments:
+    - name: "mmtsflib_fedformer_california_iso"
+      description: "MMTSFlib with FEDformer on California_ISO with 15-day context, 1-week prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "MMTSFlib"
+          config_path: "model_configs/general/MMTSFlib.yaml"
+        data:
+          name: "fidel_California_ISO:fullCAISO_hetero_TGTSF_H"
+          config_path: "data_configs/California_ISO/fullCAISO_hetero_TGTSF_H.yaml"
+        training:
+          input_len: 360      # 15 days at hourly intervals (half month)
+          output_len: 168     # 1 week at hourly intervals
+          batch_size: 256
+          learning_rate: 1e-3
+          patience: 10
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true
+          torch_compile: true
+          compile_mode: "reduce-overhead"
+        device:
+          use_gpu: true
+          gpu: 0
+          use_multi_gpu: false
+          devices: "0"
+        wandb:
+          enabled: true
+          tags: ["mmtsflib", "california_iso"]
+        llm_embedding:
+          model_name: "gpt2"
+          cache_dir: "./LLM_cache/"
+          extraction_mode: "last_token"
+          max_length: 512
+          prompt_template: "mmtsflib_v1"
+          # Memory-efficient mode for large Fidel-TS dataset
+          memory_efficient: true
+          batch_size: 64
+          chunk_size: 1000
+        model_config_overrides:
+          unimodal_model_type: "FEDformer"
+          seq_len: 360
+          pred_len: 168
+          enc_in: 1           # California_ISO has 1 target
+          d_model: 512
+          n_heads: 8
+          e_layers: 2
+          d_layers: 1
+          d_ff: 2048
+          modes: 32
+          mode_select: "random"
+          moving_avg: 25
+          embed: "timeF"
+          freq: "h"
+          input_text_dim: 768
+          prompt_weight_mode: "fixed"
+          prompt_weight: 0.01
+          pool_type: "avg"
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/mmtsflib/california_iso"
