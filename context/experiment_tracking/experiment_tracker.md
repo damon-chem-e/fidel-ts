@@ -121,20 +121,20 @@
 #### Time-LLM
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
-| California ISO | [ ] | `timellm_california_iso_20260112_141144` | `20260112-141144_a05ebe165526` | - | - | MIT Sloan (A100) |
+| California ISO | [✓] | `timellm_california_iso_20260112_141144` | `20260112-141144_a05ebe165526` | - | - | MIT Sloan (A100) |
 | NYC Traffic Speed | [ERR] (needs resume) | `timellm_nyc_traffic_speed_20260112_185045` | - | - | - | MIT Sloan (A100) |
-| Canada Photovoltaics | [ ] | - | - | - | - | MIT Sloan (A100) |
-| Germany Renewable | [ ] | - | - | - | - | MIT Sloan (A100) |
-| Bear Room | [ ] | - | - | - | - | MIT Sloan (A100) |
-| Jena Atmospheric Physics | [ ] | - | - | - | - | MIT Sloan (A100) |
+| Canada Photovoltaics | [~] | - | - | - | - | MIT Sloan (A100) |
+| Germany Renewable | [~] | - | - | - | - | MIT Sloan (A100) |
+| Bear Room | [~] | - | - | - | - | MIT Sloan (A100) |
+| Jena Atmospheric Physics | [~] | - | - | - | - | MIT Sloan (A100) |
 
 #### TimeCMA
 | Dataset | Status | LLM Embed | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|----------|---------|--------|--------|----------|--------|
 | Time MMD & TTC | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
-| Bear Room | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
-| California ISO | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
-| Canada Photovoltaics | [ ] | [✓]  | - | - | - | - | MIT Sloan (A100) |
+| Bear Room | [✗] | [✓] | - | - | - | - | MIT Sloan (A100) |
+| California ISO | [✗] | [✓] | - | - | - | - | MIT Sloan (A100) |
+| Canada Photovoltaics | [✗] | [✓]  | - | - | - | - | MIT Sloan (A100) |
 | Germany Renewable | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
 | NYC Traffic Speed | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
 | Jena Atmospheric Physics | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
@@ -327,6 +327,8 @@
 | RunPod-CAISO | iTransformer pretraining, TGTSF, LeRet, Lynx Film Raw, Lynx Film | [ ] |
 | RunPod-Bear Room | iTransformer pretraining, TGTSF, LeRet, Lynx Film Raw, Lynx Film | [ ] |
 | RunPod-Jena | iTransformer pretraining, TGTSF, LeRet, Lynx Film Raw, Lynx Film | [ ] |
+
+Note: MIT Sloan gpu partition (`sched_mit_sloan_gpu_r8`) doesn't appear to impose a max number of GPUs I can use, which makes it valuable.
 
 ─── Low Compute Resources ───────────────────────────────────────────────────────────────────────
 

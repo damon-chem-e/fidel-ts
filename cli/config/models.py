@@ -185,14 +185,18 @@ class WandBConfig(BaseModel):
 class LLMEmbeddingConfig(BaseModel):
     """
     LLM embedding configuration for experiments that use LLM-based embeddings.
-    
+
     This configures how time series data is converted to text prompts and then
     embedded using an LLM (e.g., GPT-2, Qwen) for models like TimeCMA.
-    
+
     The embeddings are generated using the experiment's input_len/output_len
     to ensure consistency between training and embedding generation.
+
+    Note: This config allows extra fields for inference-specific parameters
+    (e.g., memory_efficient, chunk_size, flush_every) that are used by
+    cli.inference but ignored during training.
     """
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="allow")
     
     # LLM Model Settings
     model_name: str = Field(default="gpt2", description="HuggingFace model name (e.g., 'gpt2', 'Qwen/Qwen2.5-7B-Instruct')")
