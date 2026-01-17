@@ -155,12 +155,12 @@
 | Dataset | Status | LLM Embed | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|----------|---------|--------|--------|----------|--------|
 | Time MMD & TTC | [ ] | [ ] | - | - | - | - | - |
-| Canada Photovoltaics | [ ] | [ ] | - | - | - | - | - |
-| Germany Renewable | [ ] | [ ] | - | - | - | - | - |
-| NYC Traffic Speed | [ ] | [ ] | - | - | - | - | - |
-| California ISO | [ ] | [ ] | - | - | - | - | - |
-| Bear Room | [ ] | [ ] | - | - | - | - | - |
-| Jena Atmospheric Physics | [ ] | [ ] | - | - | - | - | - |
+| Canada Photovoltaics | [ ] | [✗] | - | - | - | - | - |
+| Germany Renewable | [ ] | [✗] | - | - | - | - | - |
+| NYC Traffic Speed | [ ] | [~] | - | - | - | - | - |
+| California ISO | [ ] | [✗] | - | - | - | - | - |
+| Bear Room | [ ] | [✗] | - | - | - | - | - |
+| Jena Atmospheric Physics | [ ] | [✗] | - | - | - | - | - |
 
 **Note:** MMTSFlib requires precomputed LLM embeddings. All experiments are pending setup and execution.
 

@@ -31,8 +31,8 @@ suite:
           name: "MMTSFlib"
           config_path: "model_configs/general/MMTSFlib.yaml"
         data:
-          name: "fidel_jena_atmospheric:fullJENAATMOS_hetero_TGTSF_H"
-          config_path: "data_configs/jena_atmospheric/fullJENAATMOS_hetero_TGTSF_H.yaml"
+          name: "fidel_Jena_Atmospheric_Physics:fullJAP_hetero_TGTSF_H"
+          config_path: "data_configs/Jena_Atmospheric_Physics/fullJAP_hetero_TGTSF_H.yaml"
         training:
           input_len: 360      # 15 days at hourly intervals (half month)
           output_len: 168     # 1 week at hourly intervals

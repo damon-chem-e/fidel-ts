@@ -31,8 +31,8 @@ suite:
           name: "MMTSFlib"
           config_path: "model_configs/general/MMTSFlib.yaml"
         data:
-          name: "fidel_canada_photovoltaics:fullcanadaPV_hetero_TGTSF_H"
-          config_path: "data_configs/canada_photovoltaics/fullcanadaPV_hetero_TGTSF_H.yaml"
+          name: "fidel_Canada_photovoltaics_plants:fullCPP_hetero_TGTSF"
+          config_path: "data_configs/Canada_photovoltaics_plants/fullCPP_hetero_TGTSF.yaml"
         training:
           input_len: 360      # 15 days at hourly intervals (half month)
           output_len: 168     # 1 week at hourly intervals
