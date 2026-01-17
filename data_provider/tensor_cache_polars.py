@@ -681,7 +681,7 @@ class PolarsSharedTableBuilder:
 
         # Collect all unique timestamps across all datasets
         all_timestamps_set = set()
-        entity_data = {}  # entity_id -> (raw_arrays, dataset)
+        entity_data = {}  # entity_id -> list of raw_arrays (one per split)
 
         for flag in flags:
             datasets = self.data_provider.get_datasets(flag)
@@ -699,9 +699,10 @@ class PolarsSharedTableBuilder:
                 unique_ts = dataset.get_all_unique_timestamps()
                 all_timestamps_set.update(unique_ts.tolist())
 
-                # Store for later (only need one copy per entity)
+                # Store raw arrays from ALL splits for this entity
                 if entity_id not in entity_data:
-                    entity_data[entity_id] = (raw, dataset)
+                    entity_data[entity_id] = []
+                entity_data[entity_id].append(raw)
 
             del datasets
 
@@ -718,7 +719,7 @@ class PolarsSharedTableBuilder:
 
         # Infer shapes from first entity
         first_entity_id = next(iter(entity_data))
-        first_raw, first_dataset = entity_data[first_entity_id]
+        first_raw = entity_data[first_entity_id][0]  # First raw from list
 
         n_features = first_raw.data.shape[1] if first_raw.data.ndim > 1 else 1
 
@@ -759,47 +760,67 @@ class PolarsSharedTableBuilder:
         # Fill arrays from entity data
         seen_timestamps = set()
 
-        for entity_id, (raw, dataset) in entity_data.items():
-            # Handle 1D data case
-            data = raw.data if raw.data.ndim > 1 else raw.data.reshape(-1, 1)
+        for entity_id, raw_list in entity_data.items():
+            for raw in raw_list:  # Iterate over ALL splits for this entity
+                # Handle 1D data case
+                data = raw.data if raw.data.ndim > 1 else raw.data.reshape(-1, 1)
 
-            for local_idx in range(len(raw.timestamps)):
-                ts_int = int(raw.timestamps[local_idx])
+                for local_idx in range(len(raw.timestamps)):
+                    ts_int = int(raw.timestamps[local_idx])
 
-                if ts_int in seen_timestamps:
-                    continue  # Already have data for this timestamp
+                    if ts_int in seen_timestamps:
+                        continue  # Already have data for this timestamp
 
-                if ts_int not in timestamp_to_idx:
-                    continue  # Timestamp not in unique set (shouldn't happen)
+                    if ts_int not in timestamp_to_idx:
+                        continue  # Timestamp not in unique set (shouldn't happen)
 
-                unique_idx = timestamp_to_idx[ts_int]
-                seen_timestamps.add(ts_int)
+                    unique_idx = timestamp_to_idx[ts_int]
+                    seen_timestamps.add(ts_int)
 
-                # Extract timeseries data
-                timeseries_array[unique_idx] = data[local_idx]
+                    # Extract timeseries data
+                    timeseries_array[unique_idx] = data[local_idx]
 
-                # Extract embedding data
-                if raw.embeddings is not None and local_idx < len(raw.embeddings):
-                    emb = raw.embeddings[local_idx]
-                    if self.num_news_items == 1:
-                        if emb.ndim == 0:
-                            embeddings_array[unique_idx] = emb.flatten()
-                        elif emb.ndim == 1:
-                            embeddings_array[unique_idx] = emb
+                    # Extract embedding data
+                    if raw.embeddings is not None and local_idx < len(raw.embeddings):
+                        emb = raw.embeddings[local_idx]
+                        if self.num_news_items == 1:
+                            if emb.ndim == 0:
+                                embeddings_array[unique_idx] = emb.flatten()
+                            elif emb.ndim == 1:
+                                embeddings_array[unique_idx] = emb
+                            else:
+                                embeddings_array[unique_idx] = emb[0]
                         else:
-                            embeddings_array[unique_idx] = emb[0]
-                    else:
-                        if emb.ndim == 0:
-                            embeddings_array[unique_idx, 0] = emb.flatten()
-                        elif emb.ndim == 1:
-                            embeddings_array[unique_idx, 0] = emb
-                        else:
-                            embeddings_array[unique_idx] = emb[:2]
+                            if emb.ndim == 0:
+                                embeddings_array[unique_idx, 0] = emb.flatten()
+                            elif emb.ndim == 1:
+                                embeddings_array[unique_idx, 0] = emb
+                            else:
+                                embeddings_array[unique_idx] = emb[:2]
 
-                # Extract hetero time features
-                if raw.hetero_time is not None and hetero_time_array is not None:
-                    if local_idx < len(raw.hetero_time):
-                        hetero_time_array[unique_idx] = raw.hetero_time[local_idx]
+                    # Extract hetero time features
+                    if raw.hetero_time is not None and hetero_time_array is not None:
+                        if local_idx < len(raw.hetero_time):
+                            hetero_time_array[unique_idx] = raw.hetero_time[local_idx]
+
+        # Validation: Check for data integrity across splits
+        n_filled = np.sum(np.any(timeseries_array != 0, axis=1))
+        fill_ratio = n_filled / n_unique if n_unique > 0 else 0
+
+        if fill_ratio < 0.9:
+            raise ValueError(
+                f"Shared table fill ratio is {fill_ratio:.1%} ({n_filled}/{n_unique}). "
+                f"This indicates a bug in data collection across splits. "
+                f"Expected >= 90% of timestamps to have non-zero data."
+            )
+        elif fill_ratio < 0.99:
+            logger.warning(
+                f"Shared table fill ratio is {fill_ratio:.1%} ({n_filled}/{n_unique}). "
+                f"Some timestamps may have missing data."
+            )
+
+        if self.verbose:
+            logger.info(f"Data integrity: {n_filled:,}/{n_unique:,} timestamps filled ({fill_ratio:.1%})")
 
         # Build shared tables dict
         shared_tables = {
@@ -816,12 +837,14 @@ class PolarsSharedTableBuilder:
         entity_channel_list = []
         entity_to_idx = {}
 
-        for idx, (entity_id, (raw, _)) in enumerate(entity_data.items()):
+        for idx, (entity_id, raw_list) in enumerate(entity_data.items()):
             entity_to_idx[entity_id] = idx
-            if raw.hetero_general is not None:
-                entity_general_list.append(raw.hetero_general)
-            if raw.hetero_channel is not None:
-                entity_channel_list.append(raw.hetero_channel)
+            # Use first raw for static entity data (same across splits)
+            first_raw = raw_list[0]
+            if first_raw.hetero_general is not None:
+                entity_general_list.append(first_raw.hetero_general)
+            if first_raw.hetero_channel is not None:
+                entity_channel_list.append(first_raw.hetero_channel)
 
         if entity_general_list:
             shared_tables['entity_general'] = np.stack(entity_general_list).astype(np.float32)
@@ -839,12 +862,64 @@ class PolarsSharedTableBuilder:
         if self.verbose:
             logger.info(f"Built shared tables (direct): {n_unique:,} unique timestamps, "
                        f"{len(entity_to_idx)} entities in {elapsed:.2f}s")
+            self._validate_splits(flags, timestamp_to_idx, timeseries_array)
 
         # Clean up
         del entity_data
         gc.collect()
 
         return shared_tables, index_mappings
+
+    def _validate_splits(
+        self,
+        flags: List[str],
+        timestamp_to_idx: Dict[int, int],
+        timeseries_array: np.ndarray
+    ) -> None:
+        """
+        Validate that each split has non-zero data in the shared tables.
+
+        Samples timestamps from the first entity in each split and verifies
+        they have non-zero values in the timeseries array.
+
+        Args:
+            flags: List of split names to validate
+            timestamp_to_idx: Mapping from timestamp to array index
+            timeseries_array: The populated timeseries shared table
+
+        Raises:
+            ValueError: If any split has > 10% zero-filled timestamps
+        """
+        for flag in flags:
+            datasets = self.data_provider.get_datasets(flag)
+            if not datasets:
+                continue
+
+            sample_count = 0
+            zero_count = 0
+            for entity_id, dataset in list(datasets.items())[:1]:  # Check first entity
+                if len(dataset) == 0:
+                    continue
+                raw = dataset.get_raw_arrays()
+                sample_ts = raw.timestamps[:min(100, len(raw.timestamps))]
+                for ts in sample_ts:
+                    ts_int = int(ts)
+                    if ts_int in timestamp_to_idx:
+                        idx = timestamp_to_idx[ts_int]
+                        if np.all(timeseries_array[idx] == 0):
+                            zero_count += 1
+                        sample_count += 1
+
+            del datasets
+
+            if sample_count > 0:
+                zero_ratio = zero_count / sample_count
+                if zero_ratio > 0.1:
+                    raise ValueError(
+                        f"Split '{flag}' has {zero_ratio:.1%} zero-filled timestamps. "
+                        f"Val/test data was not properly collected."
+                    )
+                logger.info(f"Split '{flag}' validated: {zero_ratio:.1%} zero timestamps")
 
     def _build_iterative(self, flags: List[str]) -> Tuple[Dict[str, np.ndarray], dict]:
         """

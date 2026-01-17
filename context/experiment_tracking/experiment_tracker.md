@@ -158,7 +158,7 @@
 | Canada Photovoltaics | [ ] | [~] | - | - | - | - | - |
 | Germany Renewable | [ ] | [~] | - | - | - | - | - |
 | NYC Traffic Speed | [ ] | [~] | - | - | - | - | - |
-| California ISO | [ ] | [~] | - | - | - | - | - |
+| California ISO | [ ] | [✓] | - | - | - | - | - |
 | Bear Room | [ ] | [~] | - | - | - | - | - |
 | Jena Atmospheric Physics | [ ] | [~] | - | - | - | - | - |
 
