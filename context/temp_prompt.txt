@@ -361,7 +361,19 @@ tomorrow running:
 ---
 
 01/17 noon:
-- leret configs up, looking at running. tensor caches all generated. need to sleep before doing the monitor and test after train testing -> fiats, lynx_* runs. mmtsflib, timecma, zhanghanbest all require some sleep before experimentation then running.
+- leret configs up, looking at running. tensor caches all generated. need to sleep before doing the monitor and test after train testing -> fiats, lynx_* runs. 
+- mmtsflib, timecma, zhanghanbest all require some sleep before experimentation then running. those we do the select on big datasets, and we don't need to run on small (because have from other papers)
+- lynx_film_enhanced + looking at full resolution lynx_film_raw and lynx_film on time mmd ttc will be nice after tensor cacheing time mmd and ttc (that functionality is in alwaystest) and having test after train on. easy to see what's going on. add some functionality to always test to print a nice results table (train/val/test normalized mse on all suites) after suite completion (suite manager level). will be nice for iteration through lynx_* to get good performance on ttc and time mmd.
+- the lynx_film and lynx_film_raw (after itransformer) on the runpods on fidel-ts are the initial runs. hopefully it's pretty quick to run, and we can hparam tune and run again after doing the iterations on previous bullet on ttc and time mmd. quick compute allows this. iterate fast.
+- for the benchmarks run before tensor test after train (leret, timellm), need to make sure that evals work and get those evals and make sure they look reasonable, but we don't care too much honestly.
+- mmvision is a little lower on priority list, don't worry about it til these other essential things are resolved.
+
+---
+
+01/17 11:30 pm: 
+- timellm has nan loss for all but caiso. probably something in how the prompt output is translated or something. look into it and rerun. 
+- no nan loss for leret -- appears to run great.
+- tonight want to test the alwaystest branch and monitor branch, merge, push. but before that we get leret, timellm, timecma working so those can churn tonight. if mmtsflib and zhanghanbest can also churn tonight on large, that would be incredible, then all the benchmarks are complete on large data. then I have my 'competition' on all datasets and can focus on lynx_* iteration
 
 ---
 

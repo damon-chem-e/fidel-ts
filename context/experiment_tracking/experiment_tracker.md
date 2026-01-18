@@ -124,14 +124,16 @@ note: I had generated nyc traffic speed on pod:nyc_traffic, but that was faulty 
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
 | California ISO | [✓] | `timellm_california_iso_20260112_141144` | `20260112-141144_a05ebe165526` | - | - | MIT Sloan (A100) |
-| NYC Traffic Speed | [>>] (1) | `timellm_nyc_traffic_speed_20260112_185045` | - | - | - | MIT Sloan (A100) |
-| Canada Photovoltaics | [✓] | - | - | - | - | MIT Sloan (A100) |
-| Germany Renewable | [✓] | - | - | - | - | MIT Sloan (A100) |
-| Bear Room | [>>] | - | - | - | - | MIT Sloan (A100) |
-| Jena Atmospheric Physics | [>>] | - | - | - | - | MIT Sloan (A100) |
+| NYC Traffic Speed | [>>] (1; nan loss) | `timellm_nyc_traffic_speed_20260112_185045` | - | - | - | MIT Sloan (A100) |
+| Canada Photovoltaics | [✓] (nan loss) | - | - | - | - | MIT Sloan (A100) |
+| Germany Renewable | [✓] (nan loss) | - | - | - | - | MIT Sloan (A100) |
+| Bear Room | [✗] (time limit; nan loss) | - | - | - | - | MIT Sloan (A100) |
+| Jena Atmospheric Physics | [✓] (nan loss) | - | - | - | - | MIT Sloan (A100) |
 
 note: all but nyc traffic speed and caiso are runs from later 01/16 or early 01/17. add suite and experiment later. evals not done yet. 
 (1): Had resumption error. Added `mark_last_job_complete: true` to config and tried resubmitting. 
+note (10/17 11 pm): bear room ran 30 epochs then died due to time limit. 
+note (10/17 11 pm): bear room and jena have nan loss.
 
 #### TimeCMA
 | Dataset | Status | LLM Embed | Suite ID | Experiment ID | Eval | Tables | Compute |
@@ -151,12 +153,13 @@ note: all but nyc traffic speed and caiso are runs from later 01/16 or early 01/
 |--------|----------|---------|--------|--------|----------|--------|
 | Canada Photovoltaics | [>>] | - | - | - | - | RunPod (pod:canada) |
 | Germany Renewable | [>>] | - | - | - | - | RunPod (pod:germany) |
-| NYC Traffic Speed | [~] | - | - | - | - | RunPod (pod:nyc_traffic) |
-| California ISO | [>>] | - | - | - | - | RunPod (pod:caiso) |
-| Bear Room | [~] | - | - | - | - | RunPod (pod:bear_room) |
-| Jena Atmospheric Physics | [>>] | - | - | - | - | RunPod (pod:jena) |
+| NYC Traffic Speed | [>>] | - | - | - | - | RunPod (pod:nyc_traffic) |
+| California ISO | [✓] | - | - | - | - | RunPod (pod:caiso) |
+| Bear Room | [>>] (preempted) | - | - | - | - | RunPod (pod:bear_room) |
+| Jena Atmospheric Physics | [✓] | - | - | - | - | RunPod (pod:jena) |
 
 note: (10/17 noon) running on preemptable; nyc traffic and bear room are waiting on a gpu (4 max on preemptable). pretraining at least was going well. 
+note: (10/17 11 pm) bear room preempted epoch 1 pretrain, so starting over from scratch
 
 #### MMTSFLib
 | Dataset | Status | LLM Embed | Suite ID | Experiment ID | Eval | Tables | Compute |
@@ -166,7 +169,7 @@ note: (10/17 noon) running on preemptable; nyc traffic and bear room are waiting
 | Germany Renewable | [ ] | [✓] | - | - | - | - | - |
 | NYC Traffic Speed | [ ] | [>>] | - | - | - | - | - |
 | California ISO | [ ] | [✓] | - | - | - | - | - |
-| Bear Room | [ ] | [>>] | - | - | - | - | - |
+| Bear Room | [ ] | [✓] | - | - | - | - | - |
 | Jena Atmospheric Physics | [ ] | [✓] | - | - | - | - | - |
 
 note: all of the llm embeddings are runs from late 01/16 or early 01/17.
