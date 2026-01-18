@@ -386,19 +386,32 @@ note on itransformer: might need some significant improvements on hparams to rea
 
 01/18 4 am:
 
-- check up on timellm, leret, itransformer (pretrain)
-- mmtsflib and timecma require the tensor_cache_llm branch -> test (mmtsflib problems see above) -> tensor cache generations (for both prompts) on preemptable -> trains on preemptable
-- test zhanghanbest -> run on preemptable
-- take a look at itransformer outputs and check against original fidel-ts paper -> hparam tune if needed
-- test monitor + alwaystest -> FIATS (full resolution) -> FIATS (original resolution) -> lynx_film_raw -> lynx_film_raw (original resolution) [runpods] 
+- (2) check up on timellm, leret, itransformer (pretrain)
+- (3) mmtsflib and timecma require the tensor_cache_llm branch -> test (mmtsflib problems see above) -> tensor cache generations (for both prompts) on preemptable -> trains on preemptable
+- (4) test zhanghanbest -> run on preemptable
+- (1) take a look at itransformer outputs and check against original fidel-ts paper -> hparam tune if needed
+- (5) test monitor + alwaystest -> FIATS (full resolution) -> FIATS (original resolution) -> lynx_film_raw -> lynx_film_raw (original resolution) [runpods] 
 - if itransformer good -> lynx_film [runpods]
 
 
-- on mit_normal_gpu: look at whether lynx_film_raw and lynx_film stack up on time mmd and ttc against papers -> if not test lynx_film_enhanced -> lynx film enhanced ablations on time mmd ttc (with results all stored and tabulated) -> best on runpods
-- on mit_normal_gpu: make sure eval works on the completed timellm,leret runs [some config overrides issues perhaps, was having trouble loading the checkpoint] -> get the evals -> ensure reasonable 
-- on mit_normal_gpu test mmvision (H200) -> run on mit_normal_gpu (H200)
+- (6) on mit_normal_gpu: look at whether lynx_film_raw and lynx_film stack up on time mmd and ttc against papers -> if not test lynx_film_enhanced -> lynx film enhanced ablations on time mmd ttc (with results all stored and tabulated) -> best on runpods
+- (7) on mit_normal_gpu: make sure eval works on the completed timellm,leret runs [some config overrides issues perhaps, was having trouble loading the checkpoint] -> get the evals -> ensure reasonable 
+- (8) on mit_normal_gpu test mmvision (H200) -> run on mit_normal_gpu (H200)
+
 ---
 
+01/18 3 pm:
+- leret ran mostly fine a couple need to keep going
+- timellm also ran great except nyc traffic ran into nans again at epoch ... and it didn't stop on nan. looking into how to prevent the nan for this one (config) and make sure it actually stops on nan (claude tensor cache polars), made changes, pushing, and trying again.
+
+right now I'm working on getting that timellm working, then checking on monitor and alwaystest on orcd/scratch. then I can merge and test, then open the pods and run itransformer -> etc etc while leret, timellm run on cluster, then mmtsflib and zhanghanbest run on cluster.
+
+monitor with wandb leet appears to work great with some odd problems at the end, but I'm working on fixing that. also want to learn wandb leet better.
+
+looks like alwaystest seems to do fine with the summary things at the end. the test jsons are saving good. looks like everything is working as intended. also itransformer is wicked fast with torch compile.
+something that's a bit off is saving the best epoch. I need to fix that, probably in the alwaystest branch. when earlystopping saves a checkpoint, it can update the best epoch. right now it just always seems to be the last epoch (false)
+
+---
 
 [damonp@eosloan chimera_proj]$ du -h --max-depth=2 . | sort -h
 du: cannot read directory ‘./mts/data/TTC/Medical’: Permission denied

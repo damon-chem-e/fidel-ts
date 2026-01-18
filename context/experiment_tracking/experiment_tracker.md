@@ -127,17 +127,18 @@ note (10/18 3:45 am): caiso, nyc, bear room, jena submitted with train truncated
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
 | California ISO | [✓] | `timellm_california_iso_20260112_141144` | `20260112-141144_a05ebe165526` | - | - | MIT Sloan (A100) |
-| NYC Traffic Speed | [~] (1; nan loss; I terminated; resubmitted) | `timellm_nyc_traffic_speed_20260112_185045` | - | - | - | MIT Sloan (A100) |
-| Canada Photovoltaics | [~] (nan loss; resubmitted) | - | - | - | - | MIT Sloan (A100) |
-| Germany Renewable | [~] (nan loss; resubmitted) | - | - | - | - | MIT Sloan (A100) |
-| Bear Room | [>>] (time limit; nan loss; resubmitted) | - | - | - | - | MIT Sloan (A100) |
-| Jena Atmospheric Physics | [~] (nan loss; resubmitted) | `timellm_jena_atmospheric_20260118_004853` | `20260118-004855_6864cff8fa25` | - | - | MIT Sloan (A100) |
+| NYC Traffic Speed | [~] (1; nan loss; I terminated; resubmitted, nan loss again, made changes and resubmitted) | `timellm_nyc_traffic_speed_20260112_185045` | - | - | - | MIT Sloan (A100) |
+| Canada Photovoltaics | [✓] (nan loss; resubmitted) | - | - | - | - | MIT Sloan (A100) |
+| Germany Renewable | [✓] (nan loss; resubmitted) | - | - | - | - | MIT Sloan (A100) |
+| Bear Room | [✓] (time limit; nan loss; resubmitted) | - | - | - | - | MIT Sloan (A100) |
+| Jena Atmospheric Physics | [✓] (nan loss; resubmitted) | `timellm_jena_atmospheric_20260118_004853` | `20260118-004855_6864cff8fa25` | - | - | MIT Sloan (A100) |
 
 note: all but nyc traffic speed and caiso are runs from later 01/16 or early 01/17. add suite and experiment later. evals not done yet. 
 (1): Had resumption error. Added `mark_last_job_complete: true` to config and tried resubmitting. 
 note (10/17 11 pm): bear room ran 30 epochs then died due to time limit. 
 note (10/17 11 pm): bear room and jena have nan loss.
 note (10/18 1:30 am): added a stopper and mark experiment failed for nan loss, changed some things that seemed to help with the nan loss (param initialization, learning rate, etc) and resubmitted
+note (10/19 3 pm): jena, germany, canada completed with numeric loss. nyc traffic has nan loss again and is still running. bear room still running but numeric loss.
 
 #### TimeCMA
 | Dataset | Status | LLM Embed | Suite ID | Experiment ID | Eval | Tables | Compute |
@@ -156,15 +157,16 @@ note (10/18 3 am): timecma doesn't work with torch compile. that was the error b
 #### LeRet
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
-| Canada Photovoltaics | [>>] | - | - | - | - | RunPod (pod:canada) |
-| Germany Renewable | [>>] | - | - | - | - | RunPod (pod:germany) |
-| NYC Traffic Speed | [>>] | - | - | - | - | RunPod (pod:nyc_traffic) |
+| Canada Photovoltaics | [✓] | - | - | - | - | RunPod (pod:canada) |
+| Germany Renewable | [>>] (timed out, submitted resume) | - | - | - | - | RunPod (pod:germany) |
+| NYC Traffic Speed | [>>] (timed out, submitted resume) | - | - | - | - | RunPod (pod:nyc_traffic) |
 | California ISO | [✓] | - | - | - | - | RunPod (pod:caiso) |
-| Bear Room | [>>] (preempted) | - | - | - | - | RunPod (pod:bear_room) |
+| Bear Room | [>>] (preempted, started over) | - | - | - | - | RunPod (pod:bear_room) |
 | Jena Atmospheric Physics | [✓] | - | - | - | - | RunPod (pod:jena) |
 
 note: (10/17 noon) running on preemptable; nyc traffic and bear room are waiting on a gpu (4 max on preemptable). pretraining at least was going well. 
 note: (10/17 11 pm) bear room preempted epoch 1 pretrain, so starting over from scratch
+note: (10/18 3 pm) going to rerun nyc traffic and germany on preemptable with requeue for 2 days each to get those done
 
 #### MMTSFLib
 | Dataset | Status | LLM Embed | Suite ID | Experiment ID | Eval | Tables | Compute |
