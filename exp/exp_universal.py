@@ -443,16 +443,20 @@ class Experiment(Exp_Basic):
         
         # Get batch size for loss accumulation
         current_batch_size = gt.size(0)
-        loss_value = loss.item()
 
         # Check for NaN/Inf in training loss (per-batch detection)
-        import math
-        if math.isnan(loss_value) or math.isinf(loss_value):
+        # Check tensor before calling .item() to catch NaN early
+        # Use .cpu() to ensure synchronization if loss is on GPU
+        if torch.isnan(loss).any().item() or torch.isinf(loss).any().item():
+            loss_value = loss.item()
             error_msg = f"Training loss became NaN/Inf at epoch {self.current_epoch}, batch {getattr(self, '_current_batch_idx', 'unknown')}: {loss_value}"
             logger = self.exp_manager.logger if self.exp_manager else None
             if logger:
                 logger.error(error_msg)
+            print(f"\n[ CRITICAL ] {error_msg}")  # Print to console to ensure visibility
             raise ValueError(error_msg)
+
+        loss_value = loss.item()
         
         # Track per-sample metrics if enabled
         if track_per_sample and self.metrics_tracker:
@@ -1088,6 +1092,7 @@ class Experiment(Exp_Basic):
             logger = self.exp_manager.logger if self.exp_manager else None
             if logger:
                 logger.error(error_msg)
+            print(f"\n[ CRITICAL ] {error_msg}")  # Print to console to ensure visibility
             raise ValueError(error_msg)
 
         self.model.train()
