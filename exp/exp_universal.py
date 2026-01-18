@@ -431,9 +431,14 @@ class Experiment(Exp_Basic):
         
         # Compute loss
         loss = criterion(output, gt)
-        
+
         # Backward pass and optimizer step
         loss.backward()
+
+        # Apply gradient clipping for TimeLLM to prevent gradient explosion
+        if self.args.model == 'TimeLLM':
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+
         model_optim.step()
         
         # Get batch size for loss accumulation

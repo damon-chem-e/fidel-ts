@@ -56,13 +56,10 @@ class TokenEmbedding(nn.Module):
             padding=0,
             bias=False
         )
-        
-        # Initialize with Kaiming normal for better gradient flow
-        nn.init.kaiming_normal_(
-            self.tokenConv.weight, 
-            mode='fan_in', 
-            nonlinearity='leaky_relu'
-        )
+
+        # Initialize with Xavier uniform for stable training
+        # Using linear nonlinearity since forward pass has no activation
+        nn.init.xavier_uniform_(self.tokenConv.weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
