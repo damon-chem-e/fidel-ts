@@ -373,8 +373,14 @@ tomorrow running:
 01/17 11:30 pm: 
 - timellm has nan loss for all but caiso. probably something in how the prompt output is translated or something. look into it and rerun. 
 - no nan loss for leret -- appears to run great.
-- tonight want to test the alwaystest branch and monitor branch, merge, push. but before that we get leret, timellm, timecma working so those can churn tonight. if mmtsflib and zhanghanbest can also churn tonight on large, that would be incredible, then all the benchmarks are complete on large data. then I have my 'competition' on all datasets and can focus on lynx_* iteration
+- tonight want to test the alwaystest branch and monitor branch, merge, push (test in orcd/scratch). but before that we get timellm, timecma working so those can churn tonight (tensor_cache_polars branch -- run in chimera_proj). if mmtsflib and zhanghanbest can also churn tonight on large, that would be incredible, then all the benchmarks are complete on large data. then I have my 'competition' on all datasets and can focus on lynx_* iteration [working on timellm [current] -> timecma -> mmtsflib -> zhanghanbest]
+  - timellm appears to work fine with some improvements to param initialization, learning rate, etc. going to run again, but need to first ensure that training stops on nan. resubmitted.
+  - timecma: looks like it works without torch compile. tested on time mmd. *however*, llm embeddings are required here, and llm embeddings are not supported in tensor cache yet. I need to make a new branch tensor_cache_llm (to avoid breaking stuff) where I support llm embeddings vs other embeddings in the hash (also the llm embedding prompt in the hash), then generate tensor caches for large datasets with the llm embeddings, then run timecma with the tensor caches to keep it from clogging up compute and taking forever (and to make it re-runnable)
+  - mmtsflib: running interactive with tee on configs/experiment_suites/mmtsflib_test.yaml --filter "fedformer" to produce an error and bring local -> it's in fidel-ts/context/logs/mmtsflib_fedformer_0118.log. note that this will need to be in the tensor_cache_llm branch, and will require a new tensor cache (distinct from the cache for timecma since the prompt is different).
+  - zhanghanbest: ...
 
+note on itransformer: might need some significant improvements on hparams to really get performance (which is needed for a solid unimodal baseline for lynx_film and lynx_film_enhanced). 
+- probably learning rate and learning rate schedule are quite important here. width/depth/etc also might be important. also batch size.
 ---
 
 

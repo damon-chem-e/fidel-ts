@@ -84,11 +84,14 @@ note: I had generated nyc traffic speed on pod:nyc_traffic, but that was faulty 
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
 | Canada Photovoltaics | [✓] | `itransformer_canada_photovoltaics_20260113_101629` | `20260113-101629_d36af4d594fb` | - | - | RunPod (pod:canada) |
-| Germany Renewable | [>>] | - | - | - | - | RunPod (pod:germany) |
-| NYC Traffic Speed | [ ] | - | - | - | - | RunPod (pod:nyc_traffic) |
-| California ISO | [ ] | - | - | - | - | RunPod (pod:caiso) |
-| Bear Room | [ ] | - | - | - | - | RunPod (pod:bear_room) |
-| Jena Atmospheric Physics | [ ] | - | - | - | - | RunPod (pod:jena) |
+| Germany Renewable | [✓] | `itransformer_germany_renewable_20260113_112049` | `20260113-112049_77c2800568d4` | - | - | RunPod (pod:germany) |
+| NYC Traffic Speed | [~] | - | - | - | - | RunPod (pod:nyc_traffic) |
+| California ISO | [~] | - | - | - | - | RunPod (pod:caiso) |
+| Bear Room | [~] | - | - | - | - | RunPod (pod:bear_room) |
+| Jena Atmospheric Physics | [~] | - | - | - | - | RunPod (pod:jena) |
+
+note (10/18 3 am): canada and germany were completed on runpods.
+note (10/18 3:45 am): caiso, nyc, bear room, jena submitted with train truncated for purge and using tensor cache, all on mit_preemptable 
 
 #### Time MMD & TTC
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
@@ -124,16 +127,17 @@ note: I had generated nyc traffic speed on pod:nyc_traffic, but that was faulty 
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
 | California ISO | [✓] | `timellm_california_iso_20260112_141144` | `20260112-141144_a05ebe165526` | - | - | MIT Sloan (A100) |
-| NYC Traffic Speed | [>>] (1; nan loss) | `timellm_nyc_traffic_speed_20260112_185045` | - | - | - | MIT Sloan (A100) |
-| Canada Photovoltaics | [✓] (nan loss) | - | - | - | - | MIT Sloan (A100) |
-| Germany Renewable | [✓] (nan loss) | - | - | - | - | MIT Sloan (A100) |
-| Bear Room | [✗] (time limit; nan loss) | - | - | - | - | MIT Sloan (A100) |
-| Jena Atmospheric Physics | [✓] (nan loss) | - | - | - | - | MIT Sloan (A100) |
+| NYC Traffic Speed | [~] (1; nan loss; I terminated; resubmitted) | `timellm_nyc_traffic_speed_20260112_185045` | - | - | - | MIT Sloan (A100) |
+| Canada Photovoltaics | [~] (nan loss; resubmitted) | - | - | - | - | MIT Sloan (A100) |
+| Germany Renewable | [~] (nan loss; resubmitted) | - | - | - | - | MIT Sloan (A100) |
+| Bear Room | [>>] (time limit; nan loss; resubmitted) | - | - | - | - | MIT Sloan (A100) |
+| Jena Atmospheric Physics | [~] (nan loss; resubmitted) | `timellm_jena_atmospheric_20260118_004853` | `20260118-004855_6864cff8fa25` | - | - | MIT Sloan (A100) |
 
 note: all but nyc traffic speed and caiso are runs from later 01/16 or early 01/17. add suite and experiment later. evals not done yet. 
 (1): Had resumption error. Added `mark_last_job_complete: true` to config and tried resubmitting. 
 note (10/17 11 pm): bear room ran 30 epochs then died due to time limit. 
 note (10/17 11 pm): bear room and jena have nan loss.
+note (10/18 1:30 am): added a stopper and mark experiment failed for nan loss, changed some things that seemed to help with the nan loss (param initialization, learning rate, etc) and resubmitted
 
 #### TimeCMA
 | Dataset | Status | LLM Embed | Suite ID | Experiment ID | Eval | Tables | Compute |
@@ -141,12 +145,13 @@ note (10/17 11 pm): bear room and jena have nan loss.
 | Time MMD & TTC | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
 | Bear Room | [✗] | [✓] | - | - | - | - | MIT Sloan (A100) |
 | California ISO | [✗] | [✓] | - | - | - | - | MIT Sloan (A100) |
-| Canada Photovoltaics | [✗] | [✓]  | - | - | - | - | MIT Sloan (A100) |
+| Canada Photovoltaics | [ ] | [✓]  | - | - | - | - | MIT Sloan (A100) |
 | Germany Renewable | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
 | NYC Traffic Speed | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
 | Jena Atmospheric Physics | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
 
 **Note:** TimeCMA has two steps: (1) LLM embedding generation, (2) model training. Suite ID and training status are all pending for Fidel-TS datasets.
+note (10/18 3 am): timecma doesn't work with torch compile. that was the error before. timecma requires llm embeddings, not currently supported in tensor cache. will make tensor_cache_llm branch and support that (see temp_buffer for more info). cache will be distinct for the timecma prompt. once that's supported, we run tensor cache jobs for timecma, then the timecma jobs with use tensor cache enabled.
 
 #### LeRet
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
