@@ -46,7 +46,7 @@ suite:
           input_len: 360      # 15 days at hourly intervals (half month)
           output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720})
           batch_size: 32
-          learning_rate: 5e-5  # Reduced from 1e-4 for more stable training
+          learning_rate: 1e-5  # Ultra-conservative LR for NYC traffic (large dataset, zero values, high variance)
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -82,6 +82,9 @@ suite:
           # Sequence configuration
           seq_len: 360
           pred_len: 168
+          # Training stability overrides for NYC traffic (large dataset, zero values, high variance)
+          grad_clip_max_norm: 0.3  # More aggressive gradient clipping (default: 1.0)
+          mapping_layer_gain: 0.05  # Ultra-conservative mapping layer init (default: 0.1)
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/timellm/nyc_traffic_speed"

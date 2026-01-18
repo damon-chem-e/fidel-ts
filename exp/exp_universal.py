@@ -437,7 +437,9 @@ class Experiment(Exp_Basic):
 
         # Apply gradient clipping for TimeLLM to prevent gradient explosion
         if self.args.model == 'TimeLLM':
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            # Read grad_clip_max_norm from model config, default to 1.0
+            grad_clip_max_norm = getattr(self.args.model_config, 'grad_clip_max_norm', 1.0)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=grad_clip_max_norm)
 
         model_optim.step()
         

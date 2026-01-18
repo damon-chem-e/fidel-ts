@@ -202,7 +202,10 @@ class TimeLLM(nn.Module):
         # Prompt configuration with defaults
         prompt_domain = getattr(configs, 'prompt_domain', False)
         dataset_description = getattr(configs, 'dataset_description', '')
-        
+
+        # Training stability configuration with defaults
+        mapping_layer_gain = getattr(configs, 'mapping_layer_gain', 0.1)
+
         # Device configuration
         device = getattr(configs, 'device', 'cuda:0')
         if getattr(configs, 'gpu', None) is not None:
@@ -246,7 +249,7 @@ class TimeLLM(nn.Module):
 
         # Initialize mapping layer with smaller values for stability
         # Large projection (50257->1000) needs careful initialization
-        nn.init.xavier_uniform_(self.mapping_layer.weight, gain=0.1)
+        nn.init.xavier_uniform_(self.mapping_layer.weight, gain=mapping_layer_gain)
         if self.mapping_layer.bias is not None:
             nn.init.zeros_(self.mapping_layer.bias)
 
