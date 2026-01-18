@@ -376,11 +376,27 @@ tomorrow running:
 - tonight want to test the alwaystest branch and monitor branch, merge, push (test in orcd/scratch). but before that we get timellm, timecma working so those can churn tonight (tensor_cache_polars branch -- run in chimera_proj). if mmtsflib and zhanghanbest can also churn tonight on large, that would be incredible, then all the benchmarks are complete on large data. then I have my 'competition' on all datasets and can focus on lynx_* iteration [working on timellm [current] -> timecma -> mmtsflib -> zhanghanbest]
   - timellm appears to work fine with some improvements to param initialization, learning rate, etc. going to run again, but need to first ensure that training stops on nan. resubmitted.
   - timecma: looks like it works without torch compile. tested on time mmd. *however*, llm embeddings are required here, and llm embeddings are not supported in tensor cache yet. I need to make a new branch tensor_cache_llm (to avoid breaking stuff) where I support llm embeddings vs other embeddings in the hash (also the llm embedding prompt in the hash), then generate tensor caches for large datasets with the llm embeddings, then run timecma with the tensor caches to keep it from clogging up compute and taking forever (and to make it re-runnable)
-  - mmtsflib: running interactive with tee on configs/experiment_suites/mmtsflib_test.yaml --filter "fedformer" to produce an error and bring local -> it's in fidel-ts/context/logs/mmtsflib_fedformer_0118.log. note that this will need to be in the tensor_cache_llm branch, and will require a new tensor cache (distinct from the cache for timecma since the prompt is different).
+  - mmtsflib: running interactive with tee on configs/experiment_suites/mmtsflib_test.yaml --filter "fedformer" to produce an error and bring local -> it's in fidel-ts/context/logs/mmtsflib_fedformer_0118.log -> claude working on a fix [looks like it might just be config overrides for fedformer knowing if data is monthly or hourly, test on an hourly fidel-ts]... note that mmtsflib will need to be in the tensor_cache_llm branch, and will require a new tensor cache (distinct from the cache for timecma since the prompt is different).
   - zhanghanbest: ...
 
 note on itransformer: might need some significant improvements on hparams to really get performance (which is needed for a solid unimodal baseline for lynx_film and lynx_film_enhanced). 
 - probably learning rate and learning rate schedule are quite important here. width/depth/etc also might be important. also batch size.
+
+---
+
+01/18 4 am:
+
+- check up on timellm, leret, itransformer (pretrain)
+- mmtsflib and timecma require the tensor_cache_llm branch -> test (mmtsflib problems see above) -> tensor cache generations (for both prompts) on preemptable -> trains on preemptable
+- test zhanghanbest -> run on preemptable
+- take a look at itransformer outputs and check against original fidel-ts paper -> hparam tune if needed
+- test monitor + alwaystest -> FIATS (full resolution) -> FIATS (original resolution) -> lynx_film_raw -> lynx_film_raw (original resolution) [runpods] 
+- if itransformer good -> lynx_film [runpods]
+
+
+- on mit_normal_gpu: look at whether lynx_film_raw and lynx_film stack up on time mmd and ttc against papers -> if not test lynx_film_enhanced -> lynx film enhanced ablations on time mmd ttc (with results all stored and tabulated) -> best on runpods
+- on mit_normal_gpu: make sure eval works on the completed timellm,leret runs [some config overrides issues perhaps, was having trouble loading the checkpoint] -> get the evals -> ensure reasonable 
+- on mit_normal_gpu test mmvision (H200) -> run on mit_normal_gpu (H200)
 ---
 
 
