@@ -444,6 +444,15 @@ class Experiment(Exp_Basic):
         # Get batch size for loss accumulation
         current_batch_size = gt.size(0)
         loss_value = loss.item()
+
+        # Check for NaN/Inf in training loss (per-batch detection)
+        import math
+        if math.isnan(loss_value) or math.isinf(loss_value):
+            error_msg = f"Training loss became NaN/Inf at epoch {self.current_epoch}, batch {getattr(self, '_current_batch_idx', 'unknown')}: {loss_value}"
+            logger = self.exp_manager.logger if self.exp_manager else None
+            if logger:
+                logger.error(error_msg)
+            raise ValueError(error_msg)
         
         # Track per-sample metrics if enabled
         if track_per_sample and self.metrics_tracker:
@@ -540,6 +549,8 @@ class Experiment(Exp_Basic):
         with progress:
             for i, iter in enumerate(train_loader):
                 iter_count += 1
+                # Store current batch index for error reporting
+                self._current_batch_idx = i
                 # Train on single batch and accumulate metrics
                 loss_value, batch_size, _, _, _ = \
                     self._train_single_batch(iter, model_optim, criterion, track_per_sample)
@@ -927,37 +938,52 @@ class Experiment(Exp_Basic):
         
         # Log training configuration
         print(f"[ info ] Starting training: {train_steps} steps/epoch, epochs {start_epoch+1}-{self.args.train_epochs}")
-        
-        # Training loop over all epochs
-        for epoch in range(start_epoch, self.args.train_epochs):
-            self.current_epoch = epoch + 1
-            
-            # Train one complete epoch
-            train_loss, epoch_time, total_samples = self._train_single_epoch(
-                epoch, train_loader, model_optim, criterion, 
-                track_per_sample, train_steps
-            )
-            
-            # Evaluate epoch: validation, testing, logging, early stopping check
-            vali_loss, test_loss, should_stop = self._evaluate_epoch(
-                epoch, train_loss, total_samples, vali_loader, test_loader,
-                criterion, early_stopping, path, model_optim, track_per_sample, train_steps, epoch_time
-            )
-            
-            # Update job history after each epoch
-            # This also checks for Hyperband pruning and other stop signals
-            should_stop_epoch = self._update_job_history_after_epoch(path)
-            
-            # Break if early stopping triggered OR external stop signal (Hyperband, etc.)
-            if should_stop or should_stop_epoch:
-                break
-        
-        # Finalize training: load best model and save final checkpoint
-        self._finalize_training(path, model_optim, train_loss, vali_loss, test_loss)
-        
-        # Register job end in job history
-        self._register_job_end(path, train_loss, vali_loss)
-        
+
+        try:
+            # Training loop over all epochs
+            for epoch in range(start_epoch, self.args.train_epochs):
+                self.current_epoch = epoch + 1
+
+                # Train one complete epoch
+                train_loss, epoch_time, total_samples = self._train_single_epoch(
+                    epoch, train_loader, model_optim, criterion,
+                    track_per_sample, train_steps
+                )
+
+                # Evaluate epoch: validation, testing, logging, early stopping check
+                vali_loss, test_loss, should_stop = self._evaluate_epoch(
+                    epoch, train_loss, total_samples, vali_loader, test_loader,
+                    criterion, early_stopping, path, model_optim, track_per_sample, train_steps, epoch_time
+                )
+
+                # Update job history after each epoch
+                # This also checks for Hyperband pruning and other stop signals
+                should_stop_epoch = self._update_job_history_after_epoch(path)
+
+                # Break if early stopping triggered OR external stop signal (Hyperband, etc.)
+                if should_stop or should_stop_epoch:
+                    break
+
+            # Finalize training: load best model and save final checkpoint
+            self._finalize_training(path, model_optim, train_loss, vali_loss, test_loss)
+
+            # Register job end in job history
+            self._register_job_end(path, train_loss, vali_loss)
+
+        except ValueError as e:
+            # Catch NaN-related errors
+            if "NaN" in str(e) or "Inf" in str(e):
+                error_msg = f"Training failed due to NaN/Inf: {e}"
+                print(f"\n[ error ] {error_msg}")
+                # Mark experiment as failed
+                if self.exp_manager:
+                    self.exp_manager.mark_failed(reason=str(e))
+                # Re-raise to propagate to suite executor
+                raise
+            else:
+                # Other ValueError, re-raise
+                raise
+
         return self.model
 
     def vali(self, loader, criterion):
@@ -1054,7 +1080,16 @@ class Experiment(Exp_Basic):
                             )
 
         epoch_loss = running_loss / total_samples if total_samples > 0 else 0.0
-        
+
+        # Check for NaN/Inf in validation loss
+        import math
+        if math.isnan(epoch_loss) or math.isinf(epoch_loss):
+            error_msg = f"Validation loss became NaN/Inf at epoch {self.current_epoch}: {epoch_loss}"
+            logger = self.exp_manager.logger if self.exp_manager else None
+            if logger:
+                logger.error(error_msg)
+            raise ValueError(error_msg)
+
         self.model.train()
         return epoch_loss
     

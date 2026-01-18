@@ -1543,5 +1543,47 @@ class ExperimentManager:
         """
         self._completion_reason = reason
         self.logger.info(f"Training completion reason set: {reason}")
-    
+
+    def mark_failed(self, reason: str = "Unknown error") -> None:
+        """
+        Mark experiment as failed with reason.
+
+        This method should be called when an experiment fails due to an error
+        (e.g., NaN loss, CUDA OOM, etc.) that prevents training from completing.
+        It logs the failure and creates a marker file in the experiment directory.
+
+        Args:
+            reason: Description of why experiment failed
+
+        Example:
+            # In training loop when NaN detected:
+            if math.isnan(loss):
+                exp_manager.mark_failed(reason="Training loss became NaN at epoch 5")
+                raise ValueError("NaN loss detected")
+        """
+        # Log the failure
+        self.logger.error(f"Experiment marked as failed: {reason}")
+
+        # Create failure marker file
+        if hasattr(self, 'experiment_dir'):
+            failure_log = self.experiment_dir / "FAILED.txt"
+            try:
+                with open(failure_log, 'w') as f:
+                    f.write(f"Experiment failed at {datetime.now().isoformat()}\n")
+                    f.write(f"Reason: {reason}\n")
+                self.logger.info(f"Failure marker written to {failure_log}")
+            except Exception as e:
+                self.logger.warning(f"Could not write failure marker: {e}")
+
+        # Update wandb run as failed if wandb is enabled
+        if self.wandb_run is not None:
+            try:
+                self.wandb_run.summary.update({
+                    "status": "failed",
+                    "failure_reason": reason,
+                    "failed_at": datetime.now().isoformat()
+                })
+            except Exception as e:
+                self.logger.warning(f"Could not update wandb with failure status: {e}")
+
 

@@ -304,11 +304,34 @@ class SuiteExecutor:
                     self._execute_experiment(exp_config)
                     success_count += 1
                     logger.info(f"Successfully completed experiment: {exp_name}")
+                except ValueError as e:
+                    # Check if this is a NaN-related failure
+                    if "NaN" in str(e) or "Inf" in str(e):
+                        error_count += 1
+                        error_msg = f"Experiment '{exp_name}' failed due to NaN/Inf loss: {str(e)}"
+                        logger.error(error_msg)
+
+                        if not self.execution_config.get('continue_on_error', True):
+                            logger.error("Stopping suite execution due to NaN/Inf failure")
+                            raise
+                        else:
+                            logger.warning(f"Continuing suite execution despite NaN/Inf failure in '{exp_name}'")
+                    else:
+                        # Other ValueError, use default handling
+                        error_count += 1
+                        error_msg = f"Error executing experiment '{exp_name}': {str(e)}"
+                        logger.error(error_msg, exc_info=True)
+
+                        if not self.execution_config.get('continue_on_error', True):
+                            logger.error("Stopping suite execution due to error")
+                            raise
+                        else:
+                            logger.warning(f"Continuing suite execution despite error in '{exp_name}'")
                 except Exception as e:
                     error_count += 1
                     error_msg = f"Error executing experiment '{exp_name}': {str(e)}"
                     logger.error(error_msg, exc_info=True)
-                    
+
                     if not self.execution_config.get('continue_on_error', True):
                         logger.error("Stopping suite execution due to error")
                         raise

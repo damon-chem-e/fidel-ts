@@ -17,6 +17,7 @@ suite:
   name: "timellm_jena_atmospheric"
   description: "Train Time-LLM model on Jena_Atmospheric_Physics dataset with 15-day context, 1-week prediction (frozen GPT-2 backbone)"
   tags: ["timellm", "time-llm", "reprogramming", "llm", "frozen-backbone", "pytorch", "fidel-ts", "jena_atmospheric", "iclr2024"]
+  resume_suite_id: "timellm_jena_atmospheric_20260118_004853"
   
   # Execution settings
   execution:
@@ -81,3 +82,4 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/timellm/jena_atmospheric"
+	  resume_experiment_id: "20260118-004855_6864cff8fa25"
