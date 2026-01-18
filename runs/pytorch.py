@@ -130,13 +130,13 @@ def config_to_args(config: ExperimentConfig, exp_manager: ExperimentManager):
     return args
 
 
-def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: Optional[Dict[str, Any]] = None, output_dir: Optional[str] = None, init_only: bool = False, return_ids: bool = False, sweep: bool = False):
+def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: Optional[Dict[str, Any]] = None, output_dir: Optional[str] = None, init_only: bool = False, return_ids: bool = False, sweep: bool = False, suite_executor = None):
     """
     Run PyTorch training experiment.
-    
+
     This function executes a complete PyTorch training pipeline based on
     the provided Pydantic configuration, with full experiment tracking.
-    
+
     Args:
         config: ExperimentConfig instance containing experiment configuration
         suite_name: Optional suite name if experiment is part of a suite
@@ -145,7 +145,8 @@ def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: 
         init_only: If True, only initialize experiment structure without running training
         return_ids: If True, return experiment_id and suite_name as dict (useful for wandb sweeps)
         sweep: If True, running in wandb sweep context (pass to ExperimentManager)
-    
+        suite_executor: Optional SuiteExecutor instance for registering experiment IDs
+
     Returns:
         If return_ids=True, returns dict with 'experiment_id' and 'suite_name' keys.
         Otherwise returns None.
@@ -172,7 +173,14 @@ def run(config: ExperimentConfig, suite_name: Optional[str] = None, suite_info: 
         init_only=init_only,
         sweep=sweep
     )
-    
+
+    # Register experiment ID with suite executor if in suite context
+    if suite_executor is not None:
+        suite_executor.register_experiment_id(
+            config.experiment_name,
+            exp_manager.experiment_id
+        )
+
     if init_only:
         if return_ids:
             return {

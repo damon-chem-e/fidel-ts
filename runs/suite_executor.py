@@ -23,6 +23,9 @@ from runs.llm import run as run_llm
 from runs.fm import run as run_fm
 from evaluation.standard import evaluate as evaluate_standard
 from evaluation.lightning import evaluate as evaluate_lightning
+from runs.suite_results_collector import SuiteResultsCollector
+from runs.suite_results_display import SuiteResultsDisplay
+from rich.console import Console
 
 
 # Set up logging
@@ -170,6 +173,11 @@ class SuiteExecutor:
         self.force_rerun = force_rerun
         # Track experiment IDs when return_ids is enabled
         self.experiment_ids: Dict[str, str] = {}
+        # Registry to track experiment names -> experiment IDs
+        # Populated as experiments are initialized by ExperimentManager
+        self.experiment_id_registry: Dict[str, str] = {}
+        # Console for rich output
+        self.console = Console()
         self.suite_info = suite_config.get('suite', {})
         self.execution_config = self.suite_info.get('execution', {})
         self.log_dir = log_dir or self.execution_config.get('log_dir', './logs/suites')
@@ -323,7 +331,14 @@ class SuiteExecutor:
                     logger.info(f"Suite GPU monitoring summary: {summary}")
         
         logger.info(f"Suite execution completed: {success_count} successful, {error_count} errors")
-        
+
+        # Collect and display results
+        try:
+            self._display_suite_results()
+        except Exception as e:
+            # Don't fail suite if results display fails
+            logger.warning(f"Failed to display suite results: {e}", exc_info=True)
+
         # Return suite and experiment IDs if requested
         if self.return_ids:
             return {
@@ -491,13 +506,14 @@ class SuiteExecutor:
             
             # Execute based on experiment type
             # Pass the timestamped suite name so experiments are saved in the correct directory
+            # Pass suite_executor=self so experiments can register their IDs
             result = None
             if exp_type == 'pytorch':
-                result = run_pytorch(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids, sweep=self.sweep)
+                result = run_pytorch(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids, sweep=self.sweep, suite_executor=self)
             elif exp_type == 'lightning':
-                result = run_lightning(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids, sweep=self.sweep)
+                result = run_lightning(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids, sweep=self.sweep, suite_executor=self)
             elif exp_type == 'llm':
-                result = run_llm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids, sweep=self.sweep)
+                result = run_llm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids, sweep=self.sweep, suite_executor=self)
             elif exp_type == 'fm':
                 # FM experiments may have task specified at experiment level
                 if 'task' in config.get('experiment', {}):
@@ -506,7 +522,7 @@ class SuiteExecutor:
                     # Recreate ExperimentConfig with task field
                     experiment_config = ExperimentConfig(**config)
                     experiment_config.experiment_name = experiment_name
-                result = run_fm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids, sweep=self.sweep)
+                result = run_fm(experiment_config, suite_name=self.suite_name, suite_info=suite_info, output_dir=str(self.output_dir), init_only=self.init_only, return_ids=self.return_ids, sweep=self.sweep, suite_executor=self)
             else:
                 raise ValueError(f"Unknown experiment type: {exp_type}")
             
@@ -514,6 +530,36 @@ class SuiteExecutor:
             if self.return_ids and result:
                 return result.get('experiment_id')
             return None
+
+    def register_experiment_id(self, experiment_name: str, experiment_id: str):
+        """
+        Register an experiment ID with the suite executor.
+
+        This method is called by ExperimentManager when an experiment ID is generated,
+        allowing the suite to track which experiments were started and their IDs.
+
+        Args:
+            experiment_name: Name of the experiment (from suite config)
+            experiment_id: Generated experiment ID
+        """
+        self.experiment_id_registry[experiment_name] = experiment_id
+        logger.debug(f"Registered experiment '{experiment_name}' with ID '{experiment_id}'")
+
+    def _display_suite_results(self):
+        """Collect and display suite results tables."""
+        collector = SuiteResultsCollector(
+            self.suite_dir,
+            self.suite_config,
+            self.experiment_id_registry
+        )
+        results = collector.collect_results()
+
+        display = SuiteResultsDisplay(console=self.console)
+        display.display_all_tables(
+            results=results,
+            suite_name=self.suite_name_base,
+            suite_id=self.suite_name
+        )
 
 
 def load_suite_config(suite_config_path: str) -> Dict[str, Any]:
