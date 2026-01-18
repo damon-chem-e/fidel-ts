@@ -36,7 +36,7 @@ suite:
           learning_rate: 5.0e-4  # From original fork defaults (run_lightning.py)
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          use_tensor_cache: true  # Enable tensor cache for fast data loading
+          use_tensor_cache: false  # Disable tensor cache - iTransformer is fast enough without it
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
