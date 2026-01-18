@@ -561,10 +561,10 @@ class Experiment(Exp_Basic):
 
                     if should_log:
                         global_step = epoch * total_batches + i
-                        self.exp_manager.log_metrics({
+                        self.exp_manager.log_batch_metrics({
                             'batch_loss': loss_value,
                             'batch_grad_norm': grad_norm
-                        }, step=global_step)
+                        }, batch_step=global_step)
 
                 # Update progress bar
                 time_now, iter_count = self._update_training_progress(
@@ -646,7 +646,7 @@ class Experiment(Exp_Basic):
             # Only log test loss if it was computed
             if test_loss is not None:
                 metrics_dict['test_loss'] = test_loss
-            self.exp_manager.log_metrics(metrics_dict, step=epoch + 1)
+            self.exp_manager.log_epoch_metrics(metrics_dict, epoch=epoch + 1)
         
         # Check early stopping condition (only uses validation loss, not test)
         early_stopping(vali_loss, self.model, path)

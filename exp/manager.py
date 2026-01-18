@@ -652,7 +652,23 @@ class ExperimentManager:
             else:
                 # Not in sweep context - initialize new wandb run
                 self.wandb_run = wandb.init(**init_kwargs)
-            
+
+            # Define custom step metrics for batch vs epoch logging
+            # This prevents step counter conflicts between batch and epoch metrics
+            if self.wandb_run is not None:
+                wandb.define_metric("batch_step")
+                wandb.define_metric("epoch")
+
+                # Batch-level metrics use batch_step as x-axis
+                wandb.define_metric("batch_loss", step_metric="batch_step")
+                wandb.define_metric("batch_grad_norm", step_metric="batch_step")
+
+                # Epoch-level metrics use epoch as x-axis
+                wandb.define_metric("train_loss", step_metric="epoch")
+                wandb.define_metric("val_loss", step_metric="epoch")
+                wandb.define_metric("test_loss", step_metric="epoch")
+                wandb.define_metric("learning_rate", step_metric="epoch")
+
             # Store wandb run_id in job_history for resume capability
             if self.wandb_run and hasattr(self.wandb_run, 'id'):
                 wandb_run_id = self.wandb_run.id
@@ -793,7 +809,69 @@ class ExperimentManager:
         """
         for name, value in metrics.items():
             self.log_metric(name, value, step)
-    
+
+    def log_batch_metrics(self, metrics: Dict[str, Any], batch_step: int) -> None:
+        """
+        Log batch-level metrics with batch_step as the step counter.
+
+        Uses wandb.define_metric() to ensure batch metrics are plotted
+        against batch_step, not the global step counter.
+
+        Args:
+            metrics: Dictionary of metric names to values (e.g., batch_loss, batch_grad_norm)
+            batch_step: Global batch step number (epoch * total_batches + batch_idx)
+        """
+        # Store locally
+        for name, value in metrics.items():
+            if name not in self.metrics:
+                self.metrics[name] = []
+            self.metrics[name].append({"step": batch_step, "value": value})
+
+        # Log to wandb with batch_step as the step metric
+        if self.wandb_run is not None:
+            try:
+                if hasattr(self.wandb_run, '_wandb') and self.wandb_run._wandb.run is None:
+                    return  # Run is finished
+                log_dict = {"batch_step": batch_step, **metrics}
+                self.wandb_run.log(log_dict)
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "step" not in error_msg and "finished" not in error_msg:
+                    print(f"Warning: Failed to log batch metrics to wandb: {e}")
+
+        self._save_metrics()
+
+    def log_epoch_metrics(self, metrics: Dict[str, Any], epoch: int) -> None:
+        """
+        Log epoch-level metrics with epoch as the step counter.
+
+        Uses wandb.define_metric() to ensure epoch metrics are plotted
+        against epoch number, not the global step counter.
+
+        Args:
+            metrics: Dictionary of metric names to values (e.g., train_loss, val_loss)
+            epoch: Epoch number (1-indexed)
+        """
+        # Store locally
+        for name, value in metrics.items():
+            if name not in self.metrics:
+                self.metrics[name] = []
+            self.metrics[name].append({"step": epoch, "value": value})
+
+        # Log to wandb with epoch as the step metric
+        if self.wandb_run is not None:
+            try:
+                if hasattr(self.wandb_run, '_wandb') and self.wandb_run._wandb.run is None:
+                    return  # Run is finished
+                log_dict = {"epoch": epoch, **metrics}
+                self.wandb_run.log(log_dict)
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "step" not in error_msg and "finished" not in error_msg:
+                    print(f"Warning: Failed to log epoch metrics to wandb: {e}")
+
+        self._save_metrics()
+
     def _save_metrics(self) -> None:
         """Save metrics to JSON file."""
         metrics_path = self.experiment_dir / "metrics" / "metrics.json"
