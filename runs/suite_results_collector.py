@@ -143,13 +143,16 @@ class SuiteResultsCollector:
         # Load metrics
         metrics = self._load_metrics(experiment_dir)
 
+        # Load test results
+        test_results = self._load_test_results(experiment_dir)
+
         # Determine status
         status = self._determine_status(job_history, metrics)
 
         # Extract metrics
         train_mse = self._extract_train_mse(job_history, metrics)
         val_mse = self._extract_val_mse(job_history, metrics)
-        test_mse = self._extract_test_mse(metrics)
+        test_mse = self._extract_test_mse(metrics, test_results)
 
         return ExperimentResult(
             name=exp_name,
@@ -184,6 +187,18 @@ class SuiteResultsCollector:
 
         try:
             with open(metrics_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return None
+
+    def _load_test_results(self, experiment_dir: Path) -> Optional[Dict[str, Any]]:
+        """Load metrics/test_results.json if it exists."""
+        test_results_path = experiment_dir / "metrics" / "test_results.json"
+        if not test_results_path.exists():
+            return None
+
+        try:
+            with open(test_results_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except (json.JSONDecodeError, IOError):
             return None
@@ -284,15 +299,25 @@ class SuiteResultsCollector:
 
         return None
 
-    def _extract_test_mse(self, metrics: Optional[Dict[str, Any]]) -> Optional[float]:
+    def _extract_test_mse(
+        self,
+        metrics: Optional[Dict[str, Any]],
+        test_results: Optional[Dict[str, Any]]
+    ) -> Optional[float]:
         """Extract test MSE (normalized)."""
-        if metrics is None:
-            return None
+        # First, try test_results.json (new structure from "test after train always")
+        if test_results is not None:
+            # Test results structure: {"overall": {"mse_normalized": ..., ...}, ...}
+            overall = test_results.get('overall', {})
+            if 'mse_normalized' in overall:
+                return overall['mse_normalized']
 
-        # Try various keys for test metrics
-        test_keys = ['test/mse_normalized', 'final_test_loss', 'test_loss']
-        for key in test_keys:
-            if key in metrics:
-                return metrics[key]
+        # Fall back to metrics.json (old structure or W&B logged metrics)
+        if metrics is not None:
+            # Try various keys for test metrics
+            test_keys = ['test/mse_normalized', 'final_test_loss', 'test_loss']
+            for key in test_keys:
+                if key in metrics:
+                    return metrics[key]
 
         return None
