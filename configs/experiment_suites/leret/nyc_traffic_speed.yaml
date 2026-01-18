@@ -56,8 +56,9 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/leret/nyc_traffic_speed"
-          resume_experiment_id: "20260117-142436_b1c07a49e6e0"
-          mark_last_job_complete: true
+        # Resume configuration (experiment-level)
+        resume_experiment_id: "20260117-142436_b1c07a49e6e0"
+        mark_last_job_complete: true
         model_config_overrides:
           # Original LeRet hyperparameters
           d_model: 128

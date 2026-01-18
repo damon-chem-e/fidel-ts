@@ -57,7 +57,7 @@ suite:
           type: "pytorch"
           output_dir: "outputs/suites/leret/germany_renewable"
           resume_experiment_id: "20260117-120736_e83eeee79f2a"
-          mark_last_job_complete: true
+        mark_last_job_complete: true
         model_config_overrides:
           # Original LeRet hyperparameters
           d_model: 128
