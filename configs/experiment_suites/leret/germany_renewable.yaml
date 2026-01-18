@@ -10,7 +10,8 @@ suite:
   name: "leret_germany_renewable"
   description: "Train LeRet model on Germany_Renewable_Power_Grid dataset with text embeddings, 15-day context, 1-week prediction"
   tags: ["leret", "retention", "pytorch", "fidel-ts", "germany_renewable", "text-embeddings"]
-  
+  resume_suite_id: "leret_germany_renewable_20260117_120736"
+
   # Execution settings
   execution:
     parallel: false
@@ -55,6 +56,8 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/leret/germany_renewable"
+          resume_experiment_id: "20260117-120736_e83eeee79f2a"
+          mark_last_job_complete: true
         model_config_overrides:
           # Original LeRet hyperparameters
           d_model: 128

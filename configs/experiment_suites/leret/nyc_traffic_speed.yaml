@@ -10,7 +10,8 @@ suite:
   name: "leret_nyc_traffic_speed"
   description: "Train LeRet model on NYC_traffic_speed dataset with text embeddings, 15-day context, 1-week prediction"
   tags: ["leret", "retention", "pytorch", "fidel-ts", "nyc_traffic_speed", "text-embeddings"]
-  
+  resume_suite_id: "leret_nyc_traffic_speed_20260117_142436"
+
   # Execution settings
   execution:
     parallel: false
@@ -55,6 +56,8 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/leret/nyc_traffic_speed"
+          resume_experiment_id: "20260117-142436_b1c07a49e6e0"
+          mark_last_job_complete: true
         model_config_overrides:
           # Original LeRet hyperparameters
           d_model: 128
