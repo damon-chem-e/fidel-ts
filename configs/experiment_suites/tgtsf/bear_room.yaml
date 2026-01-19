@@ -25,6 +25,8 @@ suite:
         model:
           name: "TGTSF"
           config_path: "model_configs/general/TGTSF/TGTSF-Bear.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
         data:
           name: "Bear_room"
           config_path: "data_configs/Bear_room/fullBear_hetero_TGTSF.yaml"
@@ -38,7 +40,8 @@ suite:
           patience: 10        # From original TGTSF bash script (scripts/Bear_room/TGTSF.sh)
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          use_tensor_cache: false  # Disable tensor cache
+          text_embedding_stride: "full"  # Use full resolution text embeddings (hetero_stride=1) to match cache
+          use_tensor_cache: true  # Enable tensor cache
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:

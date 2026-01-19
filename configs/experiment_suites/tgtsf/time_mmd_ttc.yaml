@@ -31,6 +31,8 @@ suite:
         model:
           name: "TGTSF"
           config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
         data:
           name: "time_mmd_agriculture"
           config_path: "data_configs/time_mmd/Algriculture/config.yaml"
@@ -43,9 +45,10 @@ suite:
           epochs: 50          # Same as Fidel-TS datasets
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          text_embedding_stride: "full"  # Use full resolution text embeddings (hetero_stride=1) to match cache
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
-          use_tensor_cache: false  # Disable tensor cache
+          use_tensor_cache: true  # Enable tensor cache
         wandb:
           tags: ["tgtsf", "time_mmd_agriculture"]
         experiment:
@@ -61,6 +64,8 @@ suite:
         model:
           name: "TGTSF"
           config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
         data:
           name: "time_mmd_climate"
           config_path: "data_configs/time_mmd/Climate/config.yaml"
@@ -73,9 +78,10 @@ suite:
           epochs: 50          # Same as Fidel-TS datasets
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          text_embedding_stride: "full"  # Use full resolution text embeddings (hetero_stride=1) to match cache
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
-          use_tensor_cache: false  # Disable tensor cache
+          use_tensor_cache: true  # Enable tensor cache
         wandb:
           tags: ["tgtsf", "time_mmd_climate"]
         experiment:
@@ -91,6 +97,8 @@ suite:
         model:
           name: "TGTSF"
           config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
         data:
           name: "time_mmd_economy"
           config_path: "data_configs/time_mmd/Economy/config.yaml"
@@ -103,9 +111,10 @@ suite:
           epochs: 50          # Same as Fidel-TS datasets
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          text_embedding_stride: "full"  # Use full resolution text embeddings (hetero_stride=1) to match cache
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
-          use_tensor_cache: false  # Disable tensor cache
+          use_tensor_cache: true  # Enable tensor cache
         wandb:
           tags: ["tgtsf", "time_mmd_economy"]
         experiment:
@@ -121,6 +130,8 @@ suite:
         model:
           name: "TGTSF"
           config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
         data:
           name: "time_mmd_energy"
           config_path: "data_configs/time_mmd/Energy/config.yaml"
@@ -133,9 +144,10 @@ suite:
           epochs: 50          # Same as Fidel-TS datasets
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          text_embedding_stride: "full"  # Use full resolution text embeddings (hetero_stride=1) to match cache
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
-          use_tensor_cache: false  # Disable tensor cache
+          use_tensor_cache: true  # Enable tensor cache
         wandb:
           tags: ["tgtsf", "time_mmd_energy"]
         experiment:
@@ -151,6 +163,8 @@ suite:
         model:
           name: "TGTSF"
           config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
         data:
           name: "time_mmd_environment"
           config_path: "data_configs/time_mmd/Environment/config.yaml"
@@ -163,9 +177,10 @@ suite:
           epochs: 50          # Same as Fidel-TS datasets
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          text_embedding_stride: "full"  # Use full resolution text embeddings (hetero_stride=1) to match cache
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
-          use_tensor_cache: false  # Disable tensor cache
+          use_tensor_cache: true  # Enable tensor cache
         wandb:
           tags: ["tgtsf", "time_mmd_environment"]
         experiment:
@@ -181,6 +196,8 @@ suite:
         model:
           name: "TGTSF"
           config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
         data:
           name: "time_mmd_health"
           config_path: "data_configs/time_mmd/Public_Health/config.yaml"
@@ -193,9 +210,10 @@ suite:
           epochs: 50          # Same as Fidel-TS datasets
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          text_embedding_stride: "full"  # Use full resolution text embeddings (hetero_stride=1) to match cache
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
-          use_tensor_cache: false  # Disable tensor cache
+          use_tensor_cache: true  # Enable tensor cache
         wandb:
           tags: ["tgtsf", "time_mmd_health"]
         experiment:
@@ -211,6 +229,8 @@ suite:
         model:
           name: "TGTSF"
           config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
         data:
           name: "time_mmd_socialgood"
           config_path: "data_configs/time_mmd/SocialGood/config.yaml"
@@ -223,9 +243,10 @@ suite:
           epochs: 50          # Same as Fidel-TS datasets
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          text_embedding_stride: "full"  # Use full resolution text embeddings (hetero_stride=1) to match cache
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
-          use_tensor_cache: false  # Disable tensor cache
+          use_tensor_cache: true  # Enable tensor cache
         wandb:
           tags: ["tgtsf", "time_mmd_socialgood"]
         experiment:
@@ -241,6 +262,8 @@ suite:
         model:
           name: "TGTSF"
           config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
         data:
           name: "time_mmd_traffic"
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
@@ -253,9 +276,10 @@ suite:
           epochs: 50          # Same as Fidel-TS datasets
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          text_embedding_stride: "full"  # Use full resolution text embeddings (hetero_stride=1) to match cache
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
-          use_tensor_cache: false  # Disable tensor cache
+          use_tensor_cache: true  # Enable tensor cache
         wandb:
           tags: ["tgtsf", "time_mmd_traffic"]
         experiment:
@@ -275,6 +299,8 @@ suite:
         model:
           name: "TGTSF"
           config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
         data:
           name: "ttc_weather"
           config_path: "data_configs/ttc/climate/config.yaml"
@@ -287,9 +313,10 @@ suite:
           epochs: 50          # Same as Fidel-TS datasets
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          text_embedding_stride: "full"  # Use full resolution text embeddings (hetero_stride=1) to match cache
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
-          use_tensor_cache: false  # Disable tensor cache
+          use_tensor_cache: true  # Enable tensor cache
         wandb:
           tags: ["tgtsf", "ttc_weather"]
         experiment:
@@ -305,6 +332,8 @@ suite:
         model:
           name: "TGTSF"
           config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
         data:
           name: "ttc_medical"
           config_path: "data_configs/ttc/medical/config.yaml"
@@ -320,9 +349,10 @@ suite:
           epochs: 50          # Same as Fidel-TS datasets
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          text_embedding_stride: "full"  # Use full resolution text embeddings (hetero_stride=1) to match cache
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
-          use_tensor_cache: false  # Disable tensor cache
+          use_tensor_cache: true  # Enable tensor cache
         wandb:
           tags: ["tgtsf", "ttc_medical"]
         experiment:
