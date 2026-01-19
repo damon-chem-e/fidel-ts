@@ -625,7 +625,7 @@ class Experiment(Exp_Basic):
         
         # Check early stopping condition (only uses validation loss, not test)
         # Pass epoch+1 (1-indexed) so EarlyStopping tracks best_epoch
-        early_stopping(vali_loss, self.model, path, epoch=epoch + 1)
+        early_stopping(vali_loss, self.model, path, epoch=epoch + 1, train_loss=train_loss)
         should_stop = early_stopping.early_stop
 
         if should_stop:
@@ -798,39 +798,60 @@ class Experiment(Exp_Basic):
             final_val_loss=vali_loss
         )
     
-    def _finalize_training(self, path, model_optim, train_loss, vali_loss, test_loss):
+    def _finalize_training(self, path, model_optim, train_loss, vali_loss, test_loss,
+                          best_epoch=None, test_metrics=None):
         """
         Load best model checkpoint and finalize experiment tracking.
-        
+
+        Loads the best checkpoint (checkpoint.pth) which contains model state and metrics
+        from the best epoch. Uses these saved metrics for final reporting to ensure
+        consistency across train/val/test splits (all from best epoch).
+
         Args:
             path: Checkpoint directory path
-            model_optim: Optimizer (for checkpoint saving)
-            train_loss: Final training loss
-            vali_loss: Final validation loss
-            test_loss: Final test loss
+            model_optim: Optimizer (unused, kept for compatibility)
+            train_loss: Final training loss (unused - loaded from checkpoint)
+            vali_loss: Final validation loss (unused - loaded from checkpoint)
+            test_loss: Final test loss (unused - loaded from checkpoint)
+            best_epoch: Best epoch from early stopping (loaded from checkpoint if None)
+            test_metrics: Test metrics dict from final evaluation (default: None)
         """
-        # Load best model from checkpoint
+        # Load best model checkpoint (saved by EarlyStopping)
         best_model_path = os.path.join(path, 'checkpoint.pth')
         checkpoint = torch.load(best_model_path)
-        
+
+        # Extract metrics from checkpoint
+        # Checkpoint structure: {model_state_dict, epoch, train_loss, val_loss}
+        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            # New format: checkpoint is a dict with metadata
+            model_state_dict = checkpoint['model_state_dict']
+            best_epoch = checkpoint.get('epoch', best_epoch or self.args.train_epochs)
+            train_loss = checkpoint.get('train_loss', train_loss)
+            vali_loss = checkpoint.get('val_loss', vali_loss)
+        else:
+            # Old format: checkpoint is bare state_dict (backward compatibility)
+            model_state_dict = checkpoint
+            if best_epoch is None:
+                best_epoch = self.args.train_epochs
+
         # Handle torch.compile checkpoint loading
         # Check if model is compiled and adjust checkpoint keys accordingly
         is_data_parallel = hasattr(self.model, 'module')
         model_is_compiled = hasattr(self.model, '_orig_mod') or (
             is_data_parallel and hasattr(self.model.module, '_orig_mod')
         )
-        checkpoint_has_prefix = isinstance(checkpoint, dict) and any(
-            key.startswith('_orig_mod.') or key.startswith('module._orig_mod.') for key in checkpoint.keys()
+        checkpoint_has_prefix = isinstance(model_state_dict, dict) and any(
+            key.startswith('_orig_mod.') or key.startswith('module._orig_mod.') for key in model_state_dict.keys()
         )
-        
+
         if checkpoint_has_prefix and not model_is_compiled:
             # Checkpoint has prefix but model is not compiled - strip prefix
             if self.exp_manager:
                 self.exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys")
             # Strip both possible prefixes
-            checkpoint = {
-                key.replace('module._orig_mod.', 'module.' if is_data_parallel else '').replace('_orig_mod.', ''): value 
-                for key, value in checkpoint.items()
+            model_state_dict = {
+                key.replace('module._orig_mod.', 'module.' if is_data_parallel else '').replace('_orig_mod.', ''): value
+                for key, value in model_state_dict.items()
             }
         elif not checkpoint_has_prefix and model_is_compiled:
             # Checkpoint doesn't have prefix but model is compiled - add appropriate prefix
@@ -838,54 +859,58 @@ class Experiment(Exp_Basic):
                 self.exp_manager.logger.info("Model is compiled but checkpoint lacks prefix - adding appropriate prefix to checkpoint keys")
             if is_data_parallel:
                 # DataParallel + compiled: need 'module._orig_mod.' prefix
-                checkpoint = {f'module._orig_mod.{key}': value for key, value in checkpoint.items()}
+                model_state_dict = {f'module._orig_mod.{key}': value for key, value in model_state_dict.items()}
             else:
                 # Compiled but not DataParallel: need '_orig_mod.' prefix
-                checkpoint = {f'_orig_mod.{key}': value for key, value in checkpoint.items()}
-        
-        self.model.load_state_dict(checkpoint)
-        
-        # Save checkpoint to ExperimentManager if available
+                model_state_dict = {f'_orig_mod.{key}': value for key, value in model_state_dict.items()}
+
+        self.model.load_state_dict(model_state_dict)
+
+        # Optionally update checkpoint with test metrics if available
+        # This makes checkpoint.pth a complete record of all metrics from best epoch
+        if test_metrics is not None and isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            # Update the loaded checkpoint dict with test metrics
+            checkpoint['test_mse_normalized'] = test_metrics['overall']['mse_normalized']
+            checkpoint['test_mae_normalized'] = test_metrics['overall']['mae_normalized']
+            checkpoint['test_num_samples'] = test_metrics['overall']['num_samples']
+
+            if 'mse_denormalized' in test_metrics['overall']:
+                checkpoint['test_mse_denormalized'] = test_metrics['overall']['mse_denormalized']
+                checkpoint['test_mae_denormalized'] = test_metrics['overall']['mae_denormalized']
+
+            # Save updated checkpoint back to file
+            try:
+                torch.save(checkpoint, best_model_path)
+                if self.exp_manager:
+                    self.exp_manager.logger.info(f"Updated checkpoint with test metrics at {best_model_path}")
+            except Exception as e:
+                if self.exp_manager:
+                    self.exp_manager.logger.warning(f"Failed to update checkpoint with test metrics: {e}")
+
+        # End experiment and finalize wandb
         if self.exp_manager is not None:
-            # Handle torch.compile: save underlying model's state_dict (without _orig_mod prefix)
-            # This ensures checkpoints are consistent regardless of compilation status
-            # First check if model is wrapped in DataParallel
-            if hasattr(self.model, 'module'):
-                # Model wrapped in DataParallel
-                if hasattr(self.model.module, '_orig_mod'):
-                    # DataParallel + compiled - access underlying model
-                    model_state_dict = self.model.module._orig_mod.state_dict()
-                else:
-                    # DataParallel but not compiled - save underlying module
-                    model_state_dict = self.model.module.state_dict()
-            elif hasattr(self.model, '_orig_mod'):
-                # Model is compiled (not DataParallel) - save underlying model's state_dict
-                model_state_dict = self.model._orig_mod.state_dict()
-            else:
-                # Model not compiled and not DataParallel - save normally
-                model_state_dict = self.model.state_dict()
-            
-            checkpoint = {
-                'model_state_dict': model_state_dict,
-                'optimizer_state_dict': model_optim.state_dict(),
-                'epoch': self.args.train_epochs,
-                'train_loss': train_loss,
-                'val_loss': vali_loss,
-                'test_loss': test_loss,
-            }
-            self.exp_manager.save_checkpoint(
-                checkpoint, 
-                filename="best_checkpoint.pth",
-                is_best=True
-            )
-            
-            # End experiment and finalize wandb
+            # All metrics are from best epoch for consistency
+            # train_loss and vali_loss loaded from checkpoint (saved by EarlyStopping)
+            # test metrics come from final_test_evaluation (if provided)
             final_metrics = {
-                'best_epoch': self.args.train_epochs,
+                'best_epoch': best_epoch,
                 'final_train_loss': train_loss,
                 'final_val_loss': vali_loss,
-                'final_test_loss': test_loss,
             }
+
+            # Add test metrics if available
+            if test_metrics is not None:
+                final_metrics.update({
+                    'test/mse_normalized': test_metrics['overall']['mse_normalized'],
+                    'test/mae_normalized': test_metrics['overall']['mae_normalized'],
+                    'test/num_samples': test_metrics['overall']['num_samples'],
+                })
+
+                # Add denormalized metrics if available
+                if 'mse_denormalized' in test_metrics['overall']:
+                    final_metrics['test/mse_denormalized'] = test_metrics['overall']['mse_denormalized']
+                    final_metrics['test/mae_denormalized'] = test_metrics['overall']['mae_denormalized']
+
             self.exp_manager.end_experiment(final_metrics)
 
     def _run_final_test_evaluation(self, test_loader, best_epoch, checkpoint_path):
@@ -928,13 +953,13 @@ class Experiment(Exp_Basic):
         console = self.exp_manager.console if self.exp_manager else None
 
         with torch.inference_mode():
-            with ProgressWrapper(console) as progress:
+            with ProgressWrapper(console, show_metrics=True) as progress:
                 # Outer progress bar for entities
-                entity_task = progress.add_task("Final test evaluation", total=len(test_loader))
+                entity_task = progress.add_task("Final test evaluation", total=len(test_loader), metrics="")
 
                 for idx, (entity_id, loader) in enumerate(test_loader.items()):
                     # Inner progress bar for batches within entity
-                    sample_task = progress.add_task(f"  └─ {entity_id}", total=len(loader))
+                    sample_task = progress.add_task(f"  └─ {entity_id}", total=len(loader), metrics="")
 
                     # Get dataset from loader for scaler access
                     dataset = loader.dataset if hasattr(loader, 'dataset') else None
@@ -947,8 +972,13 @@ class Experiment(Exp_Basic):
                     total_mae_denorm = 0.0
                     num_samples = 0
 
+                    # Tracking for progress bar metrics
+                    iter_count = 0
+                    time_now = time.time()
+
                     try:
                         for iter_data in loader:
+                            iter_count += 1
                             # Use the same forward pass as training/validation
                             output, gt, _ = self._forward_step(iter_data)
                             batch_size = gt.size(0)
@@ -986,8 +1016,16 @@ class Experiment(Exp_Basic):
                                     # Scaler failed, skip denormalized metrics
                                     scaler = None
 
-                            # Update progress bar
-                            progress.update(sample_task, advance=1)
+                            # Calculate metrics for progress bar display
+                            running_mse = total_mse_norm / num_samples if num_samples > 0 else 0.0
+                            running_mae = total_mae_norm / num_samples if num_samples > 0 else 0.0
+                            speed = (time.time() - time_now) / iter_count if iter_count > 0 else 0.0
+
+                            # Format metrics string
+                            metrics_str = f"MSE: {running_mse:.7f} • MAE: {running_mae:.7f} • speed: {speed:.4f}s/iter"
+
+                            # Update progress bar with metrics
+                            progress.update(sample_task, advance=1, metrics=metrics_str)
 
                         if num_samples > 0:
                             entity_metrics = {
@@ -1050,25 +1088,8 @@ class Experiment(Exp_Basic):
             if self.exp_manager:
                 self.exp_manager.logger.error(f"Failed to save test results: {e}")
 
-        # Log to WandB summary
-        try:
-            if self.exp_manager and self.exp_manager.wandb_run is not None:
-                wandb_metrics = {
-                    'test/mse_normalized': final_test_metrics['overall']['mse_normalized'],
-                    'test/mae_normalized': final_test_metrics['overall']['mae_normalized'],
-                    'test/num_samples': final_test_metrics['overall']['num_samples'],
-                    'test/num_entities': len(per_entity_metrics)
-                }
-
-                if 'mse_denormalized' in final_test_metrics['overall']:
-                    wandb_metrics['test/mse_denormalized'] = final_test_metrics['overall']['mse_denormalized']
-                    wandb_metrics['test/mae_denormalized'] = final_test_metrics['overall']['mae_denormalized']
-
-                self.exp_manager.wandb_run.summary.update(wandb_metrics)
-                self.exp_manager.logger.info("Test metrics logged to WandB summary")
-        except Exception as e:
-            if self.exp_manager:
-                self.exp_manager.logger.error(f"Failed to log test metrics to WandB: {e}")
+        # Note: WandB logging now happens in _finalize_training() to ensure
+        # metrics are logged before wandb.finish() is called
 
         return final_test_metrics
 
@@ -1133,13 +1154,12 @@ class Experiment(Exp_Basic):
             if should_stop or should_stop_epoch:
                 break
         
-        # Finalize training: load best model and save final checkpoint
-        self._finalize_training(path, model_optim, train_loss, vali_loss, test_loss)
-
-        # Run final comprehensive test evaluation on best checkpoint
+        # Determine best epoch BEFORE test evaluation and finalization
         # Use best_epoch tracked by EarlyStopping (set when checkpoint was saved)
         best_epoch = early_stopping.best_epoch if early_stopping.best_epoch is not None else self.current_epoch
 
+        # Run final comprehensive test evaluation on best checkpoint BEFORE wandb finalization
+        # This ensures test metrics are available for logging to wandb
         final_test_metrics = None
         if test_loader is not None:
             try:
@@ -1168,6 +1188,18 @@ class Experiment(Exp_Basic):
                     self.exp_manager.logger.error(f"Failed to run final test evaluation: {e}")
                 import traceback
                 traceback.print_exc()
+
+        # Finalize training: load best model, save final checkpoint, and finalize wandb
+        # This happens AFTER test evaluation so test metrics can be logged to wandb
+        self._finalize_training(
+            path,
+            model_optim,
+            train_loss,
+            vali_loss,
+            test_loss,
+            best_epoch=best_epoch,
+            test_metrics=final_test_metrics
+        )
 
         # Register job end in job history
         self._register_job_end(path, train_loss, vali_loss)

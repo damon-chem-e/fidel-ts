@@ -109,8 +109,9 @@ class EarlyStopping:
         self.val_loss_min = np.inf
         self.delta = delta
         self.best_epoch = None
+        self.best_train_loss = None
 
-    def __call__(self, val_loss, model, path, epoch=None):
+    def __call__(self, val_loss, model, path, epoch=None, train_loss=None):
         """
         Check if training should stop based on validation loss and save model if improved.
 
@@ -124,17 +125,19 @@ class EarlyStopping:
             path (str): Directory path where the model checkpoint should be saved.
             epoch (int, optional): Current epoch number (1-indexed). If provided,
                                    best_epoch will be tracked when checkpoint is saved.
+            train_loss (float, optional): Current epoch's training loss. If provided,
+                                         will be saved in checkpoint for consistency.
 
         Side Effects:
             - Updates self.early_stop flag if patience is exceeded
             - Saves model checkpoint if validation loss improves
             - Updates internal counters and best score tracking
-            - Updates self.best_epoch when a new best checkpoint is saved
+            - Updates self.best_epoch and self.best_train_loss when checkpoint is saved
         """
         score = -val_loss
         if self.best_score is None:
             self.best_score = score
-            self.save_checkpoint(val_loss, model, path, epoch)
+            self.save_checkpoint(val_loss, model, path, epoch, train_loss)
         elif score < self.best_score + self.delta:
             self.counter += 1
             print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
@@ -142,16 +145,17 @@ class EarlyStopping:
                 self.early_stop = True
         else:
             self.best_score = score
-            self.save_checkpoint(val_loss, model, path, epoch)
+            self.save_checkpoint(val_loss, model, path, epoch, train_loss)
             self.counter = 0
 
-    def save_checkpoint(self, val_loss, model, path, epoch=None):
+    def save_checkpoint(self, val_loss, model, path, epoch=None, train_loss=None):
         """
         Save the model checkpoint when validation loss improves.
 
-        This method saves the model's state dictionary to a checkpoint file
-        when a new best validation loss is achieved. Handles torch.compile
-        by saving the underlying model's state_dict (without _orig_mod prefix).
+        This method saves a checkpoint dictionary containing the model's state
+        dictionary along with training metrics (train_loss, val_loss, epoch).
+        Handles torch.compile by saving the underlying model's state_dict
+        (without _orig_mod prefix).
 
         Args:
             val_loss (float): Current validation loss that represents an improvement.
@@ -161,19 +165,25 @@ class EarlyStopping:
             epoch (int, optional): Current epoch number (1-indexed). If provided,
                                    updates self.best_epoch to track when the best
                                    checkpoint was saved.
+            train_loss (float, optional): Current training loss. If provided,
+                                         will be saved in checkpoint and tracked.
 
         Side Effects:
-            - Saves model state dict to '{path}/checkpoint.pth'
+            - Saves checkpoint dict to '{path}/checkpoint.pth' containing:
+              model_state_dict, train_loss, val_loss, epoch
             - Updates self.val_loss_min with the new minimum validation loss
             - Updates self.best_epoch if epoch is provided
+            - Updates self.best_train_loss if train_loss is provided
             - Prints improvement message if verbose mode is enabled
         """
         if self.verbose:
             print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
 
-        # Track best epoch if provided
+        # Track best epoch and train loss if provided
         if epoch is not None:
             self.best_epoch = epoch
+        if train_loss is not None:
+            self.best_train_loss = train_loss
 
         # Handle torch.compile: access underlying model to save state_dict without _orig_mod prefix
         # This ensures checkpoints are consistent regardless of compilation status
@@ -193,7 +203,22 @@ class EarlyStopping:
             # Model not compiled and not DataParallel - save normally
             state_dict = model.state_dict()
 
-        torch.save(state_dict, path + '/' + 'checkpoint.pth')
+        # Save checkpoint as dict with model state and metrics from best epoch
+        # This is THE BEST checkpoint - saved when validation loss improves
+        # Contains:
+        #   - model_state_dict: Model parameters at best epoch
+        #   - epoch: Best epoch number (1-indexed)
+        #   - train_loss: Training loss at best epoch
+        #   - val_loss: Validation loss at best epoch (the metric being optimized)
+        # Note: Test metrics are added later by _finalize_training after final test evaluation
+        checkpoint = {
+            'model_state_dict': state_dict,
+            'epoch': epoch,
+            'train_loss': train_loss,
+            'val_loss': val_loss,
+        }
+
+        torch.save(checkpoint, path + '/' + 'checkpoint.pth')
         self.val_loss_min = val_loss
 
 
