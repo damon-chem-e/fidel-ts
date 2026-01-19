@@ -848,7 +848,7 @@ class LeRetPyTorchTrainer:
                 best_val_loss = val_loss
                 torch.save(self.model.state_dict(), checkpoint_dir / 'pretrain_best.pth')
             
-            early_stopping(val_loss, self.model, str(checkpoint_dir))
+            early_stopping(val_loss, self.model, str(checkpoint_dir), epoch=epoch)
             if early_stopping.early_stop:
                 self.exp_manager.logger.info("Early stopping triggered")
                 self.exp_manager.set_completion_reason("early_stopping")
@@ -940,7 +940,7 @@ class LeRetPyTorchTrainer:
                 best_val_loss = val_loss
                 torch.save(self.model.state_dict(), checkpoint_dir / 'checkpoint.pth')
             
-            early_stopping(val_loss, self.model, str(checkpoint_dir))
+            early_stopping(val_loss, self.model, str(checkpoint_dir), epoch=epoch)
             if early_stopping.early_stop:
                 self.exp_manager.logger.info("Early stopping triggered")
                 self.exp_manager.set_completion_reason("early_stopping")

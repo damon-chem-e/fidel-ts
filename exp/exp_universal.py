@@ -15,6 +15,7 @@ import warnings
 import json
 
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
+from utils.progress_utils import ProgressWrapper
 
 warnings.filterwarnings('ignore')
 
@@ -923,88 +924,101 @@ class Experiment(Exp_Basic):
 
         total_entities = len(test_loader)
 
+        # Get console for progress bar
+        console = self.exp_manager.console if self.exp_manager else None
+
         with torch.inference_mode():
-            for idx, (entity_id, loader) in enumerate(test_loader.items()):
-                if self.exp_manager:
-                    self.exp_manager.logger.info(f"Final test evaluation: {entity_id} ({idx + 1}/{total_entities})")
+            with ProgressWrapper(console) as progress:
+                # Outer progress bar for entities
+                entity_task = progress.add_task("Final test evaluation", total=len(test_loader))
 
-                # Get dataset from loader for scaler access
-                dataset = loader.dataset if hasattr(loader, 'dataset') else None
-                scaler = getattr(dataset, 'scaler', None) if dataset else None
+                for idx, (entity_id, loader) in enumerate(test_loader.items()):
+                    # Inner progress bar for batches within entity
+                    sample_task = progress.add_task(f"  └─ {entity_id}", total=len(loader))
 
-                # Accumulators for this entity
-                total_mse_norm = 0.0
-                total_mae_norm = 0.0
-                total_mse_denorm = 0.0
-                total_mae_denorm = 0.0
-                num_samples = 0
+                    # Get dataset from loader for scaler access
+                    dataset = loader.dataset if hasattr(loader, 'dataset') else None
+                    scaler = getattr(dataset, 'scaler', None) if dataset else None
 
-                try:
-                    for iter_data in loader:
-                        # Use the same forward pass as training/validation
-                        output, gt, _ = self._forward_step(iter_data)
-                        batch_size = gt.size(0)
+                    # Accumulators for this entity
+                    total_mse_norm = 0.0
+                    total_mae_norm = 0.0
+                    total_mse_denorm = 0.0
+                    total_mae_denorm = 0.0
+                    num_samples = 0
 
-                        # Compute normalized metrics (MSE and MAE)
-                        mse = nn.MSELoss()(output, gt)
-                        mae = nn.L1Loss()(output, gt)
+                    try:
+                        for iter_data in loader:
+                            # Use the same forward pass as training/validation
+                            output, gt, _ = self._forward_step(iter_data)
+                            batch_size = gt.size(0)
 
-                        total_mse_norm += mse.item() * batch_size
-                        total_mae_norm += mae.item() * batch_size
-                        num_samples += batch_size
+                            # Compute normalized metrics (MSE and MAE)
+                            mse = nn.MSELoss()(output, gt)
+                            mae = nn.L1Loss()(output, gt)
 
-                        # Compute denormalized metrics if scaler available
-                        if scaler is not None and hasattr(scaler, 'inverse_transform'):
-                            try:
-                                # Reshape for scaler: (batch, seq, features) -> (batch*seq, features)
-                                pred_shape = output.shape
-                                pred_flat = output.cpu().numpy().reshape(-1, pred_shape[-1])
-                                gt_flat = gt.cpu().numpy().reshape(-1, pred_shape[-1])
+                            total_mse_norm += mse.item() * batch_size
+                            total_mae_norm += mae.item() * batch_size
+                            num_samples += batch_size
 
-                                # Inverse transform
-                                pred_denorm = scaler.inverse_transform(pred_flat)
-                                gt_denorm = scaler.inverse_transform(gt_flat)
+                            # Compute denormalized metrics if scaler available
+                            if scaler is not None and hasattr(scaler, 'inverse_transform'):
+                                try:
+                                    # Reshape for scaler: (batch, seq, features) -> (batch*seq, features)
+                                    pred_shape = output.shape
+                                    pred_flat = output.cpu().numpy().reshape(-1, pred_shape[-1])
+                                    gt_flat = gt.cpu().numpy().reshape(-1, pred_shape[-1])
 
-                                # Reshape back and compute metrics
-                                pred_denorm = torch.from_numpy(pred_denorm.reshape(pred_shape)).to(self.device)
-                                gt_denorm = torch.from_numpy(gt_denorm.reshape(pred_shape)).to(self.device)
+                                    # Inverse transform
+                                    pred_denorm = scaler.inverse_transform(pred_flat)
+                                    gt_denorm = scaler.inverse_transform(gt_flat)
 
-                                mse_denorm = nn.MSELoss()(pred_denorm, gt_denorm)
-                                mae_denorm = nn.L1Loss()(pred_denorm, gt_denorm)
+                                    # Reshape back and compute metrics
+                                    pred_denorm = torch.from_numpy(pred_denorm.reshape(pred_shape)).to(self.device)
+                                    gt_denorm = torch.from_numpy(gt_denorm.reshape(pred_shape)).to(self.device)
 
-                                total_mse_denorm += mse_denorm.item() * batch_size
-                                total_mae_denorm += mae_denorm.item() * batch_size
-                            except Exception:
-                                # Scaler failed, skip denormalized metrics
-                                scaler = None
+                                    mse_denorm = nn.MSELoss()(pred_denorm, gt_denorm)
+                                    mae_denorm = nn.L1Loss()(pred_denorm, gt_denorm)
 
-                    if num_samples > 0:
-                        entity_metrics = {
-                            'mse_normalized': total_mse_norm / num_samples,
-                            'mae_normalized': total_mae_norm / num_samples,
-                            'num_samples': num_samples
-                        }
+                                    total_mse_denorm += mse_denorm.item() * batch_size
+                                    total_mae_denorm += mae_denorm.item() * batch_size
+                                except Exception:
+                                    # Scaler failed, skip denormalized metrics
+                                    scaler = None
 
-                        # Add denormalized metrics if computed
-                        if total_mse_denorm > 0:
-                            entity_metrics['mse_denormalized'] = total_mse_denorm / num_samples
-                            entity_metrics['mae_denormalized'] = total_mae_denorm / num_samples
+                            # Update progress bar
+                            progress.update(sample_task, advance=1)
 
-                        per_entity_metrics[entity_id] = entity_metrics
+                        if num_samples > 0:
+                            entity_metrics = {
+                                'mse_normalized': total_mse_norm / num_samples,
+                                'mae_normalized': total_mae_norm / num_samples,
+                                'num_samples': num_samples
+                            }
 
+                            # Add denormalized metrics if computed
+                            if total_mse_denorm > 0:
+                                entity_metrics['mse_denormalized'] = total_mse_denorm / num_samples
+                                entity_metrics['mae_denormalized'] = total_mae_denorm / num_samples
+
+                            per_entity_metrics[entity_id] = entity_metrics
+
+                            if self.exp_manager:
+                                self.exp_manager.logger.info(
+                                    f"  {entity_id}: MSE={entity_metrics['mse_normalized']:.7f}, "
+                                    f"MAE={entity_metrics['mae_normalized']:.7f}"
+                                )
+                        else:
+                            if self.exp_manager:
+                                self.exp_manager.logger.warning(f"  {entity_id}: No valid samples")
+
+                    except Exception as e:
                         if self.exp_manager:
-                            self.exp_manager.logger.info(
-                                f"  {entity_id}: MSE={entity_metrics['mse_normalized']:.7f}, "
-                                f"MAE={entity_metrics['mae_normalized']:.7f}"
-                            )
-                    else:
-                        if self.exp_manager:
-                            self.exp_manager.logger.warning(f"  {entity_id}: No valid samples")
-
-                except Exception as e:
-                    if self.exp_manager:
-                        self.exp_manager.logger.error(f"  {entity_id}: Evaluation failed - {e}")
-                    continue
+                            self.exp_manager.logger.error(f"  {entity_id}: Evaluation failed - {e}")
+                    finally:
+                        # Clean up progress bars
+                        progress.remove_task(sample_task)
+                        progress.update(entity_task, advance=1)
 
         if not per_entity_metrics:
             if self.exp_manager:
