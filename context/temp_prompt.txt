@@ -395,7 +395,7 @@ note on itransformer: might need some significant improvements on hparams to rea
 
 
 - (6) on mit_normal_gpu: look at whether lynx_film_raw and lynx_film stack up on time mmd and ttc against papers -> if not test lynx_film_enhanced -> lynx film enhanced ablations on time mmd ttc (with results all stored and tabulated) -> best on runpods
-- (7) on mit_normal_gpu: make sure eval works on the completed timellm,leret runs [some config overrides issues perhaps, was having trouble loading the checkpoint] -> get the evals -> ensure reasonable 
+- (7) [unnecessary now, I can see the test results in the sbatch_logs] on mit_normal_gpu: make sure eval works on the completed timellm,leret runs [some config overrides issues perhaps, was having trouble loading the checkpoint] -> get the evals -> [still need to compile the evals from sbatch_logs and ensure reasonable] ensure reasonable 
 - (8) on mit_normal_gpu test mmvision (H200) -> run on mit_normal_gpu (H200)
 
 ---
@@ -404,12 +404,28 @@ note on itransformer: might need some significant improvements on hparams to rea
 - leret ran mostly fine a couple need to keep going
 - timellm also ran great except nyc traffic ran into nans again at epoch ... and it didn't stop on nan. looking into how to prevent the nan for this one (config) and make sure it actually stops on nan (claude tensor cache polars), made changes, pushing, and trying again.
 
-right now I'm working on getting that timellm working, then checking on monitor and alwaystest on orcd/scratch. then I can merge and test, then open the pods and run itransformer -> etc etc while leret, timellm run on cluster, then mmtsflib and zhanghanbest run on cluster.
+[timellm] right now I'm working on getting that timellm working (fixed and resubmitted), then checking on monitor and alwaystest on orcd/scratch (monitor is checked, just adding a couple more features to alwaystest). then I can merge and test, then open the pods and run itransformer -> etc etc while leret, timellm run on cluster, then mmtsflib and zhanghanbest run on cluster.
 
-monitor with wandb leet appears to work great with some odd problems at the end, but I'm working on fixing that. also want to learn wandb leet better.
+[monitor] monitor with wandb leet appears to work great with some odd problems at the end, but I'm working on fixing that. also want to learn wandb leet better. looks like wandb leet doesn't really need customization, just hotkeys to filter panes if I want. fixed I think, testing now. works great.
 
-looks like alwaystest seems to do fine with the summary things at the end. the test jsons are saving good. looks like everything is working as intended. also itransformer is wicked fast with torch compile.
-something that's a bit off is saving the best epoch. I need to fix that, probably in the alwaystest branch. when earlystopping saves a checkpoint, it can update the best epoch. right now it just always seems to be the last epoch (false)
+[alwaystest] looks like alwaystest seems to do fine with the summary things at the end. the test jsons are saving good. looks like everything is working as intended. also itransformer is wicked fast with torch compile. found that test is showing in the summary tables as N/A for normalized MSE, but it is findable in the metrics/test_results.json... so I'm not sure what's going on. It would also be nice to have that printed after the experiment in the CLI (currently no sign of testing on test in the CLI)
+
+[best epoch new issue - alwaystest] something that's a bit off is saving the best epoch. I need to fix that, probably in the alwaystest branch. when earlystopping saves a checkpoint, it can update the best epoch. right now it just always seems to be the last epoch (false)
+
+
+01/19 1:20 am
+[agent hooks] this is not in a branch, but is going to be a new repo. will add to a new moot public github that I will have (and rigorously save the auth info) for open source stuff. working on this in browser with opus, and it's coming along nicely. when the hook wasn't set up correctly it caused claude code to hang. removed the global hooks. will try on a single project (maybe on the agent-monitor project iteself) with a project specific .claude/settings.json then see if it hangs and if it works. if it does, then we move it to global.
+
+[always test] merged with monitor, tested and it works nicely. need to merge into tensor cache polars then port to the pods, then we run loads of things on the pods.
+
+- (1) check up on timellm, leret
+- (2) merge tensor_cache_polars and alwaystest -> port tensor caches to pods (spin up) -> itransformer runs -> lynx_film_raw
+- (1) take a look at itransformer outputs and check against original fidel-ts paper -> hparam tune if needed -> lynx_film
+- (3) tensor_cache_llm branch development -> test -> tensor cache generations (for both prompts) on preemptable -> trains on preemptable
+- (4) test zhanghanbest -> run on preemptable
+...
+- (5) on mit_normal_gpu: look at whether lynx_film_raw and lynx_film stack up on time mmd and ttc against papers -> if not test lynx_film_enhanced -> lynx film enhanced ablations on time mmd ttc (with results all stored and tabulated) -> best on runpods
+- (6) on mit_normal_gpu test mmvision (H200) -> run on mit_normal_gpu (H200)
 
 ---
 
