@@ -68,4 +68,5 @@ openai
 nvidia-ml-py3  # GPU monitoring via NVML (preferred)
 gputil  # GPU monitoring fallback
 nvitop
+psutil>=5.9.0  # CPU and RAM monitoring
 chronos-forecasting

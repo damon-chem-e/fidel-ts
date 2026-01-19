@@ -171,7 +171,7 @@ class DeviceConfig(BaseModel):
 class WandBConfig(BaseModel):
     """Weights & Biases (wandb) configuration section."""
     model_config = ConfigDict(extra="forbid")
-    
+
     project: str = Field(default="fidel-ts", description="WandB project name")
     entity: Optional[str] = Field(default=None, description="WandB entity/team name (optional)")
     run_name: Optional[str] = Field(default=None, description="WandB run name (defaults to experiment_id if not specified)")
@@ -180,6 +180,29 @@ class WandBConfig(BaseModel):
     notes: Optional[str] = Field(default=None, description="Notes/description for the experiment")
     enabled: bool = Field(default=True, description="Whether to enable wandb logging")
     mode: str = Field(default="online", description="WandB mode: online, offline, or disabled")
+
+    # System monitoring (GPU, CPU, RAM)
+    system_monitoring: bool = Field(
+        default=True,
+        description="Enable GPU, CPU, and RAM monitoring"
+    )
+    system_log_interval_s: float = Field(
+        default=30.0,
+        ge=1.0,
+        description="Interval between system metric logs (seconds)"
+    )
+    system_sample_interval_s: float = Field(
+        default=0.5,
+        ge=0.1,
+        description="Interval between system metric samples (seconds)"
+    )
+
+    # Batch logging
+    batch_log_interval: int = Field(
+        default=10,
+        ge=1,
+        description="Log batch loss and gradient norm every N batches (1=all, 10=every 10th)"
+    )
 
 
 class LLMEmbeddingConfig(BaseModel):

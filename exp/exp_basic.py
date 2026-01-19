@@ -72,16 +72,20 @@ class Exp_Basic(object):
         # Check for torch_compile flag in args (backward compatible - defaults to False)
         if getattr(args, 'torch_compile', False):
             if hasattr(torch, 'compile'):
+                from utils.tools import compilation_spinner
+
                 compile_mode = getattr(args, 'compile_mode', 'reduce-overhead')
-                if exp_manager:
-                    exp_manager.logger.info(f"Compiling model with torch.compile (mode={compile_mode})...")
-                else:
-                    print(f"Compiling model with torch.compile (mode={compile_mode})...")
-                self.model = torch.compile(
-                    self.model,
-                    mode=compile_mode,
-                    fullgraph=False  # More compatible with dynamic models
-                )
+                logger = exp_manager.logger if exp_manager else None
+
+                with compilation_spinner(
+                    f"Compiling model with torch.compile (mode={compile_mode})...",
+                    logger=logger
+                ):
+                    self.model = torch.compile(
+                        self.model,
+                        mode=compile_mode,
+                        fullgraph=False  # More compatible with dynamic models
+                    )
             else:
                 warning_msg = "torch.compile requested but not available (requires PyTorch 2.0+)"
                 if exp_manager:

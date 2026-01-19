@@ -489,6 +489,284 @@ class GpuMonitor:
         return f"[GPU Epoch Summary (timestamp: {timestamp})] {' | '.join(parts)}"
 
 
+class SystemMonitor:
+    """
+    Background system (CPU and RAM) telemetry sampler using psutil.
+
+    Mirrors the GpuMonitor architecture for consistency. Periodically samples
+    CPU utilization and RAM usage in a background thread. Writes a CSV timeline
+    on stop() and provides aggregate statistics.
+
+    Usage:
+        monitor = SystemMonitor(out_csv="system_telemetry.csv")
+        monitor.start()
+        # ... run experiment ...
+        monitor.stop()
+        summary = monitor.summary()
+    """
+
+    def __init__(self, out_csv: str, interval_s: float = 0.5):
+        """
+        Initialize system monitor.
+
+        Args:
+            out_csv: Path to output CSV file for telemetry data
+            interval_s: Sampling interval in seconds (default: 0.5)
+        """
+        self.out_csv = out_csv
+        self.interval_s = float(interval_s)
+        self._rows = []
+        self._thread: Optional[threading.Thread] = None
+        self._stop = threading.Event()
+        self._started = False
+        self._log_callback = None
+        self._log_interval_s = 30.0  # Default: log every 30 seconds
+        self._log_thread: Optional[threading.Thread] = None
+        self._last_log_time = 0.0
+        self._last_log_index = 0
+
+    def start(self):
+        """
+        Start background sampling thread.
+
+        No-op if psutil is not available. Creates output directory if needed.
+        """
+        if self._started:
+            return
+
+        # Check if psutil is available
+        try:
+            import psutil  # noqa: F401
+        except ImportError:
+            # psutil not available; leave disabled
+            return
+
+        # Create output directory if needed
+        out_dir = os.path.dirname(self.out_csv)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+
+        # Start background thread
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        self._started = True
+
+    def _run(self):
+        """
+        Background sampling loop.
+
+        Continuously samples CPU and RAM metrics at the specified interval until
+        stop() is called. Swallows sampling errors to ensure continuous operation.
+        """
+        import psutil
+
+        while not self._stop.is_set():
+            timestamp = datetime.utcnow().isoformat()
+            try:
+                # CPU utilization (percent across all cores)
+                cpu_util = psutil.cpu_percent(interval=None)  # Non-blocking
+
+                # Memory usage
+                mem = psutil.virtual_memory()
+                ram_used_gb = mem.used / (1024**3)
+                ram_total_gb = mem.total / (1024**3)
+                ram_util_pct = mem.percent
+
+                row = [
+                    timestamp,
+                    cpu_util,
+                    ram_used_gb,
+                    ram_total_gb,
+                    ram_util_pct,
+                ]
+                self._rows.append(row)
+            except Exception:
+                # Swallow sampling errors; continue monitoring
+                pass
+            time.sleep(self.interval_s)
+
+    def stop(self):
+        """
+        Stop sampling and write CSV to disk.
+
+        Joins the background threads and writes all collected samples to CSV.
+        """
+        if not self._started:
+            return
+
+        # Signal threads to stop
+        self._stop.set()
+
+        # Wait for sampling thread to finish
+        if self._thread is not None:
+            self._thread.join()
+
+        # Wait for logging thread to finish
+        if self._log_thread is not None:
+            self._log_thread.join()
+
+        # Write CSV file
+        try:
+            # Ensure output directory exists before writing
+            out_dir = os.path.dirname(self.out_csv)
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
+
+            with open(self.out_csv, 'w', newline='') as f:
+                w = csv.writer(f)
+                w.writerow([
+                    "timestamp",
+                    "cpu_util_pct",
+                    "ram_used_gb",
+                    "ram_total_gb",
+                    "ram_util_pct"
+                ])
+                w.writerows(self._rows)
+        except Exception:
+            # Swallow write errors to avoid disrupting experiment cleanup
+            pass
+
+    def summary(self) -> Dict[str, Any]:
+        """
+        Compute aggregate statistics from collected samples.
+
+        Returns:
+            Dictionary with aggregate metrics (avg, max) or empty dict
+            if no samples collected.
+        """
+        if not self._rows:
+            return {}
+
+        # Extract columns: timestamp, cpu_util_pct, ram_used_gb, ram_total_gb, ram_util_pct
+        cpu_util = [float(r[1]) for r in self._rows if isinstance(r[1], (int, float))]
+        ram_used = [float(r[2]) for r in self._rows if isinstance(r[2], (int, float))]
+        ram_total = max([float(r[3]) for r in self._rows if isinstance(r[3], (int, float))]) if any(isinstance(r[3], (int, float)) for r in self._rows) else None
+        ram_util = [float(r[4]) for r in self._rows if isinstance(r[4], (int, float))]
+
+        def _avg(xs):
+            """Compute average of a list."""
+            return sum(xs) / len(xs) if xs else None
+
+        return {
+            'avg_cpu_util_pct': _avg(cpu_util),
+            'max_cpu_util_pct': max(cpu_util) if cpu_util else None,
+            'avg_ram_used_gb': _avg(ram_used),
+            'max_ram_used_gb': max(ram_used) if ram_used else None,
+            'ram_total_gb': ram_total,
+            'avg_ram_util_pct': _avg(ram_util),
+            'max_ram_util_pct': max(ram_util) if ram_util else None,
+            'num_samples': len(self._rows),
+        }
+
+    def sample_count(self) -> int:
+        """Return number of collected samples so far."""
+        return len(self._rows)
+
+    def enable_periodic_logging(self, log_callback, log_interval_s: float = 30.0):
+        """
+        Enable periodic logging of system metrics.
+
+        Starts a background thread that periodically calls the log_callback with
+        incremental system statistics. Useful for real-time monitoring and wandb logging.
+
+        Args:
+            log_callback: Callback function that takes a dict of metrics and logs them
+            log_interval_s: Interval between log calls in seconds (default: 30.0)
+        """
+        if not self._started:
+            raise RuntimeError("Monitor must be started before enabling periodic logging")
+
+        self._log_callback = log_callback
+        self._log_interval_s = float(log_interval_s)
+        self._last_log_time = time.time()
+        self._last_log_index = 0
+
+        # Start logging thread
+        self._log_thread = threading.Thread(target=self._log_loop, daemon=True)
+        self._log_thread.start()
+
+    def _log_loop(self):
+        """
+        Background thread that periodically logs system metrics.
+
+        Uses summarize_since() to get incremental statistics and calls the
+        logging callback with the metrics.
+        """
+        while not self._stop.is_set():
+            time.sleep(self._log_interval_s)
+
+            if self._stop.is_set():
+                break
+
+            # Get incremental summary since last log
+            summary = self.summarize_since(self._last_log_index)
+
+            if summary.get('num_samples', 0) > 0 and self._log_callback:
+                # Prepare metrics for logging
+                metrics = {
+                    'cpu_avg_util_pct': summary.get('avg_cpu_util_pct'),
+                    'cpu_max_util_pct': summary.get('max_cpu_util_pct'),
+                    'ram_used_gb': summary.get('avg_ram_used_gb'),
+                    'ram_total_gb': summary.get('ram_total_gb'),
+                    'ram_util_pct': summary.get('avg_ram_util_pct'),
+                }
+                # Filter out None values
+                metrics = {k: v for k, v in metrics.items() if v is not None}
+
+                if metrics:
+                    try:
+                        self._log_callback(metrics)
+                    except Exception:
+                        # Swallow logging errors to avoid disrupting monitoring
+                        pass
+
+            # Update cursor for next iteration
+            self._last_log_index = summary.get('end_index', self._last_log_index)
+            self._last_log_time = time.time()
+
+    def summarize_since(self, start_index: int) -> Dict[str, Any]:
+        """
+        Compute aggregate statistics from samples collected since start_index.
+
+        Useful for incremental monitoring during long-running experiments.
+        Returns an empty dict if no new samples are available.
+
+        Args:
+            start_index: Starting index for samples to include
+
+        Returns:
+            Dictionary with aggregate metrics and end_index for cursor advancement
+        """
+        n = len(self._rows)
+        if start_index is None or start_index < 0 or start_index >= n:
+            # Nothing new or invalid index
+            return {
+                'end_index': n,
+                'num_samples': 0,
+            }
+
+        rows = self._rows[start_index:]
+
+        def _avg(xs):
+            """Compute average of a list."""
+            return sum(xs) / len(xs) if xs else None
+
+        cpu_util = [float(r[1]) for r in rows if isinstance(r[1], (int, float))]
+        ram_used = [float(r[2]) for r in rows if isinstance(r[2], (int, float))]
+        ram_total = max([float(r[3]) for r in rows if isinstance(r[3], (int, float))]) if any(isinstance(r[3], (int, float)) for r in rows) else None
+        ram_util = [float(r[4]) for r in rows if isinstance(r[4], (int, float))]
+
+        return {
+            'end_index': n,
+            'num_samples': len(rows),
+            'avg_cpu_util_pct': _avg(cpu_util),
+            'max_cpu_util_pct': max(cpu_util) if cpu_util else None,
+            'avg_ram_used_gb': _avg(ram_used),
+            'ram_total_gb': ram_total,
+            'avg_ram_util_pct': _avg(ram_util),
+        }
+
+
 class StepMonitor:
     """
     Per-iteration timing and CUDA memory snapshots.
@@ -774,26 +1052,27 @@ def _print_gpu_metrics(lines: list):
 @contextmanager
 def gpu_monitoring_context(args, exp_manager, log_interval_s: float = 30.0):
     """
-    Context manager for GPU monitoring during experiment execution.
-    
-    Handles GPU monitor initialization, periodic logging setup, and cleanup.
+    Context manager for GPU and system monitoring during experiment execution.
+
+    Handles GPU monitor and SystemMonitor initialization, periodic logging setup, and cleanup.
     Automatically logs metrics to ExperimentManager (wandb + local files) and console.
-    
+
     Args:
         args: Arguments object with GPU configuration (use_gpu, gpu, use_multi_gpu, device_ids)
         exp_manager: ExperimentManager instance for logging metrics
         log_interval_s: Interval between periodic log updates in seconds (default: 30.0)
-    
+
     Yields:
-        GpuMonitor instance if GPU monitoring is active, None otherwise
-    
+        Tuple of (GpuMonitor, SystemMonitor) instances. Either can be None if not available.
+
     Example:
-        with gpu_monitoring_context(args, exp_manager) as gpu_monitor:
+        with gpu_monitoring_context(args, exp_manager) as (gpu_monitor, system_monitor):
             # Run experiment
             exp.train()
-        # GPU monitoring automatically stopped and final metrics logged
+        # GPU and system monitoring automatically stopped and final metrics logged
     """
     gpu_monitor = None
+    system_monitor = None
     
     # Initialize GPU monitor if GPU is available
     if args.use_gpu and torch.cuda.is_available():
@@ -826,12 +1105,30 @@ def gpu_monitoring_context(args, exp_manager, log_interval_s: float = 30.0):
             _print_gpu_metrics(formatted_lines)
         
         gpu_monitor.enable_periodic_logging(log_gpu_metrics, log_interval_s=log_interval_s)
-        
+
         # Register GPU monitor with ExperimentManager so end_experiment() can access it
         exp_manager.gpu_monitor = gpu_monitor
-    
+
+    # Initialize System (CPU/RAM) monitor if enabled in config
+    if hasattr(exp_manager.config, 'wandb') and hasattr(exp_manager.config.wandb, 'system_monitoring') and exp_manager.config.wandb.system_monitoring:
+        system_csv_path = str(exp_manager.get_log_dir() / "system_telemetry.csv")
+        sample_interval = getattr(exp_manager.config.wandb, 'system_sample_interval_s', 0.5)
+        system_monitor = SystemMonitor(out_csv=system_csv_path, interval_s=sample_interval)
+        system_monitor.start()
+
+        # Enable periodic logging to wandb
+        def log_system_metrics(metrics: Dict[str, Any]):
+            """Callback to log system metrics periodically."""
+            exp_manager.log_metrics(metrics)
+
+        log_interval = getattr(exp_manager.config.wandb, 'system_log_interval_s', 30.0)
+        system_monitor.enable_periodic_logging(log_system_metrics, log_interval_s=log_interval)
+
+        # Register System monitor with ExperimentManager
+        exp_manager.system_monitor = system_monitor
+
     try:
-        yield gpu_monitor
+        yield gpu_monitor, system_monitor
     finally:
         # Stop GPU monitoring and display final summary
         # Note: GPU metrics were already logged to wandb in end_experiment() before run finished
@@ -862,10 +1159,35 @@ def gpu_monitoring_context(args, exp_manager, log_interval_s: float = 30.0):
             
             # Clear GPU monitor reference
             exp_manager.gpu_monitor = None
-        
+
+        # Stop System monitoring and log final summary
+        if system_monitor:
+            system_monitor.stop()
+            summary = system_monitor.summary()
+            if summary:
+                system_metrics = {
+                    'cpu_avg_util_pct': summary.get('avg_cpu_util_pct'),
+                    'cpu_max_util_pct': summary.get('max_cpu_util_pct'),
+                    'ram_used_gb': summary.get('avg_ram_used_gb'),
+                    'ram_max_used_gb': summary.get('max_ram_used_gb'),
+                    'ram_total_gb': summary.get('ram_total_gb'),
+                    'ram_util_pct': summary.get('avg_ram_util_pct'),
+                    'ram_max_util_pct': summary.get('max_ram_util_pct'),
+                    'system_num_samples': summary.get('num_samples'),
+                }
+                # Filter out None values
+                system_metrics = {k: v for k, v in system_metrics.items() if v is not None}
+                if system_metrics:
+                    # Log final system metrics
+                    exp_manager.log_metrics(system_metrics)
+
+            # Clear System monitor reference
+            if hasattr(exp_manager, 'system_monitor'):
+                exp_manager.system_monitor = None
+
         # Stop Rich Live display
         _stop_gpu_monitor_display()
-        
+
         # Final cleanup
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
