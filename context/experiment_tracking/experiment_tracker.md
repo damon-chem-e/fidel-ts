@@ -83,10 +83,10 @@ note: I had generated nyc traffic speed on pod:nyc_traffic, but that was faulty 
 #### Fidel-TS Datasets
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
-| Canada Photovoltaics | [>>] | `itransformer_canada_photovoltaics_20260119_201134` | `20260119-201134_c94f3a672169` | - | - | RunPod (pod:canada) |
-| Germany Renewable | [✓] | `itransformer_germany_renewable_20260113_112049` | `20260113-112049_77c2800568d4` | - | - | RunPod (pod:germany) |
+| Canada Photovoltaics | [✓] | `itransformer_canada_photovoltaics_20260119_201134` | `20260119-201134_c94f3a672169` | - | - | RunPod (pod:canada) |
+| Germany Renewable | [~] | - | - | - | - | RunPod (pod:germany) |
 | NYC Traffic Speed | [✓] | `itransformer_nyc_traffic_speed_20260119_185413` | `20260119-185414_86a8624cf255` | - | - | RunPod (pod:nyc_traffic) |
-| California ISO | [~] | - | - | - | - | RunPod (pod:caiso) |
+| California ISO | [✓] | `itransformer_california_iso_20260119_205950` | `20260119-205950_1d71374b9677` | - | - | RunPod (pod:caiso) |
 | Bear Room | [~] | - | - | - | - | RunPod (pod:bear_room) |
 | Jena Atmospheric Physics | [~] | - | - | - | - | RunPod (pod:jena) |
 
@@ -225,10 +225,10 @@ note: all of the llm embeddings are runs from late 01/16 or early 01/17.
 
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
-| Canada Photovoltaics | [ ] | `lynx_film_canada_photovoltaics_20260113_105228` | `20260113-105229_286069803489` | - | - | RunPod (pod:canada) |
+| Canada Photovoltaics | [>>] | `lynx_film_canada_photovoltaics_20260119_202157` | `20260119-202157_f5e855bd761c` | - | - | RunPod (pod:canada) |
 | Germany Renewable | [ ] (testing tensor_cache) | - | - | - | - | RunPod (pod:germany) |
-| NYC Traffic Speed | [>>] | `lynx_film_nyc_traffic_speed_20260119_200800` | `20260119-200800_9bc6d8c99b55` | - | - | RunPod (pod:nyc_traffic) |
-| California ISO | [ ] | - | - | - | - | RunPod (pod:caiso) |
+| NYC Traffic Speed | [>>] | `lynx_film_nyc_traffic_speed_20260119_202319` | `20260119-202319_6c58cf9ff591` | - | - | RunPod (pod:nyc_traffic) |
+| California ISO | [>>] | `lynx_film_california_iso_20260119_210942` | `20260119-210942_517e98f9b955` | - | - | RunPod (pod:caiso) |
 | Bear Room | [ ] | - | - | - | - | RunPod (pod:bear_room) |
 | Jena Atmospheric Physics | [ ] | - | - | - | - | RunPod (pod:jena) |
 
