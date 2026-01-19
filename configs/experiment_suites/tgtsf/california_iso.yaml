@@ -1,0 +1,48 @@
+# Experiment Suite: TGTSF on California_ISO
+# Description: Train TGTSF on California_ISO with same context/horizon as itransformer
+# Usage: python -m cli.suite run configs/experiment_suites/tgtsf/california_iso.yaml
+# Note: California_ISO uses hourly sampling (downsampled to -h)
+#       Input: 360 samples = 15 days (half month), Output: 168 samples = 1 week (second smallest)
+
+suite:
+  name: "tgtsf_california_iso"
+  description: "Train TGTSF model on California_ISO dataset with 15-day context, 1-week prediction"
+  tags: ["tgtsf", "multimodal", "pytorch", "fidel-ts", "california_iso"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/tgtsf/california_iso"
+    
+  # Experiments in this suite
+  experiments:
+    - name: "tgtsf_california_iso"
+      description: "TGTSF on California_ISO with 15-day context, 1-week prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF/TGTSF-CAISO.yaml"
+        data:
+          name: "California_ISO"
+          config_path: "data_configs/California_ISO/fullCAISO_hetero_TGTSF_H.yaml"
+        training:
+          epochs: 50
+          # Match itransformer California_ISO input/output lengths
+          input_len: 360      # 15 days at hourly intervals
+          output_len: 168     # 1 week at hourly intervals (second smallest horizon)
+          batch_size: 128     # From original TGTSF bash script (scripts/California_ISO/TGTSF.sh)
+          learning_rate: 5.0e-4  # Default from run_lightning.py
+          patience: 6         # From original TGTSF bash script (scripts/California_ISO/TGTSF.sh)
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          use_tensor_cache: false  # Disable tensor cache
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["tgtsf", "california_iso"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/tgtsf/california_iso"
