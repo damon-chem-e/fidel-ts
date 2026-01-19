@@ -10,7 +10,8 @@ suite:
   name: "leret_bear_room"
   description: "Train LeRet model on Bear_room dataset with text embeddings, 1-day context, 12-hour prediction"
   tags: ["leret", "retention", "pytorch", "fidel-ts", "bear_room", "text-embeddings"]
-  
+  resume_suite_id: "leret_bear_room_20260117_233937"  
+
   # Execution settings
   execution:
     parallel: false
@@ -55,6 +56,8 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/leret/bear_room"
+        mark_last_job_complete: true
+        resume_experiment_id: "20260117-233937_ec273d9eaff7"
         model_config_overrides:
           # Original LeRet hyperparameters
           d_model: 128
