@@ -452,6 +452,9 @@ merged tensor_cache_polars into alwaystest. pushed the new alwaystest into chime
 
 [pod:bear_room] ...
 
+
+[enhancements] caiso is horrid for lynx_film. worse on val than test by a mile, and worse on test than val by 10 miles. I think perhaps we need 
+
 ---
 
 [damonp@eosloan chimera_proj]$ du -h --max-depth=2 . | sort -h

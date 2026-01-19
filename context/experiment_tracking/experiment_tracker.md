@@ -192,27 +192,13 @@ note: all of the llm embeddings are runs from late 01/16 or early 01/17.
 
 ─── Priority 4: Lynx Film Raw on Fidel-TS ──────────────────────────────────────────────────────
 
-**Status:** [~]  
-**Purpose:** Initial runs before hyperparameter tuning complete
-
-#### Hyperparameter Sweep (NYC Traffic)
-| Status | Suite ID | Experiment ID | Eval | Tables | Compute |
-|----------|---------|--------|--------|----------|--------|
-| [-] Paused (new job submission) | `sweep_v2dy5lr5` | - | - | - | MIT Preemptable (L40s x 4) |
-
-**Notes:**
-- New job submission paused until tensor cache is working to speed up runs
-- Findings: Learning rate 0.0004 with d_model 768, e_layers 2, n_heads 4 shows good generalization
-- Every single run gets best val loss after a single epoch → set max_epochs to 1
-- Will likely create a new sweep that uses tensor cache, sweeps closer around these optimal points, and only uses a single epoch
-
 #### Initial Runs (Other Datasets)
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
 | NYC Traffic Speed | [ ] | - | - | - | - | RunPod (pod:nyc_traffic) |
-| Canada Photovoltaics | [ ] | - | - | - | - | RunPod (pod:canada) |
+| Canada Photovoltaics | [>>] | `lynx_film_raw_canada_photovoltaics_20260119_222019` | `20260119-222020_1a45a0aac8c7` | - | - | RunPod (pod:canada) | 
 | Germany Renewable | [ ] | - | - | - | - | RunPod (pod:germany) |
-| California ISO | [ ] | - | - | - | - | RunPod (pod:caiso) |
+| California ISO | [>>] | `lynx_film_raw_california_iso_20260119_221759` | `20260119-221759_15466b14951a` | - | - | RunPod (pod:caiso) | 
 | Bear Room | [ ] | - | - | - | - | RunPod (pod:bear_room) |
 | Jena Atmospheric Physics | [ ] | - | - | - | - | RunPod (pod:jena) |
 
@@ -225,12 +211,12 @@ note: all of the llm embeddings are runs from late 01/16 or early 01/17.
 
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
-| Canada Photovoltaics | [>>] | `lynx_film_canada_photovoltaics_20260119_202157` | `20260119-202157_f5e855bd761c` | - | - | RunPod (pod:canada) |
-| Germany Renewable | [ ] (testing tensor_cache) | - | - | - | - | RunPod (pod:germany) |
+| Canada Photovoltaics | [✓] | `lynx_film_canada_photovoltaics_20260119_202157` | `20260119-202157_f5e855bd761c` | - | - | RunPod (pod:canada) |
+| Germany Renewable | [>>] | `lynx_film_germany_renewable_20260119_213142` | `20260119-213142_5adc752cde19` | - | - | RunPod (pod:germany) |
 | NYC Traffic Speed | [>>] | `lynx_film_nyc_traffic_speed_20260119_202319` | `20260119-202319_6c58cf9ff591` | - | - | RunPod (pod:nyc_traffic) |
-| California ISO | [>>] | `lynx_film_california_iso_20260119_211605` | `20260119-211605_780ef802fcf8` | - | - | RunPod (pod:caiso) |
+| California ISO | [✓] | `lynx_film_california_iso_20260119_211605` | `20260119-211605_780ef802fcf8` | - | - | RunPod (pod:caiso) |
 | Bear Room | [ ] | - | - | - | - | RunPod (pod:bear_room) |
-| Jena Atmospheric Physics | [ ] | - | - | - | - | RunPod (pod:jena) |
+| Jena Atmospheric Physics | [>>] | `lynx_film_jena_atmospheric_20260119_215914` | `20260119-215914_27b837b9f927` | - | - | RunPod (pod:jena) |
 
 **Note:** Requires iTransformer pretraining to complete first.
 
