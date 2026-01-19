@@ -47,7 +47,7 @@ suite:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 32
-          learning_rate: 1e-4
+          learning_rate: 5e-5  # Reduced from 1e-4 for more stable training
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -101,7 +101,7 @@ suite:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 32
-          learning_rate: 1e-4
+          learning_rate: 5e-5  # Reduced from 1e-4 for more stable training
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -154,7 +154,7 @@ suite:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 32
-          learning_rate: 1e-4
+          learning_rate: 5e-5  # Reduced from 1e-4 for more stable training
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -206,7 +206,7 @@ suite:
           input_len: 24       # Context length from Table 4
           output_len: 12      # Prediction length from Table 4
           batch_size: 32
-          learning_rate: 1e-4
+          learning_rate: 5e-5  # Reduced from 1e-4 for more stable training
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -258,7 +258,7 @@ suite:
           input_len: 24       # Context length from Table 4
           output_len: 48      # Prediction length from Table 4
           batch_size: 32
-          learning_rate: 1e-4
+          learning_rate: 5e-5  # Reduced from 1e-4 for more stable training
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -310,7 +310,7 @@ suite:
           input_len: 24       # Context length from Table 4
           output_len: 12      # Prediction length from Table 4
           batch_size: 32
-          learning_rate: 1e-4
+          learning_rate: 5e-5  # Reduced from 1e-4 for more stable training
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -363,7 +363,7 @@ suite:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 32
-          learning_rate: 1e-4
+          learning_rate: 5e-5  # Reduced from 1e-4 for more stable training
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -416,7 +416,7 @@ suite:
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
           batch_size: 32
-          learning_rate: 1e-4
+          learning_rate: 5e-5  # Reduced from 1e-4 for more stable training
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -472,7 +472,7 @@ suite:
           input_len: 7        # Context length from Table 4
           output_len: 7       # Prediction length from Table 4
           batch_size: 32
-          learning_rate: 1e-4
+          learning_rate: 5e-5  # Reduced from 1e-4 for more stable training
           patience: 5
           epochs: 50
           track_per_sample: false
@@ -524,7 +524,7 @@ suite:
           input_len: 7        # Context length from Table 4
           output_len: 7       # Prediction length from Table 4
           batch_size: 32
-          learning_rate: 1e-4
+          learning_rate: 5e-5  # Reduced from 1e-4 for more stable training
           patience: 5
           epochs: 50
           track_per_sample: false

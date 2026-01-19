@@ -10,7 +10,8 @@ suite:
   name: "leret_nyc_traffic_speed"
   description: "Train LeRet model on NYC_traffic_speed dataset with text embeddings, 15-day context, 1-week prediction"
   tags: ["leret", "retention", "pytorch", "fidel-ts", "nyc_traffic_speed", "text-embeddings"]
-  
+  resume_suite_id: "leret_nyc_traffic_speed_20260117_142436"
+
   # Execution settings
   execution:
     parallel: false
@@ -34,10 +35,10 @@ suite:
           text_embedding_stride: "full"  # Full resolution (LeRet may not use hetero data, but safe to include)
           input_len: 360      # 15 days at hourly intervals (half month)
           output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720})
-          batch_size: 768
+          batch_size: 128
           learning_rate: 8.66e-4
           patience: 5
-          epochs: 50  # Total epochs (pretrain + finetune)
+          epochs: 20  # Total epochs (pretrain + finetune)
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -46,7 +47,7 @@ suite:
           # LeRet-specific two-stage training
           leret:
             training_stage: "both"
-            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_epochs: 10  # 50% of total epochs (10/10 split)
             pretrain_loss: "mse"
             finetune_loss: "mse"
             pretrain_learning_rate: 1e-3
@@ -55,6 +56,9 @@ suite:
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/leret/nyc_traffic_speed"
+        # Resume configuration (experiment-level)
+        resume_experiment_id: "20260117-142436_b1c07a49e6e0"
+        mark_last_job_complete: true
         model_config_overrides:
           # Original LeRet hyperparameters
           d_model: 128

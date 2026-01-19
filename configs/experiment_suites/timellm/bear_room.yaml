@@ -42,7 +42,7 @@ suite:
           input_len: 288      # 1 day at 5-min intervals (288 = 24h * 12)
           output_len: 144     # 12 hours at 5-min intervals (second smallest: {12, 144, 288, 576})
           batch_size: 32
-          learning_rate: 1e-4
+          learning_rate: 5e-5  # Reduced from 1e-4 for more stable training
           patience: 5
           epochs: 50
           track_per_sample: false

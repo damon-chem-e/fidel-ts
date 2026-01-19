@@ -41,10 +41,10 @@ suite:
           text_embedding_stride: "full"  # Full resolution (LeRet may not use hetero data, but safe to include)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 12
+          batch_size: 128
           learning_rate: 0.00022
           patience: 2
-          epochs: 50  # Total epochs (pretrain + finetune)
+          epochs: 20  # Total epochs (pretrain + finetune)
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -53,7 +53,7 @@ suite:
           # LeRet-specific two-stage training
           leret:
             training_stage: "both"
-            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_epochs: 10  # 50% of total epochs (10/10 split)
             pretrain_loss: "mse"
             finetune_loss: "mse"
             pretrain_learning_rate: 1e-3
@@ -107,10 +107,10 @@ suite:
           text_embedding_stride: "full"  # Full resolution (LeRet may not use hetero data, but safe to include)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 12
+          batch_size: 128
           learning_rate: 0.00022
           patience: 2
-          epochs: 50  # Total epochs (pretrain + finetune)
+          epochs: 20  # Total epochs (pretrain + finetune)
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -119,7 +119,7 @@ suite:
           # LeRet-specific two-stage training
           leret:
             training_stage: "both"
-            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_epochs: 10  # 50% of total epochs (10/10 split)
             pretrain_loss: "mse"
             finetune_loss: "mse"
             pretrain_learning_rate: 1e-3
@@ -173,10 +173,10 @@ suite:
           text_embedding_stride: "full"  # Full resolution (LeRet may not use hetero data, but safe to include)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 12
+          batch_size: 128
           learning_rate: 0.00022
           patience: 2
-          epochs: 50  # Total epochs (pretrain + finetune)
+          epochs: 20  # Total epochs (pretrain + finetune)
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -185,7 +185,7 @@ suite:
           # LeRet-specific two-stage training
           leret:
             training_stage: "both"
-            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_epochs: 10  # 50% of total epochs (10/10 split)
             pretrain_loss: "mse"
             finetune_loss: "mse"
             pretrain_learning_rate: 1e-3
@@ -238,10 +238,10 @@ suite:
         training:
           input_len: 24       # Context length from Table 4
           output_len: 12      # Prediction length from Table 4
-          batch_size: 12
+          batch_size: 128
           learning_rate: 0.00022
           patience: 2
-          epochs: 50  # Total epochs (pretrain + finetune)
+          epochs: 20  # Total epochs (pretrain + finetune)
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -250,7 +250,7 @@ suite:
           # LeRet-specific two-stage training
           leret:
             training_stage: "both"
-            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_epochs: 10  # 50% of total epochs (10/10 split)
             pretrain_loss: "mse"
             finetune_loss: "mse"
             pretrain_learning_rate: 1e-3
@@ -303,10 +303,10 @@ suite:
         training:
           input_len: 24       # Context length from Table 4
           output_len: 48      # Prediction length from Table 4
-          batch_size: 12
+          batch_size: 128
           learning_rate: 0.00022
           patience: 2
-          epochs: 50  # Total epochs (pretrain + finetune)
+          epochs: 20  # Total epochs (pretrain + finetune)
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -315,7 +315,7 @@ suite:
           # LeRet-specific two-stage training
           leret:
             training_stage: "both"
-            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_epochs: 10  # 50% of total epochs (10/10 split)
             pretrain_loss: "mse"
             finetune_loss: "mse"
             pretrain_learning_rate: 1e-3
@@ -368,10 +368,10 @@ suite:
         training:
           input_len: 24       # Context length from Table 4
           output_len: 12      # Prediction length from Table 4
-          batch_size: 12
+          batch_size: 128
           learning_rate: 0.00022
           patience: 2
-          epochs: 50  # Total epochs (pretrain + finetune)
+          epochs: 20  # Total epochs (pretrain + finetune)
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -380,7 +380,7 @@ suite:
           # LeRet-specific two-stage training
           leret:
             training_stage: "both"
-            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_epochs: 10  # 50% of total epochs (10/10 split)
             pretrain_loss: "mse"
             finetune_loss: "mse"
             pretrain_learning_rate: 1e-3
@@ -434,10 +434,10 @@ suite:
           text_embedding_stride: "full"  # Full resolution (LeRet may not use hetero data, but safe to include)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 12
+          batch_size: 128
           learning_rate: 0.00022
           patience: 2
-          epochs: 50  # Total epochs (pretrain + finetune)
+          epochs: 20  # Total epochs (pretrain + finetune)
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -446,7 +446,7 @@ suite:
           # LeRet-specific two-stage training
           leret:
             training_stage: "both"
-            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_epochs: 10  # 50% of total epochs (10/10 split)
             pretrain_loss: "mse"
             finetune_loss: "mse"
             pretrain_learning_rate: 1e-3
@@ -500,10 +500,10 @@ suite:
           text_embedding_stride: "full"  # Full resolution (LeRet may not use hetero data, but safe to include)
           input_len: 24       # Context length from Table 4
           output_len: 6       # Prediction length from Table 4
-          batch_size: 12
+          batch_size: 128
           learning_rate: 0.00022
           patience: 2
-          epochs: 50  # Total epochs (pretrain + finetune)
+          epochs: 20  # Total epochs (pretrain + finetune)
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -512,7 +512,7 @@ suite:
           # LeRet-specific two-stage training
           leret:
             training_stage: "both"
-            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_epochs: 10  # 50% of total epochs (10/10 split)
             pretrain_loss: "mse"
             finetune_loss: "mse"
             pretrain_learning_rate: 1e-3
@@ -569,10 +569,10 @@ suite:
         training:
           input_len: 7        # Context length from Table 4
           output_len: 7       # Prediction length from Table 4
-          batch_size: 12
+          batch_size: 128
           learning_rate: 0.00022
           patience: 2
-          epochs: 50  # Total epochs (pretrain + finetune)
+          epochs: 20  # Total epochs (pretrain + finetune)
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -581,7 +581,7 @@ suite:
           # LeRet-specific two-stage training
           leret:
             training_stage: "both"
-            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_epochs: 10  # 50% of total epochs (10/10 split)
             pretrain_loss: "mse"
             finetune_loss: "mse"
             pretrain_learning_rate: 1e-3
@@ -634,10 +634,10 @@ suite:
         training:
           input_len: 7        # Context length from Table 4
           output_len: 7       # Prediction length from Table 4
-          batch_size: 12
+          batch_size: 128
           learning_rate: 0.00022
           patience: 2
-          epochs: 50  # Total epochs (pretrain + finetune)
+          epochs: 20  # Total epochs (pretrain + finetune)
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
@@ -646,7 +646,7 @@ suite:
           # LeRet-specific two-stage training
           leret:
             training_stage: "both"
-            pretrain_epochs: 25  # 50% of total epochs (25/25 split)
+            pretrain_epochs: 10  # 50% of total epochs (10/10 split)
             pretrain_loss: "mse"
             finetune_loss: "mse"
             pretrain_learning_rate: 1e-3

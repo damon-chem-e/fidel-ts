@@ -49,8 +49,9 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache (will auto-resolve path)
         device:
           use_gpu: true
           gpu: 0
@@ -103,8 +104,9 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache (will auto-resolve path)
         device:
           use_gpu: true
           gpu: 0
@@ -157,8 +159,9 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache (will auto-resolve path)
         device:
           use_gpu: true
           gpu: 0
@@ -210,8 +213,9 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache (will auto-resolve path)
         device:
           use_gpu: true
           gpu: 0
@@ -263,8 +267,9 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache (will auto-resolve path)
         device:
           use_gpu: true
           gpu: 0
@@ -316,8 +321,9 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache (will auto-resolve path)
         device:
           use_gpu: true
           gpu: 0
@@ -370,8 +376,9 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache (will auto-resolve path)
         device:
           use_gpu: true
           gpu: 0
@@ -424,8 +431,9 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache (will auto-resolve path)
         device:
           use_gpu: true
           gpu: 0
@@ -481,8 +489,9 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache (will auto-resolve path)
         device:
           use_gpu: true
           gpu: 0
@@ -534,8 +543,9 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: false
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache (will auto-resolve path)
         device:
           use_gpu: true
           gpu: 0

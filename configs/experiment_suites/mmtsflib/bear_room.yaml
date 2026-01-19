@@ -1,8 +1,8 @@
 # Experiment Suite: MMTSFlib on Bear_room
 # Description: Train MMTSFlib (prediction-level late fusion) with FEDformer on Bear_room dataset
 # Usage: python -m cli.suite run configs/experiment_suites/mmtsflib/bear_room.yaml
-# Note: Bear_room uses hourly sampling (downsampled to -h)
-#       Input: 360 samples = 15 days (half month), Output: 168 samples = 1 week (second smallest)
+# Note: Bear_room uses 5-minute sampling (NOT downsampled to hourly)
+#       Input: 288 samples = 1 day at 5-min intervals, Output: 144 samples = 12 hours at 5-min intervals
 #       Split points: {Jan. 1, 2021, Jan. 1, 2022}
 #
 # IMPORTANT: This suite requires pre-computed LLM embeddings!
@@ -11,7 +11,7 @@
 
 suite:
   name: "mmtsflib_bear_room"
-  description: "Train MMTSFlib with FEDformer on Bear_room dataset with 15-day context, 1-week prediction"
+  description: "Train MMTSFlib with FEDformer on Bear_room dataset with 1-day context, 12-hour prediction"
   tags: ["mmtsflib", "multimodal", "late-fusion", "fedformer", "pytorch", "fidel-ts", "bear_room"]
 
   # Execution settings
@@ -23,7 +23,7 @@ suite:
   # Experiments in this suite
   experiments:
     - name: "mmtsflib_fedformer_bear_room"
-      description: "MMTSFlib with FEDformer on Bear_room with 15-day context, 1-week prediction"
+      description: "MMTSFlib with FEDformer on Bear_room with 1-day context, 12-hour prediction"
       enabled: true
       template: "configs/templates/pytorch_training.yaml"
       overrides:
@@ -34,8 +34,8 @@ suite:
           name: "fidel_Bear_room:fullBear_hetero_TGTSF"
           config_path: "data_configs/Bear_room/fullBear_hetero_TGTSF.yaml"
         training:
-          input_len: 360      # 15 days at hourly intervals (half month)
-          output_len: 168     # 1 week at hourly intervals
+          input_len: 288      # 1 day at 5-minute intervals
+          output_len: 144     # 12 hours at 5-minute intervals
           batch_size: 256
           learning_rate: 1e-3
           patience: 10
@@ -65,8 +65,8 @@ suite:
           chunk_size: 1000
         model_config_overrides:
           unimodal_model_type: "FEDformer"
-          seq_len: 360
-          pred_len: 168
+          seq_len: 288
+          pred_len: 144
           enc_in: 1           # Bear room has 1 target
           d_model: 512
           n_heads: 8
@@ -77,7 +77,7 @@ suite:
           mode_select: "random"
           moving_avg: 25
           embed: "timeF"
-          freq: "h"
+          freq: "t"  # 5-minute data requires minutely frequency for time features
           input_text_dim: 768
           prompt_weight_mode: "fixed"
           prompt_weight: 0.01

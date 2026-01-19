@@ -436,17 +436,39 @@ class Experiment(Exp_Basic):
         # Backward pass
         loss.backward()
 
-        # Calculate gradient norm before optimizer step
-        grad_norm = torch.nn.utils.clip_grad_norm_(
-            self.model.parameters(),
-            max_norm=float('inf')  # Don't actually clip, just compute norm
-        ).item()
 
-        # Optimizer step
+        # Apply gradient clipping for TimeLLM to prevent gradient explosion
+        if self.args.model == 'TimeLLM':
+            # Read grad_clip_max_norm from model config, default to 1.0
+            grad_clip_max_norm = getattr(self.args.model_config, 'grad_clip_max_norm', 1.0)
+            grad_norm = torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), 
+                max_norm=grad_clip_max_norm
+            ).item()
+        # Other models: just calculate gradient norm before optimizer step (no clipping)
+        else:
+            grad_norm = torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(),
+                max_norm=float('inf')  # Don't actually clip, just compute norm
+            ).item()
+
         model_optim.step()
         
         # Get batch size for loss accumulation
         current_batch_size = gt.size(0)
+
+        # Check for NaN/Inf in training loss (per-batch detection)
+        # Check tensor before calling .item() to catch NaN early
+        # Use .cpu() to ensure synchronization if loss is on GPU
+        if torch.isnan(loss).any().item() or torch.isinf(loss).any().item():
+            loss_value = loss.item()
+            error_msg = f"Training loss became NaN/Inf at epoch {self.current_epoch}, batch {getattr(self, '_current_batch_idx', 'unknown')}: {loss_value}"
+            logger = self.exp_manager.logger if self.exp_manager else None
+            if logger:
+                logger.error(error_msg)
+            print(f"\n[ CRITICAL ] {error_msg}")  # Print to console to ensure visibility
+            raise ValueError(error_msg)
+
         loss_value = loss.item()
         
         # Track per-sample metrics if enabled
@@ -550,6 +572,8 @@ class Experiment(Exp_Basic):
         with progress:
             for i, iter in enumerate(train_loader):
                 iter_count += 1
+                # Store current batch index for error reporting
+                self._current_batch_idx = i
                 # Train on single batch and accumulate metrics
                 loss_value, batch_size, _, _, _, grad_norm = \
                     self._train_single_batch(iter, model_optim, criterion, track_per_sample)
@@ -1180,56 +1204,12 @@ class Experiment(Exp_Basic):
             if should_stop or should_stop_epoch:
                 break
         
-        # Determine best epoch BEFORE test evaluation and finalization
-        # Use best_epoch tracked by EarlyStopping (set when checkpoint was saved)
-        best_epoch = early_stopping.best_epoch if early_stopping.best_epoch is not None else self.current_epoch
-
-        # Run final comprehensive test evaluation on best checkpoint BEFORE wandb finalization
-        # This ensures test metrics are available for logging to wandb
-        final_test_metrics = None
-        if test_loader is not None:
-            try:
-                if self.exp_manager:
-                    self.exp_manager.logger.info("Running final test evaluation on best checkpoint...")
-                final_test_metrics = self._run_final_test_evaluation(test_loader, best_epoch, path)
-
-                if final_test_metrics:
-                    if self.exp_manager:
-                        self.exp_manager.logger.info(
-                            f"Final test MSE (normalized): {final_test_metrics['overall']['mse_normalized']:.7f}"
-                        )
-                        self.exp_manager.logger.info(
-                            f"Final test MAE (normalized): {final_test_metrics['overall']['mae_normalized']:.7f}"
-                        )
-
-                        if 'mse_denormalized' in final_test_metrics['overall']:
-                            self.exp_manager.logger.info(
-                                f"Final test MSE (denormalized): {final_test_metrics['overall']['mse_denormalized']:.4f}"
-                            )
-                            self.exp_manager.logger.info(
-                                f"Final test MAE (denormalized): {final_test_metrics['overall']['mae_denormalized']:.4f}"
-                            )
-            except Exception as e:
-                if self.exp_manager:
-                    self.exp_manager.logger.error(f"Failed to run final test evaluation: {e}")
-                import traceback
-                traceback.print_exc()
-
-        # Finalize training: load best model, save final checkpoint, and finalize wandb
-        # This happens AFTER test evaluation so test metrics can be logged to wandb
-        self._finalize_training(
-            path,
-            model_optim,
-            train_loss,
-            vali_loss,
-            test_loss,
-            best_epoch=best_epoch,
-            test_metrics=final_test_metrics
-        )
-
+        # Finalize training: load best model and save final checkpoint
+        self._finalize_training(path, model_optim, train_loss, vali_loss, test_loss)
+        
         # Register job end in job history
         self._register_job_end(path, train_loss, vali_loss)
-
+        
         return self.model
 
     def vali(self, loader, criterion):
@@ -1326,7 +1306,17 @@ class Experiment(Exp_Basic):
                             )
 
         epoch_loss = running_loss / total_samples if total_samples > 0 else 0.0
-        
+
+        # Check for NaN/Inf in validation loss
+        import math
+        if math.isnan(epoch_loss) or math.isinf(epoch_loss):
+            error_msg = f"Validation loss became NaN/Inf at epoch {self.current_epoch}: {epoch_loss}"
+            logger = self.exp_manager.logger if self.exp_manager else None
+            if logger:
+                logger.error(error_msg)
+            print(f"\n[ CRITICAL ] {error_msg}")  # Print to console to ensure visibility
+            raise ValueError(error_msg)
+
         self.model.train()
         return epoch_loss
     

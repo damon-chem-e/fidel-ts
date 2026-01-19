@@ -9,7 +9,6 @@ suite:
   name: "lynx_film_raw_bear_room"
   description: "Train lynx_film_raw model on Bear_room dataset with 1-day context, 12-hour prediction"
   tags: ["lynx_film_raw", "multimodal", "pytorch", "fidel-ts", "bear_room", "film"]
-  resume_suite_id: "lynx_film_raw_bear_room_20260105_124243"
   
   # Execution settings
   execution:
@@ -36,7 +35,7 @@ suite:
           text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 288      # 1 day at 5-min intervals (288 = 24h * 12)
           output_len: 144     # 12 hours at 5-min intervals (second smallest: {12, 144, 288, 576})
-          batch_size: 768
+          batch_size: 128
           learning_rate: 8.66e-4
           patience: 5
           epochs: 50
@@ -45,9 +44,10 @@ suite:
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true
         wandb:
-          tags: ["lynx_film_raw", "bear_room"]
+          tags: ["lynx_film_raw", "bear_room"] 
+          mode: "offline"
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/bear_room"
-          resume_experiment_id: "20260105-124243_4a8a0c764258"

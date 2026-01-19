@@ -84,6 +84,22 @@ dataset_description: ""
 # enc_in: 7
 
 # =============================================================================
+# Training Stability Configuration
+# =============================================================================
+
+# Gradient clipping max norm (applied during training)
+# Prevents gradient explosion during backprop
+# Lower values = more aggressive clipping = more stable but slower convergence
+# Default: 1.0
+grad_clip_max_norm: 1.0
+
+# Mapping layer initialization gain
+# Controls initial weight scale for the large 50257->1000 projection
+# Lower values = smaller initial weights = more stable initialization
+# Default: 0.1
+mapping_layer_gain: 0.1
+
+# =============================================================================
 # Task Configuration
 # =============================================================================
 

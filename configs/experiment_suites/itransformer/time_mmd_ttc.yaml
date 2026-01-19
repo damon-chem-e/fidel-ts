@@ -39,6 +39,7 @@ suite:
           batch_size: 32      # Reasonable batch size for time_mmd datasets
           learning_rate: 5.0e-4  # From original fork defaults (run_lightning.py)
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
@@ -65,6 +66,7 @@ suite:
           batch_size: 32      # Reasonable batch size for time_mmd datasets
           learning_rate: 5.0e-4  # From original fork defaults (run_lightning.py)
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
@@ -91,6 +93,7 @@ suite:
           batch_size: 32      # Reasonable batch size for time_mmd datasets
           learning_rate: 5.0e-4  # From original fork defaults (run_lightning.py)
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
@@ -117,6 +120,7 @@ suite:
           batch_size: 32      # Reasonable batch size for time_mmd datasets
           learning_rate: 5.0e-4  # From original fork defaults (run_lightning.py)
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
@@ -143,6 +147,7 @@ suite:
           batch_size: 32      # Reasonable batch size for time_mmd datasets
           learning_rate: 5.0e-4  # From original fork defaults (run_lightning.py)
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
@@ -169,6 +174,7 @@ suite:
           batch_size: 32      # Reasonable batch size for time_mmd datasets
           learning_rate: 5.0e-4  # From original fork defaults (run_lightning.py)
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
@@ -195,6 +201,7 @@ suite:
           batch_size: 32      # Reasonable batch size for time_mmd datasets
           learning_rate: 5.0e-4  # From original fork defaults (run_lightning.py)
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
@@ -221,6 +228,7 @@ suite:
           batch_size: 32      # Reasonable batch size for time_mmd datasets
           learning_rate: 5.0e-4  # From original fork defaults (run_lightning.py)
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
@@ -251,6 +259,7 @@ suite:
           batch_size: 32      # Reasonable batch size for ttc datasets
           learning_rate: 5.0e-4  # From original fork defaults (run_lightning.py)
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
@@ -280,6 +289,7 @@ suite:
           batch_size: 32      # Reasonable batch size for ttc datasets
           learning_rate: 5.0e-4  # From original fork defaults (run_lightning.py)
           # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:

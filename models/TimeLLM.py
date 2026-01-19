@@ -28,6 +28,7 @@ Reference:
 """
 
 from typing import Optional
+import logging
 
 import torch
 import torch.nn as nn
@@ -39,6 +40,9 @@ from layers.time_llm import (
     ReprogrammingLayer,
     DynamicPromptBuilder,
 )
+
+# Set up logger for TimeLLM debugging
+logger = logging.getLogger(__name__)
 
 
 class FlattenHead(nn.Module):
@@ -198,7 +202,10 @@ class TimeLLM(nn.Module):
         # Prompt configuration with defaults
         prompt_domain = getattr(configs, 'prompt_domain', False)
         dataset_description = getattr(configs, 'dataset_description', '')
-        
+
+        # Training stability configuration with defaults
+        mapping_layer_gain = getattr(configs, 'mapping_layer_gain', 0.1)
+
         # Device configuration
         device = getattr(configs, 'device', 'cuda:0')
         if getattr(configs, 'gpu', None) is not None:
@@ -239,7 +246,13 @@ class TimeLLM(nn.Module):
         self.vocab_size = self.word_embeddings.shape[0]
         self.num_tokens = 1000  # Reduced vocabulary size
         self.mapping_layer = nn.Linear(self.vocab_size, self.num_tokens)
-        
+
+        # Initialize mapping layer with smaller values for stability
+        # Large projection (50257->1000) needs careful initialization
+        nn.init.xavier_uniform_(self.mapping_layer.weight, gain=mapping_layer_gain)
+        if self.mapping_layer.bias is not None:
+            nn.init.zeros_(self.mapping_layer.bias)
+
         # Reprogramming layer for TS-to-LLM space mapping
         self.reprogramming_layer = ReprogrammingLayer(
             d_model=d_model,
@@ -365,18 +378,28 @@ class TimeLLM(nn.Module):
         """
         # Step 1: Normalize input using RevIN
         x_enc = self.normalize_layers(x_enc, 'norm')
-        
+
+        # Debug: Check for NaN after normalization
+        if torch.isnan(x_enc).any():
+            logger.error(f"[TimeLLM] NaN detected after RevIN normalization. "
+                        f"Input stats: min={x_enc.min():.4e}, max={x_enc.max():.4e}, "
+                        f"mean={x_enc.mean():.4e}, std={x_enc.std():.4e}")
+
         B, T, N = x_enc.size()
-        
+
         # Step 2: Reshape for per-channel processing
         # [B, T, N] -> [B*N, T, 1]
         x_enc_flat = x_enc.permute(0, 2, 1).contiguous().reshape(B * N, T, 1)
-        
+
         # Step 3: Calculate dynamic prompt statistics
         # Ensure computations are on the correct device
         x_enc_flat = x_enc_flat.to(x_enc.device)
-        
+
         lags = DynamicPromptBuilder.calculate_lags(x_enc_flat, self.top_k)
+
+        # Debug: Check for NaN in lag calculation
+        if torch.isnan(lags).any():
+            logger.error(f"[TimeLLM] NaN detected in autocorrelation lags")
         prompts = DynamicPromptBuilder.build_prompts(
             x_enc_flat, self.description, self.pred_len, self.seq_len, lags
         )
@@ -406,17 +429,35 @@ class TimeLLM(nn.Module):
         source_embeddings = self.mapping_layer(
             self.word_embeddings.permute(1, 0).float()
         ).permute(1, 0)
-        
+
+        # Debug: Check mapping layer output
+        if torch.isnan(source_embeddings).any() or torch.isinf(source_embeddings).any():
+            logger.error(f"[TimeLLM] NaN/Inf detected in source_embeddings (mapping_layer output). "
+                        f"Stats: min={source_embeddings.min():.4e}, max={source_embeddings.max():.4e}, "
+                        f"mean={source_embeddings.mean():.4e}")
+
         # Step 6: Patch embedding
         # x_enc: [B, T, N] -> [B, N, T] for patching
         x_enc_perm = x_enc.permute(0, 2, 1).contiguous()
-        
+
         # Patch embedding (in float32 for trainable layers)
         enc_out, n_vars = self.patch_embedding(x_enc_perm.float())
-        
+
+        # Debug: Check patch embedding output
+        if torch.isnan(enc_out).any() or torch.isinf(enc_out).any():
+            logger.error(f"[TimeLLM] NaN/Inf detected in patch embeddings. "
+                        f"Stats: min={enc_out.min():.4e}, max={enc_out.max():.4e}, "
+                        f"mean={enc_out.mean():.4e}")
+
         # Step 7: Reprogramming - map TS patches to LLM space
         # enc_out: [B*N, num_patches, d_model] -> [B*N, num_patches, d_llm]
         enc_out = self.reprogramming_layer(enc_out, source_embeddings, source_embeddings)
+
+        # Debug: Check reprogramming output
+        if torch.isnan(enc_out).any() or torch.isinf(enc_out).any():
+            logger.error(f"[TimeLLM] NaN/Inf detected after reprogramming layer. "
+                        f"Stats: min={enc_out.min():.4e}, max={enc_out.max():.4e}, "
+                        f"mean={enc_out.mean():.4e}")
         
         # Step 8: Concatenate prompt embeddings with reprogrammed patches
         # prompt_embeddings: [B*N, prompt_len, d_llm]
@@ -437,23 +478,43 @@ class TimeLLM(nn.Module):
         
         # Don't use no_grad() - gradients needed for reprogramming layer training
         dec_out = self.llm_model(inputs_embeds=llm_input).last_hidden_state
-        
+
+        # Debug: Check LLM output
+        if torch.isnan(dec_out).any() or torch.isinf(dec_out).any():
+            logger.error(f"[TimeLLM] NaN/Inf detected in LLM output (last_hidden_state). "
+                        f"Stats: min={dec_out.min():.4e}, max={dec_out.max():.4e}, "
+                        f"mean={dec_out.mean():.4e}")
+            # Also check the LLM input that caused this
+            if torch.isnan(llm_input).any() or torch.isinf(llm_input).any():
+                logger.error(f"[TimeLLM] NaN/Inf was present in LLM input! "
+                            f"Stats: min={llm_input.min():.4e}, max={llm_input.max():.4e}")
+
         # Step 10: Extract relevant dimensions for output projection
         # Only keep first d_ff dimensions, convert back to float32 for output projection
         dec_out = dec_out[:, :, :self.d_ff].float()
-        
+
         # Step 11: Reshape for output projection
         # [B*N, seq_len+patches, d_ff] -> [B, N, d_ff, patches]
         dec_out = dec_out.reshape(-1, n_vars, dec_out.shape[-2], dec_out.shape[-1])
         dec_out = dec_out.permute(0, 1, 3, 2).contiguous()
-        
+
         # Step 12: Output projection - get predictions
         # Only use the last patch_nums positions (from reprogrammed patches, not prompts)
         dec_out = self.output_projection(dec_out[:, :, :, -self.patch_nums:])
-        
+
+        # Debug: Check output projection result
+        if torch.isnan(dec_out).any() or torch.isinf(dec_out).any():
+            logger.error(f"[TimeLLM] NaN/Inf detected after output projection. "
+                        f"Stats: min={dec_out.min():.4e}, max={dec_out.max():.4e}")
+
         # Step 13: Denormalize output back to original scale
         dec_out = self.normalize_layers(dec_out, 'denorm')
-        
+
+        # Debug: Check final output
+        if torch.isnan(dec_out).any() or torch.isinf(dec_out).any():
+            logger.error(f"[TimeLLM] NaN/Inf detected in final output after denormalization. "
+                        f"Stats: min={dec_out.min():.4e}, max={dec_out.max():.4e}")
+
         return dec_out
     
     def get_trainable_params(self) -> int:
