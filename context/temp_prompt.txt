@@ -440,15 +440,15 @@ merged tensor_cache_polars into alwaystest. pushed the new alwaystest into chime
 [agent-monitor] claude is messing about in a convo with hooks enabled on itself, reading its debug log, and trying to get the hooks to work. looks like the hooks aren't hanging anymore which is good, but it's still not writing to status.
 [itransformer] my itransformer nyc traffic run got precisely (like exactly) the same test loss as the original fidel ts paper! This is great. We are in business.
 
-[pod:nyc-traffic] itransformer run, lynx_film is running (had to reduce to 256 batch size, using the itransformer just run)
+[pod:nyc-traffic] itransformer run, lynx_film is running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
 
-[pod:canada] itransformer run, lynx_film is running (had to reduce to 256 batch size, using the itransformer just run)
+[pod:canada] itransformer run, lynx_film is running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
 
-[pod:germany] setting up (uv done, git cloned, porting over the germany data in progress, tmux pending)
+[pod:germany] setting up (uv done, git cloned, porting over the germany data in progress, tmux setup). running itransformer.
 
-[pod:caiso] setting up (uv done, git cloned, porting over the caiso data done, tmux complete). itransformer run. lynx_film is running (had to reduce to 256 batch size, using the itransformer just run)
+[pod:caiso] setting up (uv done, git cloned, porting over the caiso data done, tmux complete). itransformer run. lynx_film is running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
 
-[pod:jena] ...
+[pod:jena] setting up (uv done, git cloned, porting over jena data in progress, tmux pending)
 
 [pod:bear_room] ...
 

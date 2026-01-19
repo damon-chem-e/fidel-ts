@@ -228,7 +228,7 @@ note: all of the llm embeddings are runs from late 01/16 or early 01/17.
 | Canada Photovoltaics | [>>] | `lynx_film_canada_photovoltaics_20260119_202157` | `20260119-202157_f5e855bd761c` | - | - | RunPod (pod:canada) |
 | Germany Renewable | [ ] (testing tensor_cache) | - | - | - | - | RunPod (pod:germany) |
 | NYC Traffic Speed | [>>] | `lynx_film_nyc_traffic_speed_20260119_202319` | `20260119-202319_6c58cf9ff591` | - | - | RunPod (pod:nyc_traffic) |
-| California ISO | [>>] | `lynx_film_california_iso_20260119_210942` | `20260119-210942_517e98f9b955` | - | - | RunPod (pod:caiso) |
+| California ISO | [>>] | `lynx_film_california_iso_20260119_211605` | `20260119-211605_780ef802fcf8` | - | - | RunPod (pod:caiso) |
 | Bear Room | [ ] | - | - | - | - | RunPod (pod:bear_room) |
 | Jena Atmospheric Physics | [ ] | - | - | - | - | RunPod (pod:jena) |
 
