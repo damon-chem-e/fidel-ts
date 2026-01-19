@@ -416,7 +416,7 @@ note on itransformer: might need some significant improvements on hparams to rea
 01/19 1:20 am
 [agent hooks] this is not in a branch, but is going to be a new repo. will add to a new moot public github that I will have (and rigorously save the auth info) for open source stuff. working on this in browser with opus, and it's coming along nicely. when the hook wasn't set up correctly it caused claude code to hang. removed the global hooks. will try on a single project (maybe on the agent-monitor project iteself) with a project specific .claude/settings.json then see if it hangs and if it works. if it does, then we move it to global.
 
-[always test] merged with monitor, tested and it works nicely. need to merge into tensor cache polars then port to the pods, then we run loads of things on the pods.
+[always test] merged with monitor, tested and it works nicely. need to merge into tensor cache polars (careful with configs) then port to the pods, then we run loads of things on the pods.
 
 - (1) check up on timellm, leret
 - (2) merge tensor_cache_polars and alwaystest -> port tensor caches to pods (spin up) -> itransformer runs -> lynx_film_raw
@@ -426,6 +426,19 @@ note on itransformer: might need some significant improvements on hparams to rea
 ...
 - (5) on mit_normal_gpu: look at whether lynx_film_raw and lynx_film stack up on time mmd and ttc against papers -> if not test lynx_film_enhanced -> lynx film enhanced ablations on time mmd ttc (with results all stored and tabulated) -> best on runpods
 - (6) on mit_normal_gpu test mmvision (H200) -> run on mit_normal_gpu (H200)
+
+---
+
+01/19 1 pm
+
+merged tensor_cache_polars into alwaystest. pushed the new alwaystest into chimera_proj and orcd/scratch. timellm is completed. leret has three still running.
+
+[tensor-cache-llm] claude is churning on this in the new branch and worktree. I think that it's not worth it to generate the llm compatibility for tensor cache. going to just run mmtsflib and timecma without tensor cache (changed configs on alwaystest). if that takes too long we come back to it. actually... if we can keep it fully contained and separate in the tensor_cache_llm branch and never merge that back (only use it for timecma and mmtsflib), then the risk of breaking other things is negligible and we can just try it. it's too slow without tensor cacheing. 
+
+[alwaystest] looks like the merge with tensor_cache_polars rolled back some test after train progress, so trying to fix that in the alwaystest claude, then will test again on interactive gpu, then roll out to the pods. the fix works. rolled out to nyc traffic pod and running itransformer there.
+
+[agent-monitor] claude is messing about in a convo with hooks enabled on itself, reading its debug log, and trying to get the hooks to work. looks like the hooks aren't hanging anymore which is good, but it's still not writing to status.
+[itransformer] my itransformer nyc traffic run got precisely (like exactly) the same test loss as the original fidel ts paper! This is great. We are in business.
 
 ---
 
