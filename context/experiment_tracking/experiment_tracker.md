@@ -84,11 +84,11 @@ note: I had generated nyc traffic speed on pod:nyc_traffic, but that was faulty 
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
 | Canada Photovoltaics | [✓] | `itransformer_canada_photovoltaics_20260119_201134` | `20260119-201134_c94f3a672169` | - | - | RunPod (pod:canada) |
-| Germany Renewable | [~] | - | - | - | - | RunPod (pod:germany) |
+| Germany Renewable | [✓] | `itransformer_germany_renewable_20260119_211905` | `20260119-211905_5146f0e1f5d1` | - | - | RunPod (pod:germany) |
 | NYC Traffic Speed | [✓] | `itransformer_nyc_traffic_speed_20260119_185413` | `20260119-185414_86a8624cf255` | - | - | RunPod (pod:nyc_traffic) |
 | California ISO | [✓] | `itransformer_california_iso_20260119_205950` | `20260119-205950_1d71374b9677` | - | - | RunPod (pod:caiso) |
 | Bear Room | [~] | - | - | - | - | RunPod (pod:bear_room) |
-| Jena Atmospheric Physics | [~] | - | - | - | - | RunPod (pod:jena) |
+| Jena Atmospheric Physics | [✓] | `itransformer_jena_atmospheric_20260119_215144` | `20260119-215144_99e92264ac3f` | - | - | RunPod (pod:jena) |
 
 note (10/18 3 am): canada and germany were completed on runpods.
 note (10/18 3:45 am): caiso, nyc, bear room, jena submitted with train truncated for purge and using tensor cache, all on mit_preemptable 
@@ -159,7 +159,7 @@ note (10/18 3 am): timecma doesn't work with torch compile. that was the error b
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
 | Canada Photovoltaics | [✓] | - | - | - | - | RunPod (pod:canada) |
-| Germany Renewable | [>>] (timed out, submitted resume) | - | - | - | - | RunPod (pod:germany) |
+| Germany Renewable | [>>] (timed out x2, submitted resume x2) | - | - | - | - | RunPod (pod:germany) |
 | NYC Traffic Speed | [>>] (timed out, submitted resume) | - | - | - | - | RunPod (pod:nyc_traffic) |
 | California ISO | [✓] | - | - | - | - | RunPod (pod:caiso) |
 | Bear Room | [>>] (preempted, started over) | - | - | - | - | RunPod (pod:bear_room) |

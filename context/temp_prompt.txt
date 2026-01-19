@@ -444,11 +444,11 @@ merged tensor_cache_polars into alwaystest. pushed the new alwaystest into chime
 
 [pod:canada] itransformer run, lynx_film is running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
 
-[pod:germany] setting up (uv done, git cloned, porting over the germany data in progress, tmux setup). running itransformer.
+[pod:germany] setting up (uv done, git cloned, porting over the germany data in progress, tmux complete). itransformer run. lynx_film running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
 
 [pod:caiso] setting up (uv done, git cloned, porting over the caiso data done, tmux complete). itransformer run. lynx_film is running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
 
-[pod:jena] setting up (uv done, git cloned, porting over jena data in progress, tmux pending)
+[pod:jena] setting up (uv done, git cloned, porting over jena data complete, tmux complete). itransformer run. lynx_film running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
 
 [pod:bear_room] ...
 
