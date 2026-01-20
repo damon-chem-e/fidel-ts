@@ -87,7 +87,7 @@ note: I had generated nyc traffic speed on pod:nyc_traffic, but that was faulty 
 | Germany Renewable | [✓] | `itransformer_germany_renewable_20260119_211905` | `20260119-211905_5146f0e1f5d1` | - | - | RunPod (pod:germany) |
 | NYC Traffic Speed | [✓] | `itransformer_nyc_traffic_speed_20260119_185413` | `20260119-185414_86a8624cf255` | - | - | RunPod (pod:nyc_traffic) |
 | California ISO | [✓] | `itransformer_california_iso_20260119_205950` | `20260119-205950_1d71374b9677` | - | - | RunPod (pod:caiso) |
-| Bear Room | [>>] | `itransformer_bear_room_20260120_013208` | `20260120-013208_17b7f42e444a` | - | - | RunPod (pod:bear_room) |
+| Bear Room | [✓] | `itransformer_bear_room_20260120_013208` | `20260120-013208_17b7f42e444a` | - | - | RunPod (pod:bear_room) |
 | Jena Atmospheric Physics | [✓] | `itransformer_jena_atmospheric_20260119_215144` | `20260119-215144_99e92264ac3f` | - | - | RunPod (pod:jena) |
 
 note (10/18 3 am): canada and germany were completed on runpods.
@@ -128,12 +128,12 @@ note: memory hungry so run on preemptable rather than RTX Ada 4000/5000
 
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
-| Canada Photovoltaics | [ ] | - | - | - | - | RunPod (pod:canada) |
-| Germany Renewable | [ ] | - | - | - | - | RunPod (pod:germany) |
-| NYC Traffic Speed | [ ] | - | - | - | - | RunPod (pod:nyc_traffic) |
-| California ISO | [ ] | - | - | - | - | RunPod (pod:caiso) |
-| Bear Room | [ ] | - | - | - | - | RunPod (pod:bear_room) |
-| Jena Atmospheric Physics | [ ] | - | - | - | - | RunPod (pod:jena) |
+| Canada Photovoltaics | [~] | - | - | - | - | mit sloan |
+| Germany Renewable | [~] | - | - | - | - | mit sloan |
+| NYC Traffic Speed | [~] | - | - | - | - | mit sloan |
+| California ISO | [~] | - | - | - | - | mit sloan |
+| Bear Room | [~] | - | - | - | - | mit sloan |
+| Jena Atmospheric Physics | [~] | - | - | - | - | mit sloan |
 
 note: run after the full resolution is complete
 
@@ -168,15 +168,17 @@ note (10/19 1 pm): all complete. evals in the sbatch logs
 | Dataset | Status | LLM Embed | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|----------|---------|--------|--------|----------|--------|
 | Time MMD & TTC | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
-| Bear Room | [~] | [✓] | - | - | - | - | MIT Sloan (A100) |
+| Bear Room | [✗] | [✓] | - | - | - | - | MIT Sloan (A100) |
 | California ISO | [✗] | [✓] | - | - | - | - | MIT Sloan (A100) |
-| Canada Photovoltaics | [ ] | [✓]  | - | - | - | - | MIT Sloan (A100) |
+| Canada Photovoltaics | [✗] | [✓]  | - | - | - | - | MIT Sloan (A100) |
 | Germany Renewable | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
 | NYC Traffic Speed | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
-| Jena Atmospheric Physics | [~] | [✓] | - | - | - | - | MIT Sloan (A100) |
+| Jena Atmospheric Physics | [✗] | [✓] | - | - | - | - | MIT Sloan (A100) |
 
 **Note:** TimeCMA has two steps: (1) LLM embedding generation, (2) model training. Suite ID and training status are all pending for Fidel-TS datasets.
 note (10/18 3 am): timecma doesn't work with torch compile. that was the error before. timecma requires llm embeddings, not currently supported in tensor cache. will make tensor_cache_llm branch and support that (see temp_buffer for more info). cache will be distinct for the timecma prompt. once that's supported, we run tensor cache jobs for timecma, then the timecma jobs with use tensor cache enabled.
+note (10/19 9 pm): timecma with tensor cache would need massive disk space since it's sample specific embeddings.
+note (10/19 10 pm): timecma without tensor cache and without torch compile had some errors in sbatch_logs. going to spin up claude on the tensor_cache_llm branch then fix those errors then try again.
 
 #### LeRet
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
@@ -219,8 +221,8 @@ note: all of the llm embeddings are runs from late 01/16 or early 01/17.
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
 | NYC Traffic Speed | [ ] | - | - | - | - | RunPod (pod:nyc_traffic) |
-| Canada Photovoltaics | [>>] | `lynx_film_raw_canada_photovoltaics_20260119_222019` | `20260119-222020_1a45a0aac8c7` | - | - | RunPod (pod:canada) | 
-| Germany Renewable | [ ] | - | - | - | - | RunPod (pod:germany) |
+| Canada Photovoltaics | [✓] | `lynx_film_raw_canada_photovoltaics_20260119_222019` | `20260119-222020_1a45a0aac8c7` | - | - | RunPod (pod:canada) | 
+| Germany Renewable | [>>] | `lynx_film_raw_germany_renewable_20260120_051004` | `20260120-051004_19e0259912bb` | - | - | RunPod (pod:germany) | 
 | California ISO | [✓] | `lynx_film_raw_california_iso_20260119_221759` | `20260119-221759_15466b14951a` | - | - | RunPod (pod:caiso) | 
 | Bear Room | [ ] | - | - | - | - | RunPod (pod:bear_room) |
 | Jena Atmospheric Physics | [✓] | `lynx_film_raw_jena_atmospheric_20260119_224922` | `20260119-224922_040d096de7db` | - | - | RunPod (pod:jena) | 
@@ -238,10 +240,10 @@ note: we want to do this on original resolution for the ones that look good (mak
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
 | Canada Photovoltaics | [✓] | `lynx_film_canada_photovoltaics_20260119_202157` | `20260119-202157_f5e855bd761c` | - | - | RunPod (pod:canada) |
-| Germany Renewable | [>>] | `lynx_film_germany_renewable_20260119_213142` | `20260119-213142_5adc752cde19` | - | - | RunPod (pod:germany) |
+| Germany Renewable | [✓] | `lynx_film_germany_renewable_20260119_213142` | `20260119-213142_5adc752cde19` | - | - | RunPod (pod:germany) |
 | NYC Traffic Speed | [>>] | `lynx_film_nyc_traffic_speed_20260119_202319` | `20260119-202319_6c58cf9ff591` | - | - | RunPod (pod:nyc_traffic) |
 | California ISO | [✓] | `lynx_film_california_iso_20260119_211605` | `20260119-211605_780ef802fcf8` | - | - | RunPod (pod:caiso) |
-| Bear Room | [ ] | - | - | - | - | RunPod (pod:bear_room) |
+| Bear Room | [>>] | `lynx_film_bear_room_20260120_021406` | `20260120-021407_775b5d8b4d66` | - | - | RunPod (pod:bear_room) |
 | Jena Atmospheric Physics | [✓] | `lynx_film_jena_atmospheric_20260119_215914` | `20260119-215914_27b837b9f927` | - | - | RunPod (pod:jena) |
 
 **Note:** Requires iTransformer pretraining to complete first.

@@ -433,11 +433,14 @@ note on itransformer: might need some significant improvements on hparams to rea
 
 merged tensor_cache_polars into alwaystest. pushed the new alwaystest into chimera_proj and orcd/scratch. timellm is completed. leret has three still running.
 
-[tensor-cache-llm] claude is churning on this in the new branch and worktree. I think that it's not worth it to generate the llm compatibility for tensor cache. going to just run mmtsflib and timecma without tensor cache (changed configs on alwaystest). if that takes too long we come back to it. actually... if we can keep it fully contained and separate in the tensor_cache_llm branch and never merge that back (only use it for timecma and mmtsflib), then the risk of breaking other things is negligible and we can just try it. it's too slow without tensor cacheing. 
+[tensor-cache-llm] claude is churning on this in the new branch and worktree. I think that it's not worth it to generate the llm compatibility for tensor cache. going to just run mmtsflib and timecma without tensor cache (changed configs on alwaystest). if that takes too long we come back to it. actually... if we can keep it fully contained and separate in the tensor_cache_llm branch and never merge that back (only use it for timecma and mmtsflib), then the risk of breaking other things is negligible and we can just try it. it's too slow without tensor cacheing. maybe we let claude churn on it a bit after all...
 
 [alwaystest] looks like the merge with tensor_cache_polars rolled back some test after train progress, so trying to fix that in the alwaystest claude, then will test again on interactive gpu, then roll out to the pods. the fix works. rolled out to nyc traffic pod and running itransformer there.
 
-[agent-monitor] claude is messing about in a convo with hooks enabled on itself, reading its debug log, and trying to get the hooks to work. looks like the hooks aren't hanging anymore which is good, but it's still not writing to status.
+[agent-monitor] claude is messing about in a convo with hooks enabled on itself, reading its debug log, and trying to get the hooks to work. looks like the hooks aren't hanging anymore which is good, but it's still not writing to status. got it working, just working out some kinks (currently doesn't update after receiving approval/disapproval for permissions).
+
+[pod-monitor] gemini is churning on getting some runpod api stuff that will help me monitor my pods (spot vs on demand, if spot is it interrupted or not, if stopped is it available to spin back up) 
+
 [itransformer] my itransformer nyc traffic run got precisely (like exactly) the same test loss as the original fidel ts paper! This is great. We are in business.
 
 [pod:nyc-traffic] itransformer run, lynx_film is running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
@@ -454,7 +457,7 @@ merged tensor_cache_polars into alwaystest. pushed the new alwaystest into chime
 
 [tgtsf] looks like this is quite memory hungry. probably going to run on preemptable rather than on pods and leave pods for the lynx film work. submitted jobs on preemptable for full resolution. once those are done submit for original resolution.
 
-[timecma] ... (need to submit on sloan gpu)
+[timecma] submited jena,caiso,canada,bear_room to sloan gpu. nyc traffic and germany might not get around to.
 
 [mmtsflib] ... (need to review whether it works then submit on sloan gpu)
 
