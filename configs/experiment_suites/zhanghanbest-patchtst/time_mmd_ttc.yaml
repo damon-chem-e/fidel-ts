@@ -1,0 +1,424 @@
+# Experiment Suite: ZhangHanBest (PatchTST) on Time MMD and TTC datasets
+# Description: Train ZhangHanBest with PatchTST encoder on all Time MMD and TTC datasets
+# Notes:
+# - Mirrors dataset, input_len, and output_len from lynx_film_raw/time_mmd_ttc.yaml
+# - Uses batch_size=16 for Time MMD and TTC datasets
+# - Uses constant learning rate 1e-4
+
+suite:
+  name: "zhanghanbest_patchtst_time_mmd_ttc"
+  description: "ZhangHanBest (PatchTST encoder) on all Time MMD and TTC datasets"
+  tags: ["zhanghanbest", "patchtst", "multimodal", "pytorch", "time_mmd", "ttc"]
+
+  execution:
+    parallel: false
+    continue_on_error: false
+    log_dir: "./logs/suites/zhanghanbest_patchtst/time_mmd_ttc"
+    
+  experiments:
+    # Time MMD datasets
+    - name: "zhanghanbest_patchtst_timemmd_agriculture"
+      description: "ZhangHanBest (PatchTST) on Time MMD Agriculture dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "PatchTST"
+          seq_len: 24
+          pred_len: 6
+          d_model: 512
+          revin: true
+          input_text_dim: 768
+        data:
+          name: "time_mmd_agriculture"
+          config_path: "data_configs/time_mmd/Algriculture/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          text_embedding_stride: "full"
+          input_len: 24
+          output_len: 6
+          batch_size: 16
+          learning_rate: 0.0001
+          lradj: constant
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+          torch_compile: true
+          compile_mode: "reduce-overhead"
+        wandb:
+          tags: ["zhanghanbest", "patchtst", "time_mmd_agriculture"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_patchtst/time_mmd_ttc"
+
+    - name: "zhanghanbest_patchtst_timemmd_climate"
+      description: "ZhangHanBest (PatchTST) on Time MMD Climate dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "PatchTST"
+          seq_len: 24
+          pred_len: 6
+          d_model: 512
+          revin: true
+          input_text_dim: 768
+        data:
+          name: "time_mmd_climate"
+          config_path: "data_configs/time_mmd/Climate/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          text_embedding_stride: "full"
+          input_len: 24
+          output_len: 6
+          batch_size: 16
+          learning_rate: 0.0001
+          lradj: constant
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+          torch_compile: true
+          compile_mode: "reduce-overhead"
+        wandb:
+          tags: ["zhanghanbest", "patchtst", "time_mmd_climate"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_patchtst/time_mmd_ttc"
+
+    - name: "zhanghanbest_patchtst_timemmd_economy"
+      description: "ZhangHanBest (PatchTST) on Time MMD Economy dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "PatchTST"
+          seq_len: 24
+          pred_len: 6
+          d_model: 512
+          revin: true
+          input_text_dim: 768
+        data:
+          name: "time_mmd_economy"
+          config_path: "data_configs/time_mmd/Economy/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          text_embedding_stride: "full"
+          input_len: 24
+          output_len: 6
+          batch_size: 16
+          learning_rate: 0.0001
+          lradj: constant
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+          torch_compile: true
+          compile_mode: "reduce-overhead"
+        wandb:
+          tags: ["zhanghanbest", "patchtst", "time_mmd_economy"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_patchtst/time_mmd_ttc"
+
+    - name: "zhanghanbest_patchtst_timemmd_energy"
+      description: "ZhangHanBest (PatchTST) on Time MMD Energy dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "PatchTST"
+          seq_len: 24
+          pred_len: 12
+          d_model: 512
+          revin: true
+          input_text_dim: 768
+        data:
+          name: "time_mmd_energy"
+          config_path: "data_configs/time_mmd/Energy/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          text_embedding_stride: "full"
+          input_len: 24
+          output_len: 12
+          batch_size: 16
+          learning_rate: 0.0001
+          lradj: constant
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+          torch_compile: true
+          compile_mode: "reduce-overhead"
+        wandb:
+          tags: ["zhanghanbest", "patchtst", "time_mmd_energy"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_patchtst/time_mmd_ttc"
+
+    - name: "zhanghanbest_patchtst_timemmd_environment"
+      description: "ZhangHanBest (PatchTST) on Time MMD Environment dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "PatchTST"
+          seq_len: 24
+          pred_len: 48
+          d_model: 512
+          revin: true
+          input_text_dim: 768
+        data:
+          name: "time_mmd_environment"
+          config_path: "data_configs/time_mmd/Environment/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          text_embedding_stride: "full"
+          input_len: 24
+          output_len: 48
+          batch_size: 16
+          learning_rate: 0.0001
+          lradj: constant
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+          torch_compile: true
+          compile_mode: "reduce-overhead"
+        wandb:
+          tags: ["zhanghanbest", "patchtst", "time_mmd_environment"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_patchtst/time_mmd_ttc"
+
+    - name: "zhanghanbest_patchtst_timemmd_health"
+      description: "ZhangHanBest (PatchTST) on Time MMD Health dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "PatchTST"
+          seq_len: 24
+          pred_len: 12
+          d_model: 512
+          revin: true
+          input_text_dim: 768
+        data:
+          name: "time_mmd_health"
+          config_path: "data_configs/time_mmd/Public_Health/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          text_embedding_stride: "full"
+          input_len: 24
+          output_len: 12
+          batch_size: 16
+          learning_rate: 0.0001
+          lradj: constant
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+          torch_compile: true
+          compile_mode: "reduce-overhead"
+        wandb:
+          tags: ["zhanghanbest", "patchtst", "time_mmd_health"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_patchtst/time_mmd_ttc"
+
+    - name: "zhanghanbest_patchtst_timemmd_socialgood"
+      description: "ZhangHanBest (PatchTST) on Time MMD SocialGood dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "PatchTST"
+          seq_len: 24
+          pred_len: 6
+          d_model: 512
+          revin: true
+          input_text_dim: 768
+        data:
+          name: "time_mmd_socialgood"
+          config_path: "data_configs/time_mmd/SocialGood/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          text_embedding_stride: "full"
+          input_len: 24
+          output_len: 6
+          batch_size: 16
+          learning_rate: 0.0001
+          lradj: constant
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+          torch_compile: true
+          compile_mode: "reduce-overhead"
+        evaluation:
+          filter_nan_samples: true
+        wandb:
+          tags: ["zhanghanbest", "patchtst", "time_mmd_socialgood"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_patchtst/time_mmd_ttc"
+
+    - name: "zhanghanbest_patchtst_timemmd_traffic"
+      description: "ZhangHanBest (PatchTST) on Time MMD Traffic dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "PatchTST"
+          seq_len: 24
+          pred_len: 6
+          d_model: 512
+          revin: true
+          input_text_dim: 768
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          text_embedding_stride: "full"
+          input_len: 24
+          output_len: 6
+          batch_size: 16
+          learning_rate: 0.0001
+          lradj: constant
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+          torch_compile: true
+          compile_mode: "reduce-overhead"
+        wandb:
+          tags: ["zhanghanbest", "patchtst", "time_mmd_traffic"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_patchtst/time_mmd_ttc"
+
+    # TTC datasets
+    - name: "zhanghanbest_patchtst_ttc_weather"
+      description: "ZhangHanBest (PatchTST) on TTC Weather dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "PatchTST"
+          seq_len: 7
+          pred_len: 7
+          d_model: 512
+          revin: true
+          input_text_dim: 768
+        data:
+          name: "ttc_weather"
+          config_path: "data_configs/ttc/climate/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          text_embedding_stride: "full"
+          input_len: 7
+          output_len: 7
+          batch_size: 16
+          learning_rate: 0.0001
+          lradj: constant
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+          torch_compile: false
+          compile_mode: "reduce-overhead"
+        wandb:
+          tags: ["zhanghanbest", "patchtst", "ttc_weather"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_patchtst/time_mmd_ttc"
+
+    - name: "zhanghanbest_patchtst_ttc_medical"
+      description: "ZhangHanBest (PatchTST) on TTC Medical dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "PatchTST"
+          seq_len: 7
+          pred_len: 7
+          d_model: 512
+          revin: true
+          input_text_dim: 768
+        data:
+          name: "ttc_medical"
+          config_path: "data_configs/ttc/medical/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+          filter_insufficient_entities: true
+          missing_value_strategy: forward_fill_indicators
+        training:
+          text_embedding_stride: "full"
+          input_len: 7
+          output_len: 7
+          batch_size: 16
+          learning_rate: 0.0001
+          lradj: constant
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+          torch_compile: false
+          compile_mode: "reduce-overhead"
+        wandb:
+          tags: ["zhanghanbest", "patchtst", "ttc_medical"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_patchtst/time_mmd_ttc"
+

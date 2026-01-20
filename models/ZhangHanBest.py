@@ -111,9 +111,12 @@ class Model(nn.Module):
             )
         
         # 3. Residual projection (always uses residual connection)
+        # Architecture per paper: text_dim -> hidden_dim -> ts_rep_dim + residual
+        # Default hidden_dim=2048 for 768 -> 2048 -> 512 projection
         self.residual_proj = ResidualProjection(
             text_dim=self.text_dim,
             ts_rep_dim=self.ts_rep_dim,
+            hidden_dim=getattr(configs, 'residual_proj_hidden_dim', 2048),
             use_layer_norm=getattr(configs, 'residual_proj_use_layer_norm', True),
             activation=getattr(configs, 'residual_proj_activation', 'gelu'),
             dropout=getattr(configs, 'residual_proj_dropout', 0.1)
