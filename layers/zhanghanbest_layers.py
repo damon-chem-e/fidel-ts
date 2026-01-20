@@ -37,9 +37,20 @@ class ResidualProjection(nn.Module):
             dropout: Dropout rate after residual addition
         """
         super().__init__()
-        self.text_dim = text_dim
-        self.ts_rep_dim = ts_rep_dim
-        self.hidden_dim = hidden_dim
+        
+        # Validate and convert dimensions to integers (handle cases where configs might pass tuples/other types)
+        self.text_dim = int(text_dim) if text_dim is not None else 768
+        self.ts_rep_dim = int(ts_rep_dim) if ts_rep_dim is not None else 512
+        self.hidden_dim = int(hidden_dim) if hidden_dim is not None else 2048
+        
+        # Validate dimensions are positive integers
+        if self.text_dim <= 0 or self.ts_rep_dim <= 0 or self.hidden_dim <= 0:
+            raise ValueError(
+                f"ResidualProjection requires positive integer dimensions. "
+                f"Got text_dim={text_dim} -> {self.text_dim}, "
+                f"ts_rep_dim={ts_rep_dim} -> {self.ts_rep_dim}, "
+                f"hidden_dim={hidden_dim} -> {self.hidden_dim}"
+            )
         
         # Build activation for hidden layer
         if activation == 'gelu':
@@ -51,14 +62,14 @@ class ResidualProjection(nn.Module):
         
         # Main projection path: text_dim -> hidden_dim -> ts_rep_dim (two-layer MLP)
         self.main_proj = nn.Sequential(
-            nn.Linear(text_dim, hidden_dim),   # 768 -> 2048
-            act_fn,                             # GELU activation
-            nn.Linear(hidden_dim, ts_rep_dim)  # 2048 -> 512
+            nn.Linear(self.text_dim, self.hidden_dim),   # 768 -> 2048
+            act_fn,                                      # GELU activation
+            nn.Linear(self.hidden_dim, self.ts_rep_dim)  # 2048 -> 512
         )
         
         # Residual projection: text_dim -> ts_rep_dim (single linear if dims differ)
-        if text_dim != ts_rep_dim:
-            self.residual_proj = nn.Linear(text_dim, ts_rep_dim)  # 768 -> 512
+        if self.text_dim != self.ts_rep_dim:
+            self.residual_proj = nn.Linear(self.text_dim, self.ts_rep_dim)  # 768 -> 512
         else:
             self.residual_proj = None
         
