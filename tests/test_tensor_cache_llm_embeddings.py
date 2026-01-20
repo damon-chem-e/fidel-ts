@@ -59,6 +59,8 @@ from data_provider.tensor_cache import (
     infer_shapes_from_sample,
     _safe_array,
     _infer_dim,
+    _is_llm_embedding,  # Real implementation
+    CACHE_RELEVANT_KEYS,
 )
 
 
@@ -76,62 +78,8 @@ COMMON_INPUT_LENGTHS = [24, 48, 96, 192, 336, 512, 720]
 
 
 # =============================================================================
-# PROPOSED V2 FUNCTIONS (to be implemented in tensor_cache.py)
+# HELPER FUNCTIONS FOR TESTS
 # =============================================================================
-
-def _is_llm_embedding(hetero_x: Optional[np.ndarray], input_len: int) -> bool:
-    """
-    Detect if hetero_x is an LLM embedding based on shape semantics.
-
-    News/weather embeddings: (input_len, num_items, embed_dim)
-        - First dimension matches input_len
-        - Per-timestamp data that can be deduplicated
-
-    LLM embeddings: (embed_dim, n_channels)
-        - First dimension is embed_dim (typically 768+)
-        - Per-sample data that cannot be deduplicated by timestamp
-
-    Args:
-        hetero_x: Embedding array from sample
-        input_len: Input sequence length from config
-
-    Returns:
-        True if LLM embedding, False if news/weather embedding or None
-
-    Detection heuristics:
-        1. Must be non-None and 2D array
-        2. First dimension >= 512 (LLM embeddings are at least this large)
-        3. First dimension != input_len (news embeddings match input_len)
-        4. First dimension is one of known LLM dimensions (768, 896, 1024)
-           OR first dimension > max reasonable input_len (720)
-    """
-    if hetero_x is None:
-        return False
-
-    if hetero_x.ndim != 2:
-        return False
-
-    first_dim = hetero_x.shape[0]
-
-    # LLM embeddings have embed_dim as first dimension
-    # News embeddings have input_len as first dimension
-
-    # Strong signal: first dim matches known LLM embedding size
-    known_llm_dims = {768, 896, 1024, 1280, 1536, 2048, 4096}
-    if first_dim in known_llm_dims and first_dim != input_len:
-        return True
-
-    # Heuristic: LLM embed_dim is typically >= 512 and != input_len
-    # Most input_lens are <= 720 (max typical value)
-    if first_dim >= 512 and first_dim != input_len:
-        # Additional check: second dimension should be small (n_channels)
-        # For LLM: (768, 1) or (768, 7) - second dim is n_channels
-        # For news: (96, 2, 768) would be 3D, not 2D, so this check is implicit
-        if hetero_x.shape[1] <= 32:  # n_channels is typically 1-7, rarely > 32
-            return True
-
-    return False
-
 
 def _build_cache_config_with_llm(args: Any) -> dict:
     """

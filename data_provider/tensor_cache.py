@@ -221,7 +221,8 @@ CACHE_RELEVANT_KEYS = [
     'hetero_type',                # Type of heterogeneous data
     'data_name',                  # Dataset identifier
     'timemmd_text_output',        # 'text' vs 'embedding' changes hetero payload + shapes
-    'missing_value_strategy'      # How missing values are handled
+    'missing_value_strategy',     # How missing values are handled
+    'llm_embedding',              # LLM embedding config (model_name, prompt_template, etc.)
 ]
 
 
@@ -347,9 +348,16 @@ class TensorCacheMetadata:
     - N=1: Embeddings stored as (D,) per timestamp - only text embedding
     - N=2: Embeddings stored as (2, D) per timestamp - text embedding + downtime indicator
     - Determined during cache generation based on whether training data has downtime
+
+    LLM EMBEDDINGS:
+    - has_llm_embeddings: True if LLM embeddings are stored per-sample
+    - llm_embed_dim: Embedding dimension (e.g., 768 for GPT-2)
+    - llm_n_channels: Number of channels (typically 1)
+    - LLM embeddings are stored in shared/llm_embeddings.npy with shape (N_total, embed_dim, n_channels)
+    - Per-split llm_indices.npy maps sample index to global LLM embedding index
     """
 
-    VERSION = "2.1.0"
+    VERSION = "2.2.0"  # Bumped for LLM embedding support
     FORMAT_DIRECT = "direct"    # V1: stores data directly per sample
     FORMAT_INDEXED = "indexed"  # V2: stores indices into shared tables
 
@@ -365,11 +373,14 @@ class TensorCacheMetadata:
         entity_info: Optional[dict] = None,
         created_at: Optional[str] = None,
         version: Optional[str] = None,
-        num_news_items: int = 1
+        num_news_items: int = 1,
+        has_llm_embeddings: bool = False,
+        llm_embed_dim: Optional[int] = None,
+        llm_n_channels: Optional[int] = None
     ):
         """
         Initialize metadata.
-        
+
         Args:
             config_hash: Hash of cache-relevant config parameters
             data_config: Full config dict for reference
@@ -382,6 +393,9 @@ class TensorCacheMetadata:
             created_at: ISO timestamp of cache creation
             version: Metadata version string
             num_news_items: Number of news items per timestamp (1=embedding only, 2=embedding+downtime)
+            has_llm_embeddings: True if LLM embeddings are stored (for TimeCMA/MMTSFLib)
+            llm_embed_dim: LLM embedding dimension (e.g., 768)
+            llm_n_channels: Number of channels in LLM embeddings
         """
         self.version = version or self.VERSION
         self.config_hash = config_hash
@@ -394,10 +408,13 @@ class TensorCacheMetadata:
         self.entity_info = entity_info or {}
         self.created_at = created_at or datetime.now().isoformat()
         self.num_news_items = num_news_items
+        self.has_llm_embeddings = has_llm_embeddings
+        self.llm_embed_dim = llm_embed_dim
+        self.llm_n_channels = llm_n_channels
 
     def to_dict(self) -> dict:
         """Serialize metadata to dictionary for JSON storage."""
-        return {
+        result = {
             'version': self.version,
             'config_hash': self.config_hash,
             'created_at': self.created_at,
@@ -408,8 +425,14 @@ class TensorCacheMetadata:
             'dtypes': self.dtypes,
             'scaler_params': self.scaler_params,
             'entity_info': self.entity_info,
-            'num_news_items': self.num_news_items
+            'num_news_items': self.num_news_items,
+            'has_llm_embeddings': self.has_llm_embeddings,
         }
+        # Only include LLM dimensions if LLM mode is active
+        if self.has_llm_embeddings:
+            result['llm_embed_dim'] = self.llm_embed_dim
+            result['llm_n_channels'] = self.llm_n_channels
+        return result
 
     @classmethod
     def from_dict(cls, data: dict) -> 'TensorCacheMetadata':
@@ -428,7 +451,11 @@ class TensorCacheMetadata:
             version=data.get('version', '1.0.0'),
             # Default to 1 for old caches without num_news_items field
             # Old caches stored flattened embeddings (effectively N=1)
-            num_news_items=data.get('num_news_items', 1)
+            num_news_items=data.get('num_news_items', 1),
+            # LLM embedding fields (default False for backward compatibility)
+            has_llm_embeddings=data.get('has_llm_embeddings', False),
+            llm_embed_dim=data.get('llm_embed_dim'),
+            llm_n_channels=data.get('llm_n_channels')
         )
 
     def save(self, path: Path) -> None:
@@ -554,10 +581,71 @@ def _infer_dim(arr: Optional[np.ndarray], axis: int = -1) -> Optional[int]:
     return arr.shape[axis]
 
 
+# Known LLM embedding dimensions for reliable detection
+KNOWN_LLM_EMBED_DIMS = {768, 896, 1024, 1280, 1536, 2048, 4096}
+
+
+def _is_llm_embedding(hetero_x: Optional[np.ndarray], input_len: int) -> bool:
+    """
+    Detect if hetero_x is an LLM embedding based on shape semantics.
+
+    LLM embeddings (TimeCMA, MMTSFLib):
+        - Shape: (embed_dim, n_channels) e.g., (768, 1)
+        - Per-sample data that cannot be deduplicated by timestamp
+        - First dimension is embed_dim (typically 768+)
+
+    News/weather embeddings (TGTSF):
+        - Shape: (input_len, num_items, embed_dim) e.g., (96, 2, 768)
+        - Per-timestamp data that can be deduplicated
+        - First dimension matches input_len
+
+    Args:
+        hetero_x: Embedding array from sample
+        input_len: Input sequence length from config
+
+    Returns:
+        True if LLM embedding, False if news/weather embedding or None
+
+    Detection heuristics:
+        1. Must be non-None and 2D array
+        2. First dimension >= 512 (LLM embeddings are at least this large)
+        3. First dimension != input_len (news embeddings match input_len)
+        4. First dimension is one of known LLM dimensions (768, 896, 1024, etc.)
+           OR first dimension > max reasonable input_len (720)
+        5. Second dimension should be small (n_channels, typically 1-32)
+    """
+    if hetero_x is None:
+        return False
+
+    if hetero_x.ndim != 2:
+        # LLM embeddings are always 2D: (embed_dim, n_channels)
+        # News embeddings are 3D: (input_len, num_items, embed_dim)
+        return False
+
+    first_dim = hetero_x.shape[0]
+    second_dim = hetero_x.shape[1]
+
+    # If first dimension matches input_len, it's news embedding
+    if first_dim == input_len:
+        return False
+
+    # LLM embeddings have embed_dim as first dimension
+    # Strong signal: first dim matches known LLM embedding size
+    if first_dim in KNOWN_LLM_EMBED_DIMS:
+        return True
+
+    # Heuristic: LLM embed_dim is typically >= 512
+    # and second dimension is small (n_channels)
+    if first_dim >= 512 and second_dim <= 32:
+        return True
+
+    return False
+
+
 def infer_shapes_from_sample(sample: tuple) -> InferredShapes:
     """
     Infer all shapes from a single sample tuple.
-    
+
     WHY THIS FUNCTION:
     - Need shapes to allocate arrays before processing all samples
     - Different datasets have different dimensions
@@ -619,17 +707,17 @@ def infer_shapes_from_sample(sample: tuple) -> InferredShapes:
 class SharedTableCollector:
     """
     Collector for building shared (deduplicated) tables.
-    
+
     DESIGN PATTERN:
     - Uses dict for O(1) duplicate checking (timestamp_to_idx)
     - Uses lists for O(1) append (converted to arrays at end)
     - Processes all splits to ensure shared tables cover all data
-    
+
     MEMORY CONSIDERATION:
     - Lists grow during collection phase
     - Converted to numpy arrays once at the end
     - Final arrays are much smaller than per-sample storage
-    
+
     DOWNTIME HANDLING:
     - The original dataloader produces embeddings with shape (L, N, D) where N=2:
       - [:, 0, :] = actual text embedding
@@ -638,13 +726,19 @@ class SharedTableCollector:
     - If no downtime in training: store N=1 (only embeddings), saving 50% memory
     - If downtime in training: store N=2 (embeddings + downtime), matching original
     - Rationale: If no downtime in training, model won't learn to use it anyway
+
+    LLM EMBEDDING HANDLING:
+    - LLM embeddings (TimeCMA, MMTSFLib) have shape (embed_dim, n_channels) e.g., (768, 1)
+    - These are per-sample, NOT per-timestamp, so cannot be deduplicated
+    - Stored separately in llm_embeddings list with 1:1 sample mapping
+    - Detection via _is_llm_embedding() based on shape heuristics
     """
     # Mapping from timestamp to index in shared tables
     timestamp_to_idx: Dict[int, int] = field(default_factory=dict)
-    
-    # Mapping from entity_id to index in entity tables  
+
+    # Mapping from entity_id to index in entity tables
     entity_to_idx: Dict[str, int] = field(default_factory=dict)
-    
+
     # Data lists (will become numpy arrays)
     timestamps: List[int] = field(default_factory=list)
     timeseries: List[np.ndarray] = field(default_factory=list)
@@ -652,10 +746,17 @@ class SharedTableCollector:
     hetero_time: List[np.ndarray] = field(default_factory=list)
     entity_general: List[Optional[np.ndarray]] = field(default_factory=list)
     entity_channel: List[Optional[np.ndarray]] = field(default_factory=list)
-    
+
+    # LLM embedding storage (per-sample, NOT deduplicated)
+    # Shape: (embed_dim, n_channels) per sample, e.g., (768, 1) for GPT-2
+    llm_embeddings: List[np.ndarray] = field(default_factory=list)
+    has_llm_embeddings: bool = False  # Set to True when LLM embeddings detected
+    llm_embed_dim: Optional[int] = None  # LLM embedding dimension (e.g., 768)
+    llm_n_channels: Optional[int] = None  # Number of channels in LLM embeddings
+
     # Inferred shapes (updated as we see data)
     shapes: InferredShapes = field(default_factory=InferredShapes)
-    
+
     # Downtime handling: num_news_items determines embedding storage format
     # N=1: store only embedding (no downtime), shape (L, D)
     # N=2: store embedding + downtime indicator, shape (L, 2, D)
@@ -893,24 +994,33 @@ def _process_sample_for_collection(
 ) -> None:
     """
     Process a single sample, registering all unique timestamps and entity data.
-    
+
     SAMPLE STRUCTURE (Universal_Dataset output):
     - sample[3]: x_time - input timestamps (input_len,)
     - sample[4]: y_time - output timestamps (output_len,)
     - sample[1]: seq_x - input time series (input_len, n_features)
     - sample[2]: seq_y - output time series (output_len, n_features)
     - sample[5]: hetero_x - input embeddings (input_len, num_items, embed_dim) where num_items=2
+                          OR LLM embedding (embed_dim, n_channels) for TimeCMA/MMTSFLib
     - sample[6]: hetero_y - output embeddings (output_len, num_items, embed_dim) where num_items=2
     - sample[7]: hetero_x_time - input hetero time features
     - sample[8]: hetero_y_time - output hetero time features
-    
+
     EMBEDDING HANDLING:
-    - The original dataloader produces embeddings with shape (L, N, D) where N=2:
-      - [:, 0, :] = actual text embedding
-      - [:, 1, :] = downtime indicator (or zeros if no downtime)
-    - We pass the FULL embedding (including downtime) to _register_timestamp_data
-    - _register_timestamp_data decides what to store based on collector.num_news_items
-    
+    Two modes based on embedding type:
+
+    1. Per-timestamp embeddings (TGTSF, Time-MMD):
+       - Shape: (L, N, D) where N=2 (text + downtime)
+       - Deduplicated by timestamp
+       - Stored in shared embeddings table
+
+    2. LLM embeddings (TimeCMA, MMTSFLib):
+       - Shape: (embed_dim, n_channels) e.g., (768, 1)
+       - Per-sample, NOT deduplicated
+       - Stored separately in llm_embeddings list
+
+    Detection is automatic via _is_llm_embedding() shape heuristics.
+
     Args:
         collector: SharedTableCollector to update
         sample: 13-element tuple from dataset.__getitem__
@@ -921,71 +1031,118 @@ def _process_sample_for_collection(
         collector.shapes.n_features = sample_shapes.n_features
         collector.shapes.embed_dim = sample_shapes.embed_dim or collector.shapes.embed_dim
         collector.shapes.n_hetero_time_features = sample_shapes.n_hetero_time_features
-    
-    # Process input window timestamps
+
+    # Get input_len for LLM detection
     x_time = _safe_array(sample[SAMPLE_IDX_X_TIME])
-    if x_time is not None:
-        x_time_flat = x_time.flatten()
-        seq_x = _safe_array(sample[SAMPLE_IDX_SEQ_X])
-        hetero_x = _safe_array(sample[SAMPLE_IDX_HETERO_X])
-        hetero_x_time = _safe_array(sample[SAMPLE_IDX_HETERO_X_TIME])
-        
-        for i, ts in enumerate(x_time_flat):
-            # Extract value at position i (handling different array shapes)
-            ts_val = seq_x[i] if seq_x is not None and i < len(seq_x) else None
-            
-            # Extract per-timestep embedding (pass full embedding including downtime)
-            # The _register_timestamp_data function will handle N=1 vs N=2 based on
-            # collector.num_news_items setting determined by downtime detection
-            if hetero_x is not None:
-                if hetero_x.ndim >= 2 and i < hetero_x.shape[0]:
-                    # Per-timestep embedding, may be (num_items, embed_dim) or (embed_dim,)
-                    # CRITICAL: Always copy to break reference to parent hetero_x array
-                    # Array slicing creates views that keep references to the original large arrays
-                    emb = hetero_x[i].copy()
-                elif hetero_x.ndim == 1:
-                    # Static embedding (same for all timesteps) - copy to break reference
-                    emb = hetero_x.copy()
+    input_len = len(x_time) if x_time is not None else 0
+
+    # Check for LLM embeddings
+    hetero_x = _safe_array(sample[SAMPLE_IDX_HETERO_X])
+    is_llm = _is_llm_embedding(hetero_x, input_len)
+
+    if is_llm:
+        # LLM EMBEDDING MODE: Store per-sample, skip per-timestamp embedding processing
+        # Time series still gets deduplicated per-timestamp
+
+        # Store LLM embedding for this sample
+        collector.llm_embeddings.append(hetero_x.copy())
+
+        # Set LLM mode flags on first detection
+        if not collector.has_llm_embeddings:
+            collector.has_llm_embeddings = True
+            collector.llm_embed_dim = hetero_x.shape[0]
+            collector.llm_n_channels = hetero_x.shape[1]
+
+        # Process timestamps for time series only (no embeddings)
+        if x_time is not None:
+            x_time_flat = x_time.flatten()
+            seq_x = _safe_array(sample[SAMPLE_IDX_SEQ_X])
+            hetero_x_time = _safe_array(sample[SAMPLE_IDX_HETERO_X_TIME])
+
+            for i, ts in enumerate(x_time_flat):
+                ts_val = seq_x[i] if seq_x is not None and i < len(seq_x) else None
+                htf = hetero_x_time[i] if hetero_x_time is not None and hetero_x_time.ndim > 1 and i < len(hetero_x_time) else None
+                # Pass None for embedding - LLM embeddings are stored per-sample
+                _register_timestamp_data(collector, ts, ts_val, None, htf)
+
+        # Process output window timestamps
+        y_time = _safe_array(sample[SAMPLE_IDX_Y_TIME])
+        if y_time is not None:
+            y_time_flat = y_time.flatten()
+            seq_y = _safe_array(sample[SAMPLE_IDX_SEQ_Y])
+            hetero_y_time = _safe_array(sample[SAMPLE_IDX_HETERO_Y_TIME])
+
+            for i, ts in enumerate(y_time_flat):
+                ts_val = seq_y[i] if seq_y is not None and i < len(seq_y) else None
+                htf = hetero_y_time[i] if hetero_y_time is not None and hetero_y_time.ndim > 1 and i < len(hetero_y_time) else None
+                # Pass None for embedding - LLM embeddings are stored per-sample
+                _register_timestamp_data(collector, ts, ts_val, None, htf)
+
+    else:
+        # STANDARD MODE: Per-timestamp embeddings (TGTSF, Time-MMD)
+
+        # Process input window timestamps
+        if x_time is not None:
+            x_time_flat = x_time.flatten()
+            seq_x = _safe_array(sample[SAMPLE_IDX_SEQ_X])
+            hetero_x_time = _safe_array(sample[SAMPLE_IDX_HETERO_X_TIME])
+
+            for i, ts in enumerate(x_time_flat):
+                # Extract value at position i (handling different array shapes)
+                ts_val = seq_x[i] if seq_x is not None and i < len(seq_x) else None
+
+                # Extract per-timestep embedding (pass full embedding including downtime)
+                # The _register_timestamp_data function will handle N=1 vs N=2 based on
+                # collector.num_news_items setting determined by downtime detection
+                if hetero_x is not None:
+                    if hetero_x.ndim >= 2 and i < hetero_x.shape[0]:
+                        # Per-timestep embedding, may be (num_items, embed_dim) or (embed_dim,)
+                        # CRITICAL: Always copy to break reference to parent hetero_x array
+                        # Array slicing creates views that keep references to the original large arrays
+                        emb = hetero_x[i].copy()
+                    elif hetero_x.ndim == 1:
+                        # Static embedding (same for all timesteps) - copy to break reference
+                        emb = hetero_x.copy()
+                    else:
+                        emb = None
                 else:
                     emb = None
-            else:
-                emb = None
-            
-            htf = hetero_x_time[i] if hetero_x_time is not None and hetero_x_time.ndim > 1 and i < len(hetero_x_time) else None
-            
-            _register_timestamp_data(collector, ts, ts_val, emb, htf)
-    
-    # Process output window timestamps (same pattern as input)
-    y_time = _safe_array(sample[SAMPLE_IDX_Y_TIME])
-    if y_time is not None:
-        y_time_flat = y_time.flatten()
-        seq_y = _safe_array(sample[SAMPLE_IDX_SEQ_Y])
-        hetero_y = _safe_array(sample[SAMPLE_IDX_HETERO_Y])
-        hetero_y_time = _safe_array(sample[SAMPLE_IDX_HETERO_Y_TIME])
-        
-        for i, ts in enumerate(y_time_flat):
-            ts_val = seq_y[i] if seq_y is not None and i < len(seq_y) else None
-            
-            # Extract per-timestep embedding (pass full embedding including downtime)
-            # The _register_timestamp_data function will handle N=1 vs N=2 based on
-            # collector.num_news_items setting determined by downtime detection
-            # CRITICAL: Create copies to break references to parent hetero_y array
-            # Array slicing creates views that keep references to the original large arrays
-            if hetero_y is not None:
-                if hetero_y.ndim >= 2 and i < hetero_y.shape[0]:
-                    # Per-timestep embedding, may be (num_items, embed_dim) or (embed_dim,)
-                    emb = hetero_y[i].copy()
-                elif hetero_y.ndim == 1:
-                    # Static embedding (same for all timesteps) - copy to break reference
-                    emb = hetero_y.copy()
+
+                htf = hetero_x_time[i] if hetero_x_time is not None and hetero_x_time.ndim > 1 and i < len(hetero_x_time) else None
+
+                _register_timestamp_data(collector, ts, ts_val, emb, htf)
+
+        # Process output window timestamps (same pattern as input)
+        y_time = _safe_array(sample[SAMPLE_IDX_Y_TIME])
+        if y_time is not None:
+            y_time_flat = y_time.flatten()
+            seq_y = _safe_array(sample[SAMPLE_IDX_SEQ_Y])
+            hetero_y = _safe_array(sample[SAMPLE_IDX_HETERO_Y])
+            hetero_y_time = _safe_array(sample[SAMPLE_IDX_HETERO_Y_TIME])
+
+            for i, ts in enumerate(y_time_flat):
+                ts_val = seq_y[i] if seq_y is not None and i < len(seq_y) else None
+
+                # Extract per-timestep embedding (pass full embedding including downtime)
+                # The _register_timestamp_data function will handle N=1 vs N=2 based on
+                # collector.num_news_items setting determined by downtime detection
+                # CRITICAL: Create copies to break references to parent hetero_y array
+                # Array slicing creates views that keep references to the original large arrays
+                if hetero_y is not None:
+                    if hetero_y.ndim >= 2 and i < hetero_y.shape[0]:
+                        # Per-timestep embedding, may be (num_items, embed_dim) or (embed_dim,)
+                        emb = hetero_y[i].copy()
+                    elif hetero_y.ndim == 1:
+                        # Static embedding (same for all timesteps) - copy to break reference
+                        emb = hetero_y.copy()
+                    else:
+                        emb = None
                 else:
                     emb = None
-            else:
-                emb = None
-            
-            htf = hetero_y_time[i] if hetero_y_time is not None and hetero_y_time.ndim > 1 and i < len(hetero_y_time) else None
-            
-            _register_timestamp_data(collector, ts, ts_val, emb, htf)
+
+                htf = hetero_y_time[i] if hetero_y_time is not None and hetero_y_time.ndim > 1 and i < len(hetero_y_time) else None
+
+                _register_timestamp_data(collector, ts, ts_val, emb, htf)
 
 
 def _finalize_shared_tables(
@@ -1041,12 +1198,19 @@ def _finalize_shared_tables(
     if valid_generals:
         shared_tables['entity_general'] = np.stack(valid_generals).astype(np.float32)
     collector.entity_general.clear()
-    
+
     valid_channels = [c for c in collector.entity_channel if c is not None]
     if valid_channels:
         shared_tables['entity_channel'] = np.stack(valid_channels).astype(np.float32)
     collector.entity_channel.clear()
-    
+
+    # Convert LLM embeddings if present (per-sample, NOT deduplicated)
+    # Shape: (N_samples, embed_dim, n_channels) e.g., (1000, 768, 1)
+    if collector.llm_embeddings:
+        shared_tables['llm_embeddings'] = np.stack(collector.llm_embeddings).astype(np.float32)
+        collector.llm_embeddings.clear()
+        _debug_memory("After llm_embeddings conversion")
+
     # Build index mappings (JSON-serializable)
     index_mappings = {
         'timestamp_to_idx': {str(k): v for k, v in collector.timestamp_to_idx.items()},
@@ -1075,16 +1239,18 @@ INDEXED_ARRAY_SPECS = {
     'y_indices': {'dtype': 'int32'},       # Indices into shared tables for output
     'x_time_features': {'dtype': 'float32'},  # Per-sample time features (not deduplicated)
     'y_time_features': {'dtype': 'float32'},  # Per-sample time features (not deduplicated)
+    'llm_indices': {'dtype': 'int32'},     # Index into LLM embeddings (1:1 for LLM mode)
 }
 
 # Shared table specifications
 SHARED_TABLE_SPECS = {
     'timeseries': {'dtype': 'float32'},      # Time series values
     'timestamps': {'dtype': 'int64'},        # Timestamp keys
-    'embeddings': {'dtype': 'float32'},      # Text embeddings
+    'embeddings': {'dtype': 'float32'},      # Text embeddings (per-timestamp, deduplicated)
     'hetero_time': {'dtype': 'float32'},     # Hetero time features
     'entity_general': {'dtype': 'float32'},  # Entity general embeddings
     'entity_channel': {'dtype': 'float32'},  # Entity channel embeddings
+    'llm_embeddings': {'dtype': 'float32'},  # LLM embeddings (per-sample, NOT deduplicated)
 }
 
 # Legacy V1 format specifications (for backward compatibility)
@@ -1151,11 +1317,12 @@ def _write_sample_indices(
     write_idx: int,
     sample: tuple,
     entity_idx: int,
-    timestamp_to_idx: Dict[int, int]
+    timestamp_to_idx: Dict[int, int],
+    llm_idx: Optional[int] = None
 ) -> None:
     """
     Write index data for a single sample to memory-mapped arrays.
-    
+
     WHAT GETS WRITTEN:
     - sample_ids: The sample identifier string
     - entity_indices: Index into entity tables (same for all samples from entity)
@@ -1163,25 +1330,32 @@ def _write_sample_indices(
     - y_indices: Convert output timestamps → indices into shared tables
     - x_time_features: Per-sample time features (NOT deduplicated - different per sample)
     - y_time_features: Per-sample time features (NOT deduplicated)
-    
+    - llm_indices: Index into LLM embeddings (if LLM mode active)
+
     WHY TIME FEATURES NOT DEDUPLICATED:
     - Time features encode position-in-sample information
     - Same timestamp may have different features depending on its position
     - Cost is low (~0.2 GB) compared to embeddings (~2 GB deduplicated)
-    
+
+    LLM EMBEDDING MODE:
+    - When llm_idx is provided, write it to llm_indices array
+    - llm_idx is the global index into shared/llm_embeddings.npy
+    - Computed as: split_offset + sample_idx_within_split
+
     Args:
         arrays: Memory-mapped arrays to write to
         write_idx: Position in arrays to write
         sample: 13-element tuple from dataset
         entity_idx: Index of this sample's entity in entity tables
         timestamp_to_idx: Mapping from timestamp to shared table index
+        llm_idx: Optional index into LLM embeddings (for LLM mode)
     """
     # Sample ID
     arrays['sample_ids'][write_idx] = str(sample[SAMPLE_IDX_SAMPLE_ID])
-    
+
     # Entity index
     arrays['entity_indices'][write_idx] = entity_idx
-    
+
     # Convert input timestamps to indices
     x_time = np.asarray(sample[SAMPLE_IDX_X_TIME]).flatten()
     x_indices = np.array(
@@ -1189,7 +1363,7 @@ def _write_sample_indices(
         dtype=np.int32
     )
     arrays['x_indices'][write_idx] = x_indices
-    
+
     # Convert output timestamps to indices
     y_time = np.asarray(sample[SAMPLE_IDX_Y_TIME]).flatten()
     y_indices = np.array(
@@ -1197,15 +1371,19 @@ def _write_sample_indices(
         dtype=np.int32
     )
     arrays['y_indices'][write_idx] = y_indices
-    
+
     # Per-sample time features (written directly, not indexed)
     x_tf = sample[SAMPLE_IDX_X_TIME_FEATURES]
     if 'x_time_features' in arrays and x_tf is not None:
         arrays['x_time_features'][write_idx] = np.asarray(x_tf)
-    
+
     y_tf = sample[SAMPLE_IDX_Y_TIME_FEATURES]
     if 'y_time_features' in arrays and y_tf is not None:
         arrays['y_time_features'][write_idx] = np.asarray(y_tf)
+
+    # LLM embedding index (for LLM mode)
+    if llm_idx is not None and 'llm_indices' in arrays:
+        arrays['llm_indices'][write_idx] = llm_idx
 
 
 def _flush_arrays(arrays: Dict[str, np.memmap]) -> None:
@@ -1417,18 +1595,33 @@ class TensorCacheGenerator:
         
         collector = SharedTableCollector()
         collector.num_news_items = num_news_items
-        
+
         # Count total samples for progress tracking
+        # Also track samples per split for LLM offset computation
         # MEMORY OPTIMIZATION: Release datasets after counting to avoid holding
         # multiple dataset instances in memory simultaneously
         _debug_memory("_build_shared_tables: before counting")
         total_samples = 0
+        split_sample_counts = {}  # Track sample counts per split for LLM offsets
         for flag in flags:
             datasets = self.data_provider.get_datasets(flag)
             if datasets:
-                total_samples += sum(len(ds) for ds in datasets.values())
+                split_count = sum(len(ds) for ds in datasets.values())
+                split_sample_counts[flag] = split_count
+                total_samples += split_count
+            else:
+                split_sample_counts[flag] = 0
             # Release this split's datasets before loading next
             del datasets
+
+        # Compute LLM embedding offsets per split (cumulative)
+        # Used during index generation to map sample -> global LLM embedding index
+        llm_offset = 0
+        self._llm_split_offsets = {}
+        for flag in flags:
+            self._llm_split_offsets[flag] = llm_offset
+            llm_offset += split_sample_counts[flag]
+
         gc.collect()
         _debug_memory("_build_shared_tables: after counting (gc.collect)", force_gc=False)
         
@@ -1563,18 +1756,29 @@ class TensorCacheGenerator:
         # Capture counts before finalization (which clears the lists)
         n_unique_timestamps = len(collector.timestamps)
         n_entities = len(collector.entity_to_idx)
-        
+
+        # Capture LLM embedding info before finalization
+        self._has_llm_embeddings = collector.has_llm_embeddings
+        self._llm_embed_dim = collector.llm_embed_dim
+        self._llm_n_channels = collector.llm_n_channels
+        n_llm_embeddings = len(collector.llm_embeddings) if collector.has_llm_embeddings else 0
+
         # Finalize: convert lists to arrays
         logger.info("Converting collected data to arrays...")
         _debug_memory("_build_shared_tables: before finalization")
         shared_tables, index_mappings = _finalize_shared_tables(collector)
         _debug_memory("_build_shared_tables: after finalization")
-        
+
         logger.info(
             f"Built shared tables: {n_unique_timestamps} unique timestamps, "
             f"{n_entities} entities"
         )
-        
+        if self._has_llm_embeddings:
+            logger.info(
+                f"LLM embedding mode: {n_llm_embeddings} per-sample embeddings "
+                f"(shape: {self._llm_embed_dim} x {self._llm_n_channels})"
+            )
+
         return shared_tables, index_mappings
 
     def _build_shared_tables_polars(
@@ -1829,11 +2033,11 @@ class TensorCacheGenerator:
     ) -> Dict[str, tuple]:
         """
         Compute array shapes for index arrays.
-        
+
         Args:
             total_samples: Total number of samples in split
             shapes: Inferred shapes from sample
-            
+
         Returns:
             Dict of {array_name: shape_tuple}
         """
@@ -1843,17 +2047,21 @@ class TensorCacheGenerator:
             'x_indices': (total_samples, shapes.input_len),
             'y_indices': (total_samples, shapes.output_len),
         }
-        
+
         if shapes.n_x_time_features and shapes.n_x_time_features > 0:
             array_shapes['x_time_features'] = (
                 total_samples, shapes.input_len, shapes.n_x_time_features
             )
-        
+
         if shapes.n_y_time_features and shapes.n_y_time_features > 0:
             array_shapes['y_time_features'] = (
                 total_samples, shapes.output_len, shapes.n_y_time_features
             )
-        
+
+        # Add llm_indices if in LLM mode
+        if getattr(self, '_has_llm_embeddings', False):
+            array_shapes['llm_indices'] = (total_samples,)
+
         return array_shapes
 
     def _process_with_rich_progress(
@@ -1871,17 +2079,20 @@ class TensorCacheGenerator:
     ) -> None:
         """
         Process datasets with Rich progress bars and checkpointing.
-        
+
         PROGRESS DISPLAY:
         - Level 1: Entity progress (e.g., 45/87 entities)
         - Level 2: Current entity samples (e.g., 15000/25000)
         - Level 3: Total samples across all entities
-        
+
         This provides much better visibility than a single bar,
         especially for large entities where processing appears "stuck".
         """
         current_idx = start_idx
-        
+
+        # Get LLM offset for this split (if in LLM mode)
+        llm_offset = getattr(self, '_llm_split_offsets', {}).get(flag, 0)
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[bold blue]{task.description}"),
@@ -1895,24 +2106,25 @@ class TensorCacheGenerator:
             transient=False,
             refresh_per_second=10
         ) as progress:
-            
+
             # Create progress tasks
             entity_task = progress.add_task(f"[cyan]Entities ({flag})", total=len(datasets))
             samples_task = progress.add_task("[dim]  └─ waiting...[/dim]", total=100)
             total_task = progress.add_task("[green]Total samples", total=total_samples)
-            
+
             # Update for already-completed work
             progress.update(total_task, completed=start_idx)
-            
+
             # Process each entity
             for entity_id, dataset in datasets.items():
                 current_idx = self._process_entity(
                     entity_id, dataset, arrays, entity_info,
                     timestamp_to_idx, entity_to_idx, completed_entities,
                     current_idx, progress_file,
-                    progress, entity_task, samples_task, total_task
+                    progress, entity_task, samples_task, total_task,
+                    llm_offset=llm_offset
                 )
-            
+
             progress.update(samples_task, description="[dim]  └─ complete[/dim]", visible=False)
 
     def _process_with_tqdm(
@@ -1931,7 +2143,10 @@ class TensorCacheGenerator:
         Process datasets with tqdm progress bar (fallback when Rich unavailable).
         """
         current_idx = start_idx
-        
+
+        # Get LLM offset for this split (if in LLM mode)
+        llm_offset = getattr(self, '_llm_split_offsets', {}).get(flag, 0)
+
         for entity_id, dataset in tqdm(
             datasets.items(),
             desc=f"Entities ({flag})",
@@ -1941,7 +2156,8 @@ class TensorCacheGenerator:
                 entity_id, dataset, arrays, entity_info,
                 timestamp_to_idx, entity_to_idx, completed_entities,
                 current_idx, progress_file,
-                progress=None, entity_task=None, samples_task=None, total_task=None
+                progress=None, entity_task=None, samples_task=None, total_task=None,
+                llm_offset=llm_offset
             )
 
     def _process_entity(
@@ -1958,17 +2174,18 @@ class TensorCacheGenerator:
         progress: Optional[Any] = None,
         entity_task: Optional[int] = None,
         samples_task: Optional[int] = None,
-        total_task: Optional[int] = None
+        total_task: Optional[int] = None,
+        llm_offset: int = 0
     ) -> int:
         """
         Process a single entity's samples with checkpointing.
-        
+
         ENTITY PROCESSING FLOW:
         1. Skip if already completed (resumption)
         2. Update progress display for this entity
         3. Process samples in chunks (memory efficiency)
         4. Checkpoint after entity completes (flush + save progress)
-        
+
         Args:
             entity_id: Entity identifier
             dataset: Dataset for this entity
@@ -1981,28 +2198,29 @@ class TensorCacheGenerator:
             progress_file: Path to progress.json
             progress: Optional Rich Progress instance
             entity_task, samples_task, total_task: Optional Rich task IDs
-            
+            llm_offset: Base offset for LLM indices in this split
+
         Returns:
             Updated write position after processing entity
         """
         entity_samples = len(dataset)
-        
+
         # Skip completed entities
         if entity_id in completed_entities:
             if progress is not None:
                 progress.update(entity_task, advance=1)
             return current_idx
-        
+
         # Skip empty entities
         if entity_samples == 0:
             if progress is not None:
                 progress.update(entity_task, advance=1)
             return current_idx
-        
+
         # Track entity info
         entity_info['entity_ids'].append(entity_id)
         entity_info['samples_per_entity'][entity_id] = entity_samples
-        
+
         # Update progress display
         if progress is not None:
             progress.update(
@@ -2011,38 +2229,46 @@ class TensorCacheGenerator:
                 completed=0,
                 total=entity_samples
             )
-        
+
         # Get entity index
         entity_idx = entity_to_idx.get(entity_id, 0)
-        
+
+        # Check if LLM mode is active
+        has_llm = getattr(self, '_has_llm_embeddings', False)
+
         # Process samples in chunks
         for chunk_start in range(0, entity_samples, self.chunk_size):
             chunk_end = min(chunk_start + self.chunk_size, entity_samples)
             chunk_size = chunk_end - chunk_start
-            
+
             # Write each sample in chunk
             for i in range(chunk_start, chunk_end):
                 sample = dataset[i]
                 write_idx = current_idx + i
+
+                # Compute LLM index if in LLM mode
+                # llm_idx = split_offset + sample_position_in_split
+                llm_idx = (llm_offset + write_idx) if has_llm else None
+
                 _write_sample_indices(
-                    arrays, write_idx, sample, entity_idx, timestamp_to_idx
+                    arrays, write_idx, sample, entity_idx, timestamp_to_idx, llm_idx
                 )
-            
+
             # Update progress
             if progress is not None:
                 progress.update(samples_task, advance=chunk_size)
                 progress.update(total_task, advance=chunk_size)
-        
+
         # Checkpoint after entity completes
         current_idx += entity_samples
         _flush_arrays(arrays)
-        
+
         completed_entities.add(entity_id)
         _save_checkpoint(progress_file, self.config_hash, completed_entities, current_idx)
-        
+
         if progress is not None:
             progress.update(entity_task, advance=1)
-        
+
         return current_idx
 
     def _save_metadata(
@@ -2053,14 +2279,24 @@ class TensorCacheGenerator:
     ) -> None:
         """
         Save cache metadata to metadata.json.
-        
+
         Includes num_news_items which determines embedding shape:
         - N=1: embeddings stored as (D,) per timestamp
         - N=2: embeddings stored as (2, D) per timestamp (embedding + downtime)
+
+        Also includes LLM embedding fields:
+        - has_llm_embeddings: True if LLM embeddings are stored per-sample
+        - llm_embed_dim: Embedding dimension (e.g., 768 for GPT-2)
+        - llm_n_channels: Number of channels in LLM embeddings
         """
         # Get num_news_items from the build process (set in _build_shared_tables)
         num_news_items = getattr(self, '_num_news_items', 1)
-        
+
+        # Get LLM embedding info from the build process (set in _build_shared_tables)
+        has_llm_embeddings = getattr(self, '_has_llm_embeddings', False)
+        llm_embed_dim = getattr(self, '_llm_embed_dim', None)
+        llm_n_channels = getattr(self, '_llm_n_channels', None)
+
         metadata = TensorCacheMetadata(
             config_hash=self.config_hash,
             data_config=self.config,
@@ -2069,7 +2305,10 @@ class TensorCacheGenerator:
             cache_format=TensorCacheMetadata.FORMAT_INDEXED,
             shared_shapes=shared_shapes,
             entity_info=entity_info,
-            num_news_items=num_news_items
+            num_news_items=num_news_items,
+            has_llm_embeddings=has_llm_embeddings,
+            llm_embed_dim=llm_embed_dim,
+            llm_n_channels=llm_n_channels
         )
         metadata.save(self.cache_dir / 'metadata.json')
 
@@ -2308,45 +2547,63 @@ class TensorCacheDataset(Dataset):
         x_hetero_idx = x_idx[::self.hetero_stride]
         y_hetero_idx = y_idx[::self.hetero_stride]
         
-        # Look up embeddings from shared table using STRIDED indices
-        # Shape depends on num_news_items in metadata:
-        # - N=1: stored as (L, D), needs expansion to (L, 1, D)
-        # - N=2: stored as (L, 2, D), already has N dimension
-        hetero_x = self.shared['embeddings'][x_hetero_idx] if 'embeddings' in self.shared else None
-        hetero_y = self.shared['embeddings'][y_hetero_idx] if 'embeddings' in self.shared else None
-        
-        # Get num_news_items from metadata (default to 1 for old caches)
-        num_news_items = getattr(self.metadata, 'num_news_items', 1)
-        
-        # Handle embedding shape based on num_news_items
-        if hetero_x is not None:
-            # BEGIN DEBUG
-            if _should_debug() and _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
-                print(f"[DEBUG]   hetero_x before expand: shape={hetero_x.shape}")
-            # END DEBUG
+        # Check if this is an LLM embedding cache
+        has_llm_embeddings = getattr(self.metadata, 'has_llm_embeddings', False)
 
-            if num_news_items == 1:
-                # N=1: stored as (L, D) -> expand to (L, 1, D)
-                hetero_x = np.expand_dims(hetero_x, axis=1)
-            # else: N=2, already stored as (L, 2, D), no expansion needed
+        if has_llm_embeddings and 'llm_embeddings' in self.shared and 'llm_indices' in self.arrays:
+            # LLM EMBEDDING MODE
+            # LLM embeddings are stored per-sample (not per-timestamp)
+            # Shape: (embed_dim, n_channels) e.g., (768, 1) for GPT-2
+            llm_idx = self.arrays['llm_indices'][index]
+            hetero_x = self.shared['llm_embeddings'][llm_idx]
+            # LLM embeddings don't have hetero_y (not timestamp-indexed)
+            hetero_y = None
 
             # BEGIN DEBUG
             if _should_debug() and _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
-                hetero_x_mb = hetero_x.nbytes / (1024 ** 2)
-                print(f"[DEBUG]   hetero_x after expand: shape={hetero_x.shape}, size={hetero_x_mb:.2f}MB")
+                print(f"[DEBUG]   LLM embedding mode: llm_idx={llm_idx}, hetero_x.shape={hetero_x.shape}")
             # END DEBUG
+        else:
+            # NEWS EMBEDDING MODE (timestamp-indexed)
+            # Look up embeddings from shared table using STRIDED indices
+            # Shape depends on num_news_items in metadata:
+            # - N=1: stored as (L, D), needs expansion to (L, 1, D)
+            # - N=2: stored as (L, 2, D), already has N dimension
+            hetero_x = self.shared['embeddings'][x_hetero_idx] if 'embeddings' in self.shared else None
+            hetero_y = self.shared['embeddings'][y_hetero_idx] if 'embeddings' in self.shared else None
 
-        if hetero_y is not None:
-            if num_news_items == 1:
-                # N=1: stored as (L, D) -> expand to (L, 1, D)
-                hetero_y = np.expand_dims(hetero_y, axis=1)
-            # else: N=2, already stored as (L, 2, D), no expansion needed
+            # Get num_news_items from metadata (default to 1 for old caches)
+            num_news_items = getattr(self.metadata, 'num_news_items', 1)
 
-            # BEGIN DEBUG
-            if _should_debug() and _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
-                hetero_y_mb = hetero_y.nbytes / (1024 ** 2)
-                print(f"[DEBUG]   hetero_y after expand: shape={hetero_y.shape}, size={hetero_y_mb:.2f}MB")
-            # END DEBUG
+            # Handle embedding shape based on num_news_items
+            if hetero_x is not None:
+                # BEGIN DEBUG
+                if _should_debug() and _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
+                    print(f"[DEBUG]   hetero_x before expand: shape={hetero_x.shape}")
+                # END DEBUG
+
+                if num_news_items == 1:
+                    # N=1: stored as (L, D) -> expand to (L, 1, D)
+                    hetero_x = np.expand_dims(hetero_x, axis=1)
+                # else: N=2, already stored as (L, 2, D), no expansion needed
+
+                # BEGIN DEBUG
+                if _should_debug() and _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
+                    hetero_x_mb = hetero_x.nbytes / (1024 ** 2)
+                    print(f"[DEBUG]   hetero_x after expand: shape={hetero_x.shape}, size={hetero_x_mb:.2f}MB")
+                # END DEBUG
+
+            if hetero_y is not None:
+                if num_news_items == 1:
+                    # N=1: stored as (L, D) -> expand to (L, 1, D)
+                    hetero_y = np.expand_dims(hetero_y, axis=1)
+                # else: N=2, already stored as (L, 2, D), no expansion needed
+
+                # BEGIN DEBUG
+                if _should_debug() and _DEBUG_GETITEM_COUNT < _DEBUG_GETITEM_LIMIT:
+                    hetero_y_mb = hetero_y.nbytes / (1024 ** 2)
+                    print(f"[DEBUG]   hetero_y after expand: shape={hetero_y.shape}, size={hetero_y_mb:.2f}MB")
+                # END DEBUG
         
         # Look up hetero time features from shared table (also strided)
         hetero_x_time = self.shared['hetero_time'][x_hetero_idx] if 'hetero_time' in self.shared else None
