@@ -109,9 +109,9 @@ note (10/18 3:45 am): caiso, nyc, bear room, jena submitted with train truncated
 
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
-| Canada Photovoltaics | [~] | - | - | - | - | mit_preemptable |
-| Germany Renewable | [~] | - | - | - | - | mit_preemptable |
-| NYC Traffic Speed | [>>] | - | - | - | - | mit_preemptable |
+| Canada Photovoltaics | [✓] | `tgtsf_canada_photovoltaics_20260120_080941` | `20260120-080941_916143b7bacd` | - | - | mit_preemptable |
+| Germany Renewable | [>>] | - | - | - | - | mit_preemptable |
+| NYC Traffic Speed | [✓] | `tgtsf_nyc_traffic_speed_20260119_192618` | `20260119-192618_2a4450cc3082` | - | - | mit_preemptable | 
 | California ISO | [~] | - | - | - | - | mit_preemptable |
 | Bear Room | [~] | - | - | - | - | mit_preemptable |
 | Jena Atmospheric Physics | [~] | - | - | - | - | mit_preemptable |
@@ -220,11 +220,11 @@ note: all of the llm embeddings are runs from late 01/16 or early 01/17.
 #### Initial Runs (Other Datasets)
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
-| NYC Traffic Speed | [ ] | - | - | - | - | RunPod (pod:nyc_traffic) |
+| NYC Traffic Speed | [>>] | `lynx_film_raw_nyc_traffic_speed_20260120_144758` | `20260120-144758_715c03fcb6a2` | - | - | RunPod (pod:nyc_traffic) |
 | Canada Photovoltaics | [✓] | `lynx_film_raw_canada_photovoltaics_20260119_222019` | `20260119-222020_1a45a0aac8c7` | - | - | RunPod (pod:canada) | 
-| Germany Renewable | [>>] | `lynx_film_raw_germany_renewable_20260120_051004` | `20260120-051004_19e0259912bb` | - | - | RunPod (pod:germany) | 
+| Germany Renewable | [✓] | `lynx_film_raw_germany_renewable_20260120_051004` | `20260120-051004_19e0259912bb` | - | - | RunPod (pod:germany) | 
 | California ISO | [✓] | `lynx_film_raw_california_iso_20260119_221759` | `20260119-221759_15466b14951a` | - | - | RunPod (pod:caiso) | 
-| Bear Room | [ ] | - | - | - | - | RunPod (pod:bear_room) |
+| Bear Room | [>>] | `lynx_film_raw_bear_room_20260120_143656` | `20260120-143656_5eb93c6b25f7` | - | - | RunPod (pod:bear_room) | 
 | Jena Atmospheric Physics | [✓] | `lynx_film_raw_jena_atmospheric_20260119_224922` | `20260119-224922_040d096de7db` | - | - | RunPod (pod:jena) | 
 
 note: these are full hetero resolution 
@@ -241,9 +241,9 @@ note: we want to do this on original resolution for the ones that look good (mak
 |--------|----------|---------|--------|--------|----------|--------|
 | Canada Photovoltaics | [✓] | `lynx_film_canada_photovoltaics_20260119_202157` | `20260119-202157_f5e855bd761c` | - | - | RunPod (pod:canada) |
 | Germany Renewable | [✓] | `lynx_film_germany_renewable_20260119_213142` | `20260119-213142_5adc752cde19` | - | - | RunPod (pod:germany) |
-| NYC Traffic Speed | [>>] | `lynx_film_nyc_traffic_speed_20260119_202319` | `20260119-202319_6c58cf9ff591` | - | - | RunPod (pod:nyc_traffic) |
+| NYC Traffic Speed | [✓] | `lynx_film_nyc_traffic_speed_20260119_202319` | `20260119-202319_6c58cf9ff591` | - | - | RunPod (pod:nyc_traffic) |
 | California ISO | [✓] | `lynx_film_california_iso_20260119_211605` | `20260119-211605_780ef802fcf8` | - | - | RunPod (pod:caiso) |
-| Bear Room | [>>] | `lynx_film_bear_room_20260120_021406` | `20260120-021407_775b5d8b4d66` | - | - | RunPod (pod:bear_room) |
+| Bear Room | [✓] | `lynx_film_bear_room_20260120_021406` | `20260120-021407_775b5d8b4d66` | - | - | RunPod (pod:bear_room) |
 | Jena Atmospheric Physics | [✓] | `lynx_film_jena_atmospheric_20260119_215914` | `20260119-215914_27b837b9f927` | - | - | RunPod (pod:jena) |
 
 **Note:** Requires iTransformer pretraining to complete first.

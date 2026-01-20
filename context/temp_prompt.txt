@@ -433,7 +433,7 @@ note on itransformer: might need some significant improvements on hparams to rea
 
 merged tensor_cache_polars into alwaystest. pushed the new alwaystest into chimera_proj and orcd/scratch. timellm is completed. leret has three still running.
 
-[tensor-cache-llm] claude is churning on this in the new branch and worktree. I think that it's not worth it to generate the llm compatibility for tensor cache. going to just run mmtsflib and timecma without tensor cache (changed configs on alwaystest). if that takes too long we come back to it. actually... if we can keep it fully contained and separate in the tensor_cache_llm branch and never merge that back (only use it for timecma and mmtsflib), then the risk of breaking other things is negligible and we can just try it. it's too slow without tensor cacheing. maybe we let claude churn on it a bit after all...
+[tensor-cache-llm] claude is churning on this in the new branch and worktree. I think that it's not worth it to generate the llm compatibility for tensor cache. going to just run mmtsflib and timecma without tensor cache (changed configs on alwaystest). if that takes too long we come back to it. actually... if we can keep it fully contained and separate in the tensor_cache_llm branch and never merge that back (only use it for timecma and mmtsflib), then the risk of breaking other things is negligible and we can just try it. it's too slow without tensor cacheing. maybe we let claude churn on it a bit after all...claude is now churning on tests, after which he'll churn on working on test driven development.
 
 [alwaystest] looks like the merge with tensor_cache_polars rolled back some test after train progress, so trying to fix that in the alwaystest claude, then will test again on interactive gpu, then roll out to the pods. the fix works. rolled out to nyc traffic pod and running itransformer there.
 
@@ -443,17 +443,17 @@ merged tensor_cache_polars into alwaystest. pushed the new alwaystest into chime
 
 [itransformer] my itransformer nyc traffic run got precisely (like exactly) the same test loss as the original fidel ts paper! This is great. We are in business.
 
-[pod:nyc-traffic] itransformer run, lynx_film is running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
+[pod:nyc-traffic] itransformer run, lynx_film run, lynx_film_raw is running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
 
 [pod:canada:terminated] itransformer run, lynx_film and lynx_film_raw run. (had to reduce to 256 batch size, using the itransformer just run, using tensor cache). ported results to chimera_proj
 
-[pod:germany] setting up (uv done, git cloned, porting over the germany data in progress, tmux complete). itransformer run. lynx_film running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
+[pod:germany:stopped] setting up (uv done, git cloned, porting over the germany data in progress, tmux complete). itransformer run. lynx_film and lynx_film_raw run (had to reduce to 256 batch size, using the itransformer just run, using tensor cache). ported results to chimera_proj.
 
 [pod:caiso:stopped] setting up (uv done, git cloned, porting over the caiso data done, tmux complete). itransformer run. lynx_film and lynx_film_raw run. (had to reduce to 256 batch size, using the itransformer just run, using tensor cache). ported results to chimera_proj.
 
 [pod:jena:stopped] setting up (uv done, git cloned, porting over jena data complete, tmux complete). itransformer run. lynx_film and lynx_film_raw run. (had to reduce to 256 batch size, using the itransformer just run, using tensor cache). ported results to chimera_proj.
 
-[pod:bear_room] setting up (uv done, git cloned, tmux complete, porting over bear room data in progress)
+[pod:bear_room] setting up (uv done, git cloned, tmux complete, porting over bear room data complete). itransformer run. lynx_film run. lynx_film_raw running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache). 
 
 [tgtsf] looks like this is quite memory hungry. probably going to run on preemptable rather than on pods and leave pods for the lynx film work. submitted jobs on preemptable for full resolution. once those are done submit for original resolution.
 
@@ -461,11 +461,32 @@ merged tensor_cache_polars into alwaystest. pushed the new alwaystest into chime
 
 [mmtsflib] ... (need to review whether it works then submit on sloan gpu)
 
-[zhanghanbest] ... (need to review whether it works then submit on sloan gpu)
+[zhanghanbest] added a hidden layer in residual projection, which matches paper better. testing on jena on orcd/scratch. generated configs for zhanghanbest-patchtst and zhanghanbest-dlinear. testing on jena on orcd/scratch (with tensor cache): zhanghanbest-patchtst runs great. . Also the paper trains the unimodal model and the residual projection separately, suggesting two stages of training. I am currently training jointly. I should add an option to train separately to match the paper better.
 
 [enhancements] caiso is horrid for lynx_film and lynx_film_raw. worse on val than test by a mile, and worse on test than val by 10 miles. I think perhaps we need to to multiple different CV splits over the train data (not respecting temporal ordering -- helpful if the distribution shifts) and early stop when any of those or several have val loss going up. I think it massively overtrained (10 epochs). Or, simpler solution: just train one epoch always. another possibility is the gating (lynx film enhanced). if val loss is worse than unimodal, perhaps we could in lynx_film_raw use the val set to inform the gate? like some held out portion and if it's bad or worse than unimodal that signal goes somehow to the gate. I also think that looking at the text data is useful. It could be that when the text data is highly structured film does quite well, but when it is not then film is too direct and fails (overfits)
 
+[enhancements] lynx_film does horrid on full resolution usually (at least on nyc traffic and bear room). original resolution seemed to be better for nyc traffic, but lynx film raw I think will do better. probably lynx film overfits (which fits what we are seeing) the residual.
+
 [mmvision] ...
+
+---
+
+for 10/20 morning:
+- test zhanghanbest -> get running on pods when available
+- get claude cooking on tensor cache llm (better to at least try it, it won't finish without tensor cache probably) + figure out the sbatch_logs/timecma_* errors -> run timecma + mmtsflib
+- while claude is cooking: analyze results so far and work on getting high performance on my own models everywhere -- iterate fast and ensure we beat benchmarks
+- mmvision 
+
+get the agent monitor working is a side quest (currently uv run stuff)
+
+---
+
+01/20 10 am:
+
+- tgtsf_fullres_* is queued on mit preemptable
+- leret is still running on preemptable
+- tgtsf_origres_* is queued on mit sloan
+- lynx_film_raw finishing up on pods
 
 ---
 
