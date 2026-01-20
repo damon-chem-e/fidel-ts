@@ -1,0 +1,351 @@
+# Experiment Suite: TGTSF on Time MMD and TTC datasets
+# Description: Train TGTSF model on all Time MMD (Liu et al., 2024b) and TTC (Kim et al., 2024) datasets
+# Usage: python -m cli.suite run configs/experiment_suites/tgtsf/original_resolution/time_mmd_ttc.yaml
+# Note: Input/output lens match itransformer time_mmd_ttc config (same context/horizon for fair comparison)
+#       Hyperparameters use judgment since original TGTSF paper only covers Fidel-TS datasets
+#       Uses batch_size=16 for time_mmd/ttc datasets (smaller than Fidel-TS)
+#       Uses original paper's hetero stride (aligned with model stride, hetero_stride=3)
+
+suite:
+  name: "tgtsf_time_mmd_ttc"
+  description: "Train TGTSF model on all Time MMD and TTC datasets"
+  tags: ["tgtsf", "multimodal", "pytorch", "time_mmd", "ttc"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: false
+    log_dir: "./logs/suites/tgtsf/time_mmd_ttc"
+    
+  # Experiments in this suite
+  experiments:
+    # ===========================================
+    # Time MMD Datasets (Liu et al., 2024b)
+    # ===========================================
+    
+    # Agriculture: context=24, prediction=6
+    - name: "tgtsf_timemmd_agriculture"
+      description: "TGTSF on Time MMD Agriculture dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
+        data:
+          name: "time_mmd_agriculture"
+          config_path: "data_configs/time_mmd/Algriculture/config.yaml"
+        training:
+          input_len: 24       # Match itransformer time_mmd_ttc config
+          output_len: 6       # Match itransformer time_mmd_ttc config
+          batch_size: 16      # Smaller batch size for time_mmd datasets (judgment-based)
+          learning_rate: 5.0e-4  # Default from run_lightning.py
+          patience: 5         # Same as most Fidel-TS datasets
+          epochs: 50          # Same as Fidel-TS datasets
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache
+        wandb:
+          tags: ["tgtsf", "time_mmd_agriculture"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/tgtsf/time_mmd_ttc"
+    
+    # Climate: context=24, prediction=6
+    - name: "tgtsf_timemmd_climate"
+      description: "TGTSF on Time MMD Climate dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
+        data:
+          name: "time_mmd_climate"
+          config_path: "data_configs/time_mmd/Climate/config.yaml"
+        training:
+          input_len: 24       # Match itransformer time_mmd_ttc config
+          output_len: 6       # Match itransformer time_mmd_ttc config
+          batch_size: 16      # Smaller batch size for time_mmd datasets (judgment-based)
+          learning_rate: 5.0e-4  # Default from run_lightning.py
+          patience: 5         # Same as most Fidel-TS datasets
+          epochs: 50          # Same as Fidel-TS datasets
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache
+        wandb:
+          tags: ["tgtsf", "time_mmd_climate"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/tgtsf/time_mmd_ttc"
+    
+    # Economy: context=24, prediction=6
+    - name: "tgtsf_timemmd_economy"
+      description: "TGTSF on Time MMD Economy dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
+        data:
+          name: "time_mmd_economy"
+          config_path: "data_configs/time_mmd/Economy/config.yaml"
+        training:
+          input_len: 24       # Match itransformer time_mmd_ttc config
+          output_len: 6       # Match itransformer time_mmd_ttc config
+          batch_size: 16      # Smaller batch size for time_mmd datasets (judgment-based)
+          learning_rate: 5.0e-4  # Default from run_lightning.py
+          patience: 5         # Same as most Fidel-TS datasets
+          epochs: 50          # Same as Fidel-TS datasets
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache
+        wandb:
+          tags: ["tgtsf", "time_mmd_economy"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/tgtsf/time_mmd_ttc"
+    
+    # Energy: context=24, prediction=12
+    - name: "tgtsf_timemmd_energy"
+      description: "TGTSF on Time MMD Energy dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
+        data:
+          name: "time_mmd_energy"
+          config_path: "data_configs/time_mmd/Energy/config.yaml"
+        training:
+          input_len: 24       # Match itransformer time_mmd_ttc config
+          output_len: 12      # Match itransformer time_mmd_ttc config
+          batch_size: 16      # Smaller batch size for time_mmd datasets (judgment-based)
+          learning_rate: 5.0e-4  # Default from run_lightning.py
+          patience: 5         # Same as most Fidel-TS datasets
+          epochs: 50          # Same as Fidel-TS datasets
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache
+        wandb:
+          tags: ["tgtsf", "time_mmd_energy"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/tgtsf/time_mmd_ttc"
+    
+    # Environment: context=24, prediction=48
+    - name: "tgtsf_timemmd_environment"
+      description: "TGTSF on Time MMD Environment dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
+        data:
+          name: "time_mmd_environment"
+          config_path: "data_configs/time_mmd/Environment/config.yaml"
+        training:
+          input_len: 24       # Match itransformer time_mmd_ttc config
+          output_len: 48      # Match itransformer time_mmd_ttc config
+          batch_size: 16      # Smaller batch size for time_mmd datasets (judgment-based)
+          learning_rate: 5.0e-4  # Default from run_lightning.py
+          patience: 5         # Same as most Fidel-TS datasets
+          epochs: 50          # Same as Fidel-TS datasets
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache
+        wandb:
+          tags: ["tgtsf", "time_mmd_environment"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/tgtsf/time_mmd_ttc"
+    
+    # Health (Public_Health): context=24, prediction=12
+    - name: "tgtsf_timemmd_health"
+      description: "TGTSF on Time MMD Health dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
+        data:
+          name: "time_mmd_health"
+          config_path: "data_configs/time_mmd/Public_Health/config.yaml"
+        training:
+          input_len: 24       # Match itransformer time_mmd_ttc config
+          output_len: 12      # Match itransformer time_mmd_ttc config
+          batch_size: 16      # Smaller batch size for time_mmd datasets (judgment-based)
+          learning_rate: 5.0e-4  # Default from run_lightning.py
+          patience: 5         # Same as most Fidel-TS datasets
+          epochs: 50          # Same as Fidel-TS datasets
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache
+        wandb:
+          tags: ["tgtsf", "time_mmd_health"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/tgtsf/time_mmd_ttc"
+    
+    # Socialgood: context=24, prediction=6
+    - name: "tgtsf_timemmd_socialgood"
+      description: "TGTSF on Time MMD SocialGood dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
+        data:
+          name: "time_mmd_socialgood"
+          config_path: "data_configs/time_mmd/SocialGood/config.yaml"
+        training:
+          input_len: 24       # Match itransformer time_mmd_ttc config
+          output_len: 6       # Match itransformer time_mmd_ttc config
+          batch_size: 16      # Smaller batch size for time_mmd datasets (judgment-based)
+          learning_rate: 5.0e-4  # Default from run_lightning.py
+          patience: 5         # Same as most Fidel-TS datasets
+          epochs: 50          # Same as Fidel-TS datasets
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache
+        wandb:
+          tags: ["tgtsf", "time_mmd_socialgood"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/tgtsf/time_mmd_ttc"
+    
+    # Traffic: context=24, prediction=6
+    - name: "tgtsf_timemmd_traffic"
+      description: "TGTSF on Time MMD Traffic dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        training:
+          input_len: 24       # Match itransformer time_mmd_ttc config
+          output_len: 6       # Match itransformer time_mmd_ttc config
+          batch_size: 16      # Smaller batch size for time_mmd datasets (judgment-based)
+          learning_rate: 5.0e-4  # Default from run_lightning.py
+          patience: 5         # Same as most Fidel-TS datasets
+          epochs: 50          # Same as Fidel-TS datasets
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache
+        wandb:
+          tags: ["tgtsf", "time_mmd_traffic"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/tgtsf/time_mmd_ttc"
+    
+    # ===========================================
+    # TTC Datasets (Kim et al., 2024)
+    # ===========================================
+    
+    # Weather: context=7, prediction=7
+    - name: "tgtsf_ttc_weather"
+      description: "TGTSF on TTC Weather dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
+        data:
+          name: "ttc_weather"
+          config_path: "data_configs/ttc/climate/config.yaml"
+        training:
+          input_len: 7        # Match itransformer time_mmd_ttc config
+          output_len: 7       # Match itransformer time_mmd_ttc config
+          batch_size: 16      # Smaller batch size for ttc datasets (judgment-based)
+          learning_rate: 5.0e-4  # Default from run_lightning.py
+          patience: 5         # Same as most Fidel-TS datasets
+          epochs: 50          # Same as Fidel-TS datasets
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache
+        wandb:
+          tags: ["tgtsf", "ttc_weather"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/tgtsf/time_mmd_ttc"
+    
+    # Medical: context=7, prediction=7
+    - name: "tgtsf_ttc_medical"
+      description: "TGTSF on TTC Medical dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
+        data:
+          name: "ttc_medical"
+          config_path: "data_configs/ttc/medical/config.yaml"
+        data_config:
+          filter_insufficient_entities: true  # Filter out entities without enough data for 7/7 input/output with 70/10/20 split
+          missing_value_strategy: forward_fill_indicators  # Forward fill missing values and create indicator variables
+        training:
+          input_len: 7        # Match itransformer time_mmd_ttc config
+          output_len: 7       # Match itransformer time_mmd_ttc config
+          batch_size: 16      # Smaller batch size for ttc datasets (judgment-based)
+          learning_rate: 5.0e-4  # Default from run_lightning.py
+          patience: 5         # Same as most Fidel-TS datasets
+          epochs: 50          # Same as Fidel-TS datasets
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache
+        wandb:
+          tags: ["tgtsf", "ttc_medical"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/tgtsf/time_mmd_ttc"
