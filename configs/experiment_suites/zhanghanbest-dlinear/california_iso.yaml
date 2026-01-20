@@ -39,7 +39,8 @@ suite:
           input_len: 360        # 15 days at hourly intervals
           output_len: 168       # 1 week at hourly intervals
           batch_size: 256
-          learning_rate: 0.0001
+          learning_rate: 0.0001           # Time series model LR
+          projector_learning_rate: 0.01   # Residual projection LR (100x higher per Zhang et al.)
           lradj: constant
           patience: 5
           epochs: 50

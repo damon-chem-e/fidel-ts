@@ -46,6 +46,15 @@ class TrainingConfig(BaseModel):
     epochs: int = Field(default=20, ge=1, description="Number of training epochs")
     batch_size: int = Field(default=96, ge=1, description="Batch size")
     learning_rate: float = Field(default=5e-4, gt=0, description="Initial learning rate")
+    projector_learning_rate: Optional[float] = Field(
+        default=None, 
+        gt=0, 
+        description=(
+            "Learning rate for projection layers (e.g., ZhangHanBest residual_proj). "
+            "If None, uses the same learning_rate as other parameters. "
+            "Per Zhang et al. (2025), projector should train at 100x higher LR than TS model."
+        )
+    )
     patience: int = Field(default=3, ge=1, description="Early stopping patience")
     loss: str = Field(default="mse", description="Loss function (mse, l1)")
     lradj: str = Field(default="type3", description="Learning rate adjustment strategy")
