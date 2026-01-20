@@ -450,7 +450,7 @@ merged tensor_cache_polars into alwaystest. pushed the new alwaystest into chime
 
 [pod:jena:stopped] setting up (uv done, git cloned, porting over jena data complete, tmux complete). itransformer run. lynx_film and lynx_film_raw run. (had to reduce to 256 batch size, using the itransformer just run, using tensor cache). ported results to chimera_proj.
 
-[pod:bear_room] ...
+[pod:bear_room] setting up (uv done, git cloned, tmux complete, porting over bear room data in progress)
 
 [tgtsf] looks like this is quite memory hungry. probably going to run on preemptable rather than on pods and leave pods for the lynx film work. submitted jobs on preemptable for full resolution. once those are done submit for original resolution.
 

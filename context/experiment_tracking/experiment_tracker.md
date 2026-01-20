@@ -87,7 +87,7 @@ note: I had generated nyc traffic speed on pod:nyc_traffic, but that was faulty 
 | Germany Renewable | [✓] | `itransformer_germany_renewable_20260119_211905` | `20260119-211905_5146f0e1f5d1` | - | - | RunPod (pod:germany) |
 | NYC Traffic Speed | [✓] | `itransformer_nyc_traffic_speed_20260119_185413` | `20260119-185414_86a8624cf255` | - | - | RunPod (pod:nyc_traffic) |
 | California ISO | [✓] | `itransformer_california_iso_20260119_205950` | `20260119-205950_1d71374b9677` | - | - | RunPod (pod:caiso) |
-| Bear Room | [~] | - | - | - | - | RunPod (pod:bear_room) |
+| Bear Room | [>>] | `itransformer_bear_room_20260120_013208` | `20260120-013208_17b7f42e444a` | - | - | RunPod (pod:bear_room) |
 | Jena Atmospheric Physics | [✓] | `itransformer_jena_atmospheric_20260119_215144` | `20260119-215144_99e92264ac3f` | - | - | RunPod (pod:jena) |
 
 note (10/18 3 am): canada and germany were completed on runpods.
@@ -168,12 +168,12 @@ note (10/19 1 pm): all complete. evals in the sbatch logs
 | Dataset | Status | LLM Embed | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|----------|---------|--------|--------|----------|--------|
 | Time MMD & TTC | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
-| Bear Room | [✗] | [✓] | - | - | - | - | MIT Sloan (A100) |
+| Bear Room | [~] | [✓] | - | - | - | - | MIT Sloan (A100) |
 | California ISO | [✗] | [✓] | - | - | - | - | MIT Sloan (A100) |
 | Canada Photovoltaics | [ ] | [✓]  | - | - | - | - | MIT Sloan (A100) |
 | Germany Renewable | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
 | NYC Traffic Speed | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
-| Jena Atmospheric Physics | [ ] | [✓] | - | - | - | - | MIT Sloan (A100) |
+| Jena Atmospheric Physics | [~] | [✓] | - | - | - | - | MIT Sloan (A100) |
 
 **Note:** TimeCMA has two steps: (1) LLM embedding generation, (2) model training. Suite ID and training status are all pending for Fidel-TS datasets.
 note (10/18 3 am): timecma doesn't work with torch compile. that was the error before. timecma requires llm embeddings, not currently supported in tensor cache. will make tensor_cache_llm branch and support that (see temp_buffer for more info). cache will be distinct for the timecma prompt. once that's supported, we run tensor cache jobs for timecma, then the timecma jobs with use tensor cache enabled.
