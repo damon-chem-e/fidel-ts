@@ -1,0 +1,56 @@
+# Experiment Suite: ZhangHanBest (DLinear) on NYC_traffic_speed
+# Description: Train ZhangHanBest with DLinear encoder on NYC_traffic_speed dataset
+# Notes:
+# - Mirrors configs/experiment_suites/zhanghanbest-patchtst/nyc_traffic_speed.yaml
+# - Only change vs PatchTST suite: unimodal_model_type="DLinear"
+
+suite:
+  name: "zhanghanbest_dlinear_nyc_traffic_speed"
+  description: "ZhangHanBest (DLinear encoder) on NYC_traffic_speed with 15-day context, 1-week prediction"
+  tags: ["zhanghanbest", "dlinear", "multimodal", "pytorch", "fidel-ts", "nyc_traffic_speed"]
+  
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/zhanghanbest_dlinear/nyc_traffic_speed"
+    
+  experiments:
+    - name: "zhanghanbest_dlinear_nyc_traffic_speed"
+      description: "ZhangHanBest with DLinear encoder on NYC_traffic_speed (15-day context, 1-week prediction)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "DLinear"
+          seq_len: 360
+          pred_len: 168
+          d_model: 512
+          revin: true
+          input_text_dim: 768
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          text_embedding_stride: "full"
+          input_len: 360
+          output_len: 168
+          batch_size: 256
+          learning_rate: 0.0001
+          lradj: constant
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true
+          torch_compile: true
+          compile_mode: "reduce-overhead"
+          use_tensor_cache: true
+        wandb:
+          tags: ["zhanghanbest", "dlinear", "nyc_traffic_speed"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_dlinear/nyc_traffic_speed"
+
