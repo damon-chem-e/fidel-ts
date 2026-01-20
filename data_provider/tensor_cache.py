@@ -1837,14 +1837,28 @@ class TensorCacheGenerator:
         )
         shared_tables, index_mappings = builder.build(flags)
 
+        # Transfer LLM embedding state from builder
+        self._has_llm_embeddings = builder.has_llm_embeddings
+        self._llm_embed_dim = builder.llm_embed_dim
+        self._llm_n_channels = builder.llm_n_channels
+
         _debug_memory("_build_shared_tables_polars: END")
 
         n_unique = len(shared_tables.get('timestamps', []))
         n_entities = len(index_mappings.get('entity_to_idx', {}))
-        logger.info(
-            f"Built shared tables (polars): {n_unique} unique timestamps, "
-            f"{n_entities} entities"
-        )
+
+        if builder.has_llm_embeddings:
+            n_llm = len(shared_tables.get('llm_embeddings', []))
+            logger.info(
+                f"Built shared tables (polars): {n_unique} unique timestamps, "
+                f"{n_entities} entities, {n_llm} LLM embeddings "
+                f"(shape: {builder.llm_embed_dim} x {builder.llm_n_channels})"
+            )
+        else:
+            logger.info(
+                f"Built shared tables (polars): {n_unique} unique timestamps, "
+                f"{n_entities} entities"
+            )
 
         return shared_tables, index_mappings
 

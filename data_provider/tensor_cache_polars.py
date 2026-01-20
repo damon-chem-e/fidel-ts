@@ -53,6 +53,8 @@ from .tensor_cache import (
     _safe_array,
     _detect_downtime_in_training,
     infer_shapes_from_sample,
+    _is_llm_embedding,
+    KNOWN_LLM_EMBED_DIMS,
 )
 from .dataset_direct_access import DirectAccessMixin
 
@@ -262,6 +264,12 @@ class PolarsCollectorState:
 
     Uses a set for O(1) membership checking during collection,
     then converts to polars for final processing.
+
+    LLM EMBEDDING SUPPORT:
+    - For LLM embeddings (shape: embed_dim, n_channels), embeddings are stored
+      per-sample in llm_embeddings instead of per-timestamp in embeddings.
+    - has_llm_embeddings is set when LLM embeddings are detected.
+    - llm_embed_dim and llm_n_channels track the LLM embedding shape.
     """
     seen_timestamps: set = field(default_factory=set)
     timestamps: List[int] = field(default_factory=list)
@@ -275,6 +283,12 @@ class PolarsCollectorState:
 
     shapes: InferredShapes = field(default_factory=InferredShapes)
     num_news_items: int = 1
+
+    # LLM embedding fields
+    llm_embeddings: List[np.ndarray] = field(default_factory=list)
+    has_llm_embeddings: bool = False
+    llm_embed_dim: Optional[int] = None
+    llm_n_channels: Optional[int] = None
 
 
 def register_timestamp_data_polars(
@@ -398,7 +412,8 @@ def register_entity_data_polars(
 
 def process_sample_for_collection_polars(
     state: PolarsCollectorState,
-    sample: tuple
+    sample: tuple,
+    skip_embeddings: bool = False
 ) -> None:
     """
     Process a single sample, registering all unique timestamps and data.
@@ -408,6 +423,8 @@ def process_sample_for_collection_polars(
     Args:
         state: PolarsCollectorState to update
         sample: 13-element tuple from dataset.__getitem__
+        skip_embeddings: If True, skip collecting per-timestamp embeddings
+            (used for LLM mode where embeddings are collected per-sample)
     """
     # Update shapes if not yet inferred
     if state.shapes.n_features is None:
@@ -419,28 +436,38 @@ def process_sample_for_collection_polars(
     # Process input window
     x_time = _safe_array(sample[SAMPLE_IDX_X_TIME])
     if x_time is not None:
-        _process_window(state, sample, x_time.flatten(), is_input=True)
+        _process_window(state, sample, x_time.flatten(), is_input=True, skip_embeddings=skip_embeddings)
 
     # Process output window
     y_time = _safe_array(sample[SAMPLE_IDX_Y_TIME])
     if y_time is not None:
-        _process_window(state, sample, y_time.flatten(), is_input=False)
+        _process_window(state, sample, y_time.flatten(), is_input=False, skip_embeddings=skip_embeddings)
 
 
 def _process_window(
     state: PolarsCollectorState,
     sample: tuple,
     time_array: np.ndarray,
-    is_input: bool
+    is_input: bool,
+    skip_embeddings: bool = False
 ) -> None:
-    """Process input or output window timestamps."""
+    """
+    Process input or output window timestamps.
+
+    Args:
+        state: PolarsCollectorState to update
+        sample: Sample tuple
+        time_array: Array of timestamps
+        is_input: True for input window, False for output window
+        skip_embeddings: If True, skip embedding extraction (for LLM mode)
+    """
     if is_input:
         seq = _safe_array(sample[SAMPLE_IDX_SEQ_X])
-        hetero = _safe_array(sample[SAMPLE_IDX_HETERO_X])
+        hetero = _safe_array(sample[SAMPLE_IDX_HETERO_X]) if not skip_embeddings else None
         htf = _safe_array(sample[SAMPLE_IDX_HETERO_X_TIME])
     else:
         seq = _safe_array(sample[SAMPLE_IDX_SEQ_Y])
-        hetero = _safe_array(sample[SAMPLE_IDX_HETERO_Y])
+        hetero = _safe_array(sample[SAMPLE_IDX_HETERO_Y]) if not skip_embeddings else None
         htf = _safe_array(sample[SAMPLE_IDX_HETERO_Y_TIME])
 
     for i, ts in enumerate(time_array):
@@ -472,6 +499,10 @@ def finalize_shared_tables_polars(
     Convert collected lists to numpy arrays and build index mappings.
 
     Uses polars to build the timestamp_to_idx mapping efficiently.
+
+    LLM EMBEDDING SUPPORT:
+    - For LLM mode, returns llm_embeddings instead of embeddings
+    - LLM embeddings are stored per-sample (not reordered by timestamp)
 
     Args:
         state: Completed PolarsCollectorState
@@ -507,7 +538,8 @@ def finalize_shared_tables_polars(
             shared_tables['timeseries'] = reordered_ts.astype(np.float32)
             state.timeseries.clear()
 
-        if state.embeddings:
+        # For LLM mode, skip per-timestamp embeddings (they're collected per-sample)
+        if not state.has_llm_embeddings and state.embeddings:
             emb_arr = np.stack(state.embeddings)
             reordered_emb = np.zeros_like(emb_arr)
             for orig_idx, ts in enumerate(state.timestamps):
@@ -527,6 +559,11 @@ def finalize_shared_tables_polars(
 
         state.timestamps.clear()
         state.seen_timestamps.clear()
+
+    # LLM embeddings: stored per-sample, not per-timestamp
+    if state.has_llm_embeddings and state.llm_embeddings:
+        shared_tables['llm_embeddings'] = np.stack(state.llm_embeddings).astype(np.float32)
+        state.llm_embeddings.clear()
 
     # Entity data
     valid_generals = [g for g in state.entity_general if g is not None]
@@ -590,6 +627,11 @@ class PolarsSharedTableBuilder:
         self.data_provider = data_provider
         self.num_news_items = num_news_items
         self.verbose = verbose
+
+        # LLM embedding state (set during build)
+        self.has_llm_embeddings = False
+        self.llm_embed_dim: Optional[int] = None
+        self.llm_n_channels: Optional[int] = None
 
     def build(self, flags: List[str]) -> Tuple[Dict[str, np.ndarray], dict]:
         """
@@ -670,6 +712,12 @@ class PolarsSharedTableBuilder:
         This method bypasses __getitem__ entirely, accessing the underlying
         numpy arrays directly for vectorized operations.
 
+        LLM EMBEDDING SUPPORT:
+        - For LLM embeddings (shape: embed_dim, n_channels), embeddings are stored
+          per-sample instead of per-timestamp.
+        - LLM embeddings are detected by shape heuristics using _is_llm_embedding().
+        - Returns llm_embeddings in shared_tables instead of embeddings.
+
         Args:
             flags: List of splits to process
 
@@ -681,7 +729,7 @@ class PolarsSharedTableBuilder:
 
         # Collect all unique timestamps across all datasets
         all_timestamps_set = set()
-        entity_data = {}  # entity_id -> list of raw_arrays (one per split)
+        entity_data = {}  # entity_id -> list of (raw_arrays, flag) tuples
 
         for flag in flags:
             datasets = self.data_provider.get_datasets(flag)
@@ -699,10 +747,10 @@ class PolarsSharedTableBuilder:
                 unique_ts = dataset.get_all_unique_timestamps()
                 all_timestamps_set.update(unique_ts.tolist())
 
-                # Store raw arrays from ALL splits for this entity
+                # Store raw arrays from ALL splits for this entity (with flag for LLM tracking)
                 if entity_id not in entity_data:
                     entity_data[entity_id] = []
-                entity_data[entity_id].append(raw)
+                entity_data[entity_id].append((raw, flag))
 
             del datasets
 
@@ -719,12 +767,35 @@ class PolarsSharedTableBuilder:
 
         # Infer shapes from first entity
         first_entity_id = next(iter(entity_data))
-        first_raw = entity_data[first_entity_id][0]  # First raw from list
+        first_raw = entity_data[first_entity_id][0][0]  # First raw from list
 
         n_features = first_raw.data.shape[1] if first_raw.data.ndim > 1 else 1
 
-        # Determine embedding dimension
+        # Detect if this is an LLM embedding config
+        # For LLM embeddings: shape is (embed_dim, n_channels) e.g., (768, 1)
+        # For news embeddings: shape is (N, num_items, D) or (N, D) where N = timestamps
+        is_llm_mode = False
+        llm_embed_dim = None
+        llm_n_channels = None
+
         if first_raw.embeddings is not None:
+            # Use _is_llm_embedding with seq_len as input_len reference
+            is_llm_mode = _is_llm_embedding(first_raw.embeddings, first_raw.seq_len)
+
+            if is_llm_mode:
+                # LLM embedding: shape is (embed_dim, n_channels)
+                llm_embed_dim = first_raw.embeddings.shape[0]
+                llm_n_channels = first_raw.embeddings.shape[1] if first_raw.embeddings.ndim > 1 else 1
+                self.has_llm_embeddings = True
+                self.llm_embed_dim = llm_embed_dim
+                self.llm_n_channels = llm_n_channels
+
+                if self.verbose:
+                    logger.info(f"LLM embedding mode detected: shape ({llm_embed_dim}, {llm_n_channels})")
+
+        # Determine embedding dimension for news embeddings
+        embed_dim = 768  # Default
+        if not is_llm_mode and first_raw.embeddings is not None:
             if first_raw.embeddings.ndim == 3:
                 embed_dim = first_raw.embeddings.shape[2]
             elif first_raw.embeddings.ndim == 2:
@@ -733,8 +804,6 @@ class PolarsSharedTableBuilder:
                 embed_dim = first_raw.embeddings.shape[0] if first_raw.embeddings.ndim > 0 else 768
         elif first_raw.hetero_general is not None:
             embed_dim = first_raw.hetero_general.shape[-1]
-        else:
-            embed_dim = 768  # Default BERT dimension
 
         # Determine hetero time features dimension
         # NOTE: first_raw.hetero_time will be None because DirectAccessMixin.get_raw_arrays()
@@ -747,10 +816,14 @@ class PolarsSharedTableBuilder:
         # Pre-allocate shared table arrays
         timeseries_array = np.zeros((n_unique, n_features), dtype=np.float32)
 
-        if self.num_news_items == 1:
-            embeddings_array = np.zeros((n_unique, embed_dim), dtype=np.float32)
-        else:
-            embeddings_array = np.zeros((n_unique, 2, embed_dim), dtype=np.float32)
+        # For news embeddings, create per-timestamp array
+        # For LLM embeddings, we'll collect per-sample later
+        embeddings_array = None
+        if not is_llm_mode:
+            if self.num_news_items == 1:
+                embeddings_array = np.zeros((n_unique, embed_dim), dtype=np.float32)
+            else:
+                embeddings_array = np.zeros((n_unique, 2, embed_dim), dtype=np.float32)
 
         if n_htf > 0:
             hetero_time_array = np.zeros((n_unique, n_htf), dtype=np.float32)
@@ -760,10 +833,20 @@ class PolarsSharedTableBuilder:
         # Fill arrays from entity data
         seen_timestamps = set()
 
-        for entity_id, raw_list in entity_data.items():
-            for raw in raw_list:  # Iterate over ALL splits for this entity
+        # For LLM mode, collect embeddings per-sample
+        llm_embeddings_list = [] if is_llm_mode else None
+
+        for entity_id, raw_flag_list in entity_data.items():
+            for raw, flag in raw_flag_list:  # Iterate over ALL splits for this entity
                 # Handle 1D data case
                 data = raw.data if raw.data.ndim > 1 else raw.data.reshape(-1, 1)
+
+                # For LLM mode, collect per-sample embeddings
+                if is_llm_mode and raw.embeddings is not None:
+                    # LLM embedding is the same for all samples in this entity/split
+                    # We need to add one copy per sample
+                    for _ in range(raw.n_samples):
+                        llm_embeddings_list.append(raw.embeddings.copy())
 
                 for local_idx in range(len(raw.timestamps)):
                     ts_int = int(raw.timestamps[local_idx])
@@ -780,8 +863,8 @@ class PolarsSharedTableBuilder:
                     # Extract timeseries data
                     timeseries_array[unique_idx] = data[local_idx]
 
-                    # Extract embedding data
-                    if raw.embeddings is not None and local_idx < len(raw.embeddings):
+                    # Extract embedding data (news embeddings only)
+                    if not is_llm_mode and raw.embeddings is not None and local_idx < len(raw.embeddings):
                         emb = raw.embeddings[local_idx]
                         if self.num_news_items == 1:
                             if emb.ndim == 0:
@@ -826,8 +909,18 @@ class PolarsSharedTableBuilder:
         shared_tables = {
             'timestamps': sorted_timestamps,
             'timeseries': timeseries_array,
-            'embeddings': embeddings_array,
         }
+
+        # Add embeddings based on mode
+        if is_llm_mode:
+            # Stack LLM embeddings: shape (n_total_samples, embed_dim, n_channels)
+            if llm_embeddings_list:
+                shared_tables['llm_embeddings'] = np.stack(llm_embeddings_list).astype(np.float32)
+                if self.verbose:
+                    logger.info(f"LLM embeddings: {len(llm_embeddings_list):,} samples, "
+                               f"shape {shared_tables['llm_embeddings'].shape}")
+        else:
+            shared_tables['embeddings'] = embeddings_array
 
         if hetero_time_array is not None:
             shared_tables['hetero_time'] = hetero_time_array
@@ -837,10 +930,10 @@ class PolarsSharedTableBuilder:
         entity_channel_list = []
         entity_to_idx = {}
 
-        for idx, (entity_id, raw_list) in enumerate(entity_data.items()):
+        for idx, (entity_id, raw_flag_list) in enumerate(entity_data.items()):
             entity_to_idx[entity_id] = idx
             # Use first raw for static entity data (same across splits)
-            first_raw = raw_list[0]
+            first_raw = raw_flag_list[0][0]
             if first_raw.hetero_general is not None:
                 entity_general_list.append(first_raw.hetero_general)
             if first_raw.hetero_channel is not None:
@@ -928,6 +1021,11 @@ class PolarsSharedTableBuilder:
         This is the original implementation that iterates through __getitem__
         for each sample. Used when direct access is not available.
 
+        LLM EMBEDDING SUPPORT:
+        - Detects LLM embeddings from first sample's hetero_x
+        - Collects LLM embeddings per-sample in state.llm_embeddings
+        - Returns llm_embeddings in shared_tables instead of embeddings
+
         Args:
             flags: List of splits to process
 
@@ -937,14 +1035,69 @@ class PolarsSharedTableBuilder:
         state = PolarsCollectorState()
         state.num_news_items = self.num_news_items
 
+        # Detect LLM mode from first sample
+        self._detect_llm_mode(state, flags)
+
         self._collect_data(state, flags)
 
         if self.verbose:
             logger.info(f"Collected {len(state.timestamps):,} unique timestamps")
+            if state.has_llm_embeddings:
+                logger.info(f"LLM embeddings: {len(state.llm_embeddings):,} samples")
 
         shared_tables, index_mappings = finalize_shared_tables_polars(state)
 
+        # Transfer LLM state to builder for later use
+        if state.has_llm_embeddings:
+            self.has_llm_embeddings = True
+            self.llm_embed_dim = state.llm_embed_dim
+            self.llm_n_channels = state.llm_n_channels
+
         return shared_tables, index_mappings
+
+    def _detect_llm_mode(self, state: PolarsCollectorState, flags: List[str]) -> None:
+        """
+        Detect if this is an LLM embedding configuration.
+
+        Examines the first sample's hetero_x to determine if LLM embeddings
+        are being used (shape: embed_dim, n_channels).
+
+        Args:
+            state: PolarsCollectorState to update with LLM mode info
+            flags: List of splits to check
+        """
+        for flag in flags:
+            datasets = self.data_provider.get_datasets(flag)
+            if not datasets:
+                continue
+
+            for entity_id, dataset in datasets.items():
+                if len(dataset) == 0:
+                    continue
+
+                # Get first sample to check embedding shape
+                first_sample = dataset[0]
+                hetero_x = _safe_array(first_sample[SAMPLE_IDX_HETERO_X])
+
+                if hetero_x is not None:
+                    # Get input_len from x_time
+                    x_time = _safe_array(first_sample[SAMPLE_IDX_X_TIME])
+                    input_len = len(x_time) if x_time is not None else 96
+
+                    if _is_llm_embedding(hetero_x, input_len):
+                        state.has_llm_embeddings = True
+                        state.llm_embed_dim = hetero_x.shape[0]
+                        state.llm_n_channels = hetero_x.shape[1] if hetero_x.ndim > 1 else 1
+
+                        if self.verbose:
+                            logger.info(f"LLM embedding mode detected: shape "
+                                       f"({state.llm_embed_dim}, {state.llm_n_channels})")
+
+                del datasets
+                return  # Only need to check one sample
+
+            del datasets
+            return
 
     def _count_samples(self, flags: List[str]) -> int:
         """Count total samples across all splits."""
@@ -958,7 +1111,12 @@ class PolarsSharedTableBuilder:
         return total
 
     def _collect_data(self, state: PolarsCollectorState, flags: List[str]) -> None:
-        """Collect unique data from all samples (iterative method)."""
+        """
+        Collect unique data from all samples (iterative method).
+
+        For LLM embeddings, collects per-sample embeddings instead of
+        per-timestamp embeddings.
+        """
         for flag in flags:
             datasets = self.data_provider.get_datasets(flag)
             if not datasets:
@@ -980,7 +1138,15 @@ class PolarsSharedTableBuilder:
                 # Process all samples
                 for sample_idx in range(len(dataset)):
                     sample = dataset[sample_idx]
-                    process_sample_for_collection_polars(state, sample)
+
+                    # For LLM mode, collect embedding per-sample
+                    if state.has_llm_embeddings:
+                        hetero_x = _safe_array(sample[SAMPLE_IDX_HETERO_X])
+                        if hetero_x is not None:
+                            state.llm_embeddings.append(hetero_x.copy())
+
+                    # Process timestamp data (timeseries, news embeddings if not LLM mode)
+                    process_sample_for_collection_polars(state, sample, skip_embeddings=state.has_llm_embeddings)
 
             del datasets
             gc.collect()
