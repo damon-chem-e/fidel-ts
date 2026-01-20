@@ -442,18 +442,27 @@ merged tensor_cache_polars into alwaystest. pushed the new alwaystest into chime
 
 [pod:nyc-traffic] itransformer run, lynx_film is running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
 
-[pod:canada] itransformer run, lynx_film is running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
+[pod:canada:terminated] itransformer run, lynx_film and lynx_film_raw run. (had to reduce to 256 batch size, using the itransformer just run, using tensor cache). ported results to chimera_proj
 
 [pod:germany] setting up (uv done, git cloned, porting over the germany data in progress, tmux complete). itransformer run. lynx_film running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
 
-[pod:caiso] setting up (uv done, git cloned, porting over the caiso data done, tmux complete). itransformer run. lynx_film is running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
+[pod:caiso:stopped] setting up (uv done, git cloned, porting over the caiso data done, tmux complete). itransformer run. lynx_film and lynx_film_raw run. (had to reduce to 256 batch size, using the itransformer just run, using tensor cache). ported results to chimera_proj.
 
-[pod:jena] setting up (uv done, git cloned, porting over jena data complete, tmux complete). itransformer run. lynx_film running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
+[pod:jena:stopped] setting up (uv done, git cloned, porting over jena data complete, tmux complete). itransformer run. lynx_film and lynx_film_raw run. (had to reduce to 256 batch size, using the itransformer just run, using tensor cache). ported results to chimera_proj.
 
 [pod:bear_room] ...
 
+[tgtsf] looks like this is quite memory hungry. probably going to run on preemptable rather than on pods and leave pods for the lynx film work. submitted jobs on preemptable for full resolution. once those are done submit for original resolution.
 
-[enhancements] caiso is horrid for lynx_film. worse on val than test by a mile, and worse on test than val by 10 miles. I think perhaps we need 
+[timecma] ... (need to submit on sloan gpu)
+
+[mmtsflib] ... (need to review whether it works then submit on sloan gpu)
+
+[zhanghanbest] ... (need to review whether it works then submit on sloan gpu)
+
+[enhancements] caiso is horrid for lynx_film and lynx_film_raw. worse on val than test by a mile, and worse on test than val by 10 miles. I think perhaps we need to to multiple different CV splits over the train data (not respecting temporal ordering -- helpful if the distribution shifts) and early stop when any of those or several have val loss going up. I think it massively overtrained (10 epochs). Or, simpler solution: just train one epoch always. another possibility is the gating (lynx film enhanced). if val loss is worse than unimodal, perhaps we could in lynx_film_raw use the val set to inform the gate? like some held out portion and if it's bad or worse than unimodal that signal goes somehow to the gate. I also think that looking at the text data is useful. It could be that when the text data is highly structured film does quite well, but when it is not then film is too direct and fails (overfits)
+
+[mmvision] ...
 
 ---
 

@@ -102,7 +102,26 @@ note (10/18 3:45 am): caiso, nyc, bear room, jena submitted with train truncated
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-─── Priority 2: TGTSF (FIATS) Loss Curves on Fidel-TS ───────────────────────────────────────────
+─── Priority 2.1: TGTSF (FIATS) Loss Curves on Fidel-TS (Full Resolution) ──────────────────────────
+
+**Status:** [ ]  
+**Purpose:** Generate loss curves for comparison with other multimodal methods
+
+| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|--------|----------|---------|--------|--------|----------|--------|
+| Canada Photovoltaics | [~] | - | - | - | - | mit_preemptable |
+| Germany Renewable | [~] | - | - | - | - | mit_preemptable |
+| NYC Traffic Speed | [>>] | - | - | - | - | mit_preemptable |
+| California ISO | [~] | - | - | - | - | mit_preemptable |
+| Bear Room | [~] | - | - | - | - | mit_preemptable |
+| Jena Atmospheric Physics | [~] | - | - | - | - | mit_preemptable |
+
+note: memory hungry so run on preemptable rather than RTX Ada 4000/5000
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+─── Priority 2.2: TGTSF (FIATS) Loss Curves on Fidel-TS (Original Resolution) ──────────────────────
 
 **Status:** [ ]  
 **Purpose:** Generate loss curves for comparison with other multimodal methods
@@ -116,7 +135,11 @@ note (10/18 3:45 am): caiso, nyc, bear room, jena submitted with train truncated
 | Bear Room | [ ] | - | - | - | - | RunPod (pod:bear_room) |
 | Jena Atmospheric Physics | [ ] | - | - | - | - | RunPod (pod:jena) |
 
+note: run after the full resolution is complete
+
 ────────────────────────────────────────────────────────────────────────────────────────────────────
+
+note: need to generate original resolution tensor caches 
 
 ─── Priority 3: Benchmark Methods on Fidel-TS ─────────────────────────────────────────────────
 
@@ -198,9 +221,12 @@ note: all of the llm embeddings are runs from late 01/16 or early 01/17.
 | NYC Traffic Speed | [ ] | - | - | - | - | RunPod (pod:nyc_traffic) |
 | Canada Photovoltaics | [>>] | `lynx_film_raw_canada_photovoltaics_20260119_222019` | `20260119-222020_1a45a0aac8c7` | - | - | RunPod (pod:canada) | 
 | Germany Renewable | [ ] | - | - | - | - | RunPod (pod:germany) |
-| California ISO | [>>] | `lynx_film_raw_california_iso_20260119_221759` | `20260119-221759_15466b14951a` | - | - | RunPod (pod:caiso) | 
+| California ISO | [✓] | `lynx_film_raw_california_iso_20260119_221759` | `20260119-221759_15466b14951a` | - | - | RunPod (pod:caiso) | 
 | Bear Room | [ ] | - | - | - | - | RunPod (pod:bear_room) |
-| Jena Atmospheric Physics | [ ] | - | - | - | - | RunPod (pod:jena) |
+| Jena Atmospheric Physics | [✓] | `lynx_film_raw_jena_atmospheric_20260119_224922` | `20260119-224922_040d096de7db` | - | - | RunPod (pod:jena) | 
+
+note: these are full hetero resolution 
+note: we want to do this on original resolution for the ones that look good (make a new table for that)
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -216,9 +242,10 @@ note: all of the llm embeddings are runs from late 01/16 or early 01/17.
 | NYC Traffic Speed | [>>] | `lynx_film_nyc_traffic_speed_20260119_202319` | `20260119-202319_6c58cf9ff591` | - | - | RunPod (pod:nyc_traffic) |
 | California ISO | [✓] | `lynx_film_california_iso_20260119_211605` | `20260119-211605_780ef802fcf8` | - | - | RunPod (pod:caiso) |
 | Bear Room | [ ] | - | - | - | - | RunPod (pod:bear_room) |
-| Jena Atmospheric Physics | [>>] | `lynx_film_jena_atmospheric_20260119_215914` | `20260119-215914_27b837b9f927` | - | - | RunPod (pod:jena) |
+| Jena Atmospheric Physics | [✓] | `lynx_film_jena_atmospheric_20260119_215914` | `20260119-215914_27b837b9f927` | - | - | RunPod (pod:jena) |
 
 **Note:** Requires iTransformer pretraining to complete first.
+note: these are full hetero resolution
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -235,6 +262,8 @@ note: all of the llm embeddings are runs from late 01/16 or early 01/17.
 | Configuration | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
 | TBD | [ ] | - | - | - | - | TBD (x6 x nconfigurations) |
+
+note: we want to do this on original resolution for the ones that look good
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
