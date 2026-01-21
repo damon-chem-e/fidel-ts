@@ -411,19 +411,9 @@ class Data_Provider(object):
         Returns:
             Dict of config parameters for hash computation
         """
-        return {
-            'input_len': getattr(self.args, 'input_len', None),
-            'output_len': getattr(self.args, 'output_len', None),
-            'scale': getattr(self.args, 'scale', True),
-            'truncate_train_for_purge': getattr(self.args, 'truncate_train_for_purge', False),
-            'downsample': getattr(self.args, 'downsample', None),
-            'data_name': getattr(self.dataset_config, 'name', 'unknown'),
-            'hetero_stride': self._get_effective_hetero_stride(),
-            'hetero_type': self.dataset_config.hetero_info.get('hetero_type') if self.dataset_config.get('hetero_info') else None,
-            'timemmd_text_output': self.dataset_config.get('timemmd_text_output'),  # Critical for time_mmd datasets!
-            'missing_value_strategy': self.dataset_config.get('missing_value_strategy', 'none'),
-            'split_info': str(self.dataset_config.get('split_info', '')),
-        }
+        from utils.experiment_config_builder import build_cache_config
+        # Use centralized config builder to keep CLI and runtime hash in sync.
+        return build_cache_config(self.args)
 
     def _validate_tensor_cache(self) -> bool:
         """
