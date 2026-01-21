@@ -309,6 +309,42 @@ class Data_Provider(object):
         else:
             return 1
 
+    def _get_parquet_columns(self, entity_id) -> Optional[list]:
+        """
+        Read column names from parquet file schema without loading data.
+
+        This is used to ensure embedding order matches parquet column order when
+        initializing heterogeneous data getters. Reading just the schema is fast
+        and doesn't require loading the full dataset.
+
+        Args:
+            entity_id: Entity ID to get columns for
+
+        Returns:
+            List of column names (excluding timestamp column) in parquet order,
+            or None if file doesn't exist or can't be read.
+        """
+        import pyarrow.parquet as pq
+
+        data_path = self.formatter.format(i=entity_id)
+        full_path = os.path.join(self.dataset_config.root_path, data_path)
+
+        try:
+            # Read just the schema (very fast, no data loading)
+            schema = pq.read_schema(full_path)
+            all_columns = schema.names
+
+            # Filter out timestamp column
+            timestamp_col = self.dataset_config.timestamp_col
+            columns = [col for col in all_columns if col != timestamp_col]
+
+            return columns
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Could not read parquet schema for {entity_id}: {e}")
+            return None
+
     def _resolve_tensor_cache_dir(self) -> Optional[str]:
         """
         Resolve tensor cache directory path.
@@ -1046,7 +1082,9 @@ class Data_Provider(object):
                     else:
                         # Use standard Universal_Dataset
                         if self.args.data_config.hetero_info is not None:
-                            get_hetero_data = self.hetero_dataset.init_hetero_data(i)
+                            # Get parquet columns to ensure embedding order matches data order
+                            parquet_columns = self._get_parquet_columns(i)
+                            get_hetero_data = self.hetero_dataset.init_hetero_data(i, target_columns=parquet_columns)
                         else:
                             get_hetero_data = None
 
@@ -1086,7 +1124,9 @@ class Data_Provider(object):
                 else:
                     # Use standard Universal_Dataset
                     if self.args.data_config.hetero_info is not None:
-                        get_hetero_data = self.hetero_dataset.init_hetero_data(i)
+                        # Get parquet columns to ensure embedding order matches data order
+                        parquet_columns = self._get_parquet_columns(i)
+                        get_hetero_data = self.hetero_dataset.init_hetero_data(i, target_columns=parquet_columns)
                     else:
                         get_hetero_data = None
 
@@ -1095,7 +1135,7 @@ class Data_Provider(object):
                     missing_value_strategy = self.dataset_config.get('missing_value_strategy', 'none')
                     # Get required indicator columns (ensures consistent feature dimensions)
                     required_indicators = getattr(self, 'required_indicator_columns', [])
-                    
+
                     # Determine if time features should be generated (for FEDformer, Informer, etc.)
                     generate_time_features = self._should_generate_time_features()
                     time_feature_freq = getattr(self.args.model_config, 'freq', 'h') if hasattr(self.args, 'model_config') else 'h'

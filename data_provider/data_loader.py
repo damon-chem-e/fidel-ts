@@ -744,7 +744,7 @@ class Heterogeneous_Dataset(Dataset):
         df.sort_index(inplace=True)
         return df
 
-    def init_hetero_data(self, id):
+    def init_hetero_data(self, id, target_columns=None):
         """
         Factory method that creates a callable hetero_data_getter function for a specific entity ID.
 
@@ -760,6 +760,9 @@ class Heterogeneous_Dataset(Dataset):
 
         Args:
             id: Entity/channel ID for which to create the hetero_data_getter function
+            target_columns: Optional list of column names from parquet file in correct order.
+                           Used to ensure embedding order matches data array column order.
+                           If None, falls back to _variable_order metadata or alphabetical sort.
 
         Returns:
             callable: A partially applied function that takes timestamps and returns
@@ -772,7 +775,7 @@ class Heterogeneous_Dataset(Dataset):
         2. Converts downtime to pandas IntervalIndex with timezone handling
         3. Retrieves entity-specific static data (general_info, channel_info, downtime_prompt)
         4. Returns a partial function that binds these parameters to get_hetero_data()
-        
+
         Note:
         -----
         This method is entity-specific - each entity ID gets its own hetero_data_getter
@@ -811,10 +814,11 @@ class Heterogeneous_Dataset(Dataset):
             # CRITICAL: Variable order must match parquet file column order!
 
             # Get parquet column names as ground truth for ordering
-            # self.target_columns is set in __read_data__ and contains column names in parquet order
-            if self.target_columns is not None and len(self.target_columns) > 1:
+            # target_columns is passed from Data_Provider which reads the parquet schema
+            # This ensures embedding order matches data array column order
+            if target_columns is not None and len(target_columns) > 1:
                 # Multi-variable dataset: use parquet columns as ground truth
-                parquet_columns = self.target_columns
+                parquet_columns = target_columns
                 embedding_variables = set(channel_info.keys())
 
                 # Check if all parquet columns have embeddings
