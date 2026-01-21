@@ -338,6 +338,62 @@ class Data_Provider(object):
             timestamp_col = self.dataset_config.timestamp_col
             columns = [col for col in all_columns if col != timestamp_col]
 
+            # BEGIN HACK: Jena Atmospheric Physics column name normalization
+            # =================================================================
+            # The Jena parquet file has corrupted Unicode column names that don't match
+            # the Unicode names in static_info.json. This causes embedding lookup
+            # to fail because the keys don't match.
+            #
+            # Parquet has corrupted:     static_info.json has correct:
+            # - rho (g/m**3)             - rho (g/m³)
+            # - PAR (mol/m/s)            - PAR (μmol/m²/s)
+            # - max. PAR (mol/m/s)       - max. PAR (μmol/m²/s)
+            # - SWDR (W/m)               - SWDR (W/m²)
+            #
+            # The corruption patterns are:
+            # - μ (mu) character is completely missing
+            # - ² (superscript 2) is completely missing
+            # - ³ (superscript 3) becomes **3
+            #
+            # This normalization function fixes these encoding issues.
+            # =================================================================
+            def normalize_jena_column_name(col_name: str) -> str:
+                """
+                Normalize corrupted Unicode characters in Jena parquet column names.
+                
+                Handles the following corruption patterns:
+                - Missing μ (mu) character: "mol/m/s" -> "μmol/m²/s"
+                - Missing ² (superscript 2): "m/s" -> "m²/s", "W/m" -> "W/m²"
+                - Corrupted ³ (superscript 3): "m**3" -> "m³"
+                
+                Args:
+                    col_name: Column name from parquet file (may have corrupted Unicode)
+                
+                Returns:
+                    Normalized column name matching static_info.json format
+                """
+                normalized = col_name
+                
+                # Fix corrupted superscript 3: m**3 -> m³
+                normalized = normalized.replace('m**3', 'm³')
+                
+                # Fix PAR columns: "mol/m/s" -> "μmol/m²/s"
+                # This handles both "PAR (mol/m/s)" and "max. PAR (mol/m/s)"
+                normalized = normalized.replace('mol/m/s', 'μmol/m²/s')
+                
+                # Fix SWDR and similar columns: "W/m" -> "W/m²"
+                # Handle both "W/m)" (with closing paren) and "W/m" (standalone)
+                if normalized.endswith('W/m)'):
+                    normalized = normalized.replace('W/m)', 'W/m²)')
+                elif normalized.endswith('W/m'):
+                    normalized = normalized.replace('W/m', 'W/m²')
+                
+                return normalized
+            
+            # Apply normalization to all columns
+            columns = [normalize_jena_column_name(col) for col in columns]
+            # END HACK
+
             return columns
         except Exception as e:
             import logging
