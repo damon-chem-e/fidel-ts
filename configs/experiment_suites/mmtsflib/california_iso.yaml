@@ -45,6 +45,7 @@ suite:
           truncate_train_for_purge: true
           torch_compile: true
           compile_mode: "reduce-overhead"
+          use_tensor_cache: false  # Disable tensor cache
         device:
           use_gpu: true
           gpu: 0

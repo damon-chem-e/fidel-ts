@@ -1203,13 +1203,57 @@ class Experiment(Exp_Basic):
             # Break if early stopping triggered OR external stop signal (Hyperband, etc.)
             if should_stop or should_stop_epoch:
                 break
-        
-        # Finalize training: load best model and save final checkpoint
-        self._finalize_training(path, model_optim, train_loss, vali_loss, test_loss)
-        
+
+        # Determine best epoch BEFORE test evaluation and finalization
+        # Use best_epoch tracked by EarlyStopping (set when checkpoint was saved)
+        best_epoch = early_stopping.best_epoch if early_stopping.best_epoch is not None else self.current_epoch
+
+        # Run final comprehensive test evaluation on best checkpoint BEFORE wandb finalization
+        # This ensures test metrics are available for logging to wandb
+        final_test_metrics = None
+        if test_loader is not None:
+            try:
+                if self.exp_manager:
+                    self.exp_manager.logger.info("Running final test evaluation on best checkpoint...")
+                final_test_metrics = self._run_final_test_evaluation(test_loader, best_epoch, path)
+
+                if final_test_metrics:
+                    if self.exp_manager:
+                        self.exp_manager.logger.info(
+                            f"Final test MSE (normalized): {final_test_metrics['overall']['mse_normalized']:.7f}"
+                        )
+                        self.exp_manager.logger.info(
+                            f"Final test MAE (normalized): {final_test_metrics['overall']['mae_normalized']:.7f}"
+                        )
+
+                        if 'mse_denormalized' in final_test_metrics['overall']:
+                            self.exp_manager.logger.info(
+                                f"Final test MSE (denormalized): {final_test_metrics['overall']['mse_denormalized']:.4f}"
+                            )
+                            self.exp_manager.logger.info(
+                                f"Final test MAE (denormalized): {final_test_metrics['overall']['mae_denormalized']:.4f}"
+                            )
+            except Exception as e:
+                if self.exp_manager:
+                    self.exp_manager.logger.error(f"Failed to run final test evaluation: {e}")
+                import traceback
+                traceback.print_exc()
+
+        # Finalize training: load best model, save final checkpoint, and finalize wandb
+        # This happens AFTER test evaluation so test metrics can be logged to wandb
+        self._finalize_training(
+            path,
+            model_optim,
+            train_loss,
+            vali_loss,
+            test_loss,
+            best_epoch=best_epoch,
+            test_metrics=final_test_metrics
+        )
+
         # Register job end in job history
         self._register_job_end(path, train_loss, vali_loss)
-        
+
         return self.model
 
     def vali(self, loader, criterion):

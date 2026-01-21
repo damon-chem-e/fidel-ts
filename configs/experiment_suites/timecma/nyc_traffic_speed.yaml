@@ -47,7 +47,7 @@ suite:
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
           torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
-          use_tensor_cache: true  # Enable tensor cache (will auto-resolve path)
+          use_tensor_cache: false  # Disable tensor cache
         device:
           use_gpu: true
           gpu: 0

@@ -1,0 +1,49 @@
+# Experiment Suite: TGTSF on NYC_traffic_speed
+# Description: Train TGTSF on NYC_traffic_speed with same context/horizon as itransformer
+# Usage: python -m cli.suite run configs/experiment_suites/tgtsf/nyc_traffic_speed.yaml
+
+suite:
+  name: "tgtsf_nyc_traffic_speed"
+  description: "Train TGTSF model on NYC_traffic_speed dataset with 15-day context, 1-week prediction"
+  tags: ["tgtsf", "multimodal", "pytorch", "fidel-ts", "nyc_traffic_speed"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/tgtsf/nyc_traffic_speed"
+    
+  # Experiments in this suite
+  experiments:
+    - name: "tgtsf_nyc_traffic_speed"
+      description: "TGTSF on NYC_traffic_speed with 15-day context, 1-week prediction"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "TGTSF"
+          config_path: "model_configs/general/TGTSF.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # Match the BERT embedding dimension from the cache
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          epochs: 50
+          # Match itransformer NYC_traffic_speed input/output lengths
+          input_len: 360      # 15 days at hourly intervals
+          output_len: 168     # 1 week at hourly intervals (second smallest horizon)
+          batch_size: 256     # From original TGTSF bash script (scripts/NYC_traffic_speed/TGTSF.sh)
+          learning_rate: 5.0e-4  # Default from run_lightning.py
+          patience: 5         # From original TGTSF bash script (scripts/NYC_traffic_speed/TGTSF.sh)
+          # LR schedule is type3 via the template (constant 3 epochs, then 0.9 decay)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          text_embedding_stride: "full"  # Use full resolution text embeddings (hetero_stride=1) to match cache
+          use_tensor_cache: true  # Enable tensor cache
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["tgtsf", "nyc_traffic_speed"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/tgtsf/nyc_traffic_speed"

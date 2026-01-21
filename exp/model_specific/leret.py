@@ -143,6 +143,164 @@ def _get_leret_config(args) -> LeRetTrainingConfig:
     return leret_config
 
 
+def _determine_resume_stage(exp_manager, leret_config: LeRetTrainingConfig) -> Tuple[Optional[str], int, Optional[Path]]:
+    """
+    Determine which stage to resume from and the starting epoch.
+    
+    This function checks job_history and available checkpoints to determine:
+    - Which stage (pretrain/finetune) to resume
+    - What epoch to start from
+    - Which checkpoint to load
+    
+    Args:
+        exp_manager: ExperimentManager instance
+        leret_config: LeRet training configuration
+    
+    Returns:
+        Tuple of (stage, start_epoch, checkpoint_path):
+        - stage: "pretrain", "finetune", or None (if no resume needed)
+        - start_epoch: 1-indexed epoch to start from (within the stage)
+        - checkpoint_path: Path to checkpoint to load, or None
+    """
+    # Get resume info from experiment manager
+    resume_info = exp_manager.get_resume_info()
+    if not resume_info:
+        # No resume needed - start fresh
+        return None, 1, None
+    
+    job_history = exp_manager.job_history
+    pretrain_completed = job_history.get('pretrain_completed', False)
+    finetune_completed = job_history.get('finetune_completed', False)
+    
+    # If both stages are complete, no resume needed
+    if finetune_completed:
+        exp_manager.logger.info("Training already complete (both pretrain and finetune finished)")
+        return None, 1, None
+    
+    # Get the last completed epoch from resume_info
+    last_epoch = resume_info.get('last_epoch', 0)
+    checkpoint_path = resume_info.get('checkpoint_path')
+    
+    if checkpoint_path:
+        checkpoint_path = Path(checkpoint_path)
+        if not checkpoint_path.exists():
+            exp_manager.logger.warning(f"Checkpoint path from resume_info does not exist: {checkpoint_path}")
+            checkpoint_path = None
+    
+    # Determine which stage we're in based on epoch and completion flags
+    pretrain_epochs = leret_config.pretrain_epochs
+    
+    if not pretrain_completed:
+        # Still in pretrain stage
+        # last_epoch is 1-indexed, so start_epoch = last_epoch + 1 (but within pretrain range)
+        start_epoch = min(last_epoch + 1, pretrain_epochs)
+        if start_epoch > pretrain_epochs:
+            # This shouldn't happen, but handle it gracefully
+            start_epoch = 1
+            
+        # Look for pretrain-specific checkpoint if general checkpoint not found
+        if checkpoint_path is None:
+            checkpoint_dir = exp_manager.get_checkpoint_dir()
+            # Try pretrain_best.pth first, then any .pth file
+            pretrain_best = checkpoint_dir / 'pretrain_best.pth'
+            if pretrain_best.exists():
+                checkpoint_path = pretrain_best
+            else:
+                # Try checkpoint.pth from EarlyStopping
+                general_ckpt = checkpoint_dir / 'checkpoint.pth'
+                if general_ckpt.exists():
+                    checkpoint_path = general_ckpt
+        
+        exp_manager.logger.info(
+            f"Resuming PRETRAIN stage from epoch {start_epoch}/{pretrain_epochs} "
+            f"(last completed: {last_epoch})"
+        )
+        return "pretrain", start_epoch, checkpoint_path
+    
+    else:
+        # Pretrain is done, resume finetune stage
+        # Finetune epochs are counted after pretrain, so adjust
+        finetune_start_epoch = last_epoch - pretrain_epochs + 1
+        finetune_start_epoch = max(1, finetune_start_epoch)  # At least 1
+        
+        # Look for finetune checkpoint
+        if checkpoint_path is None:
+            checkpoint_dir = exp_manager.get_checkpoint_dir()
+            # Try checkpoint.pth (finetune best) first
+            finetune_ckpt = checkpoint_dir / 'checkpoint.pth'
+            if finetune_ckpt.exists():
+                checkpoint_path = finetune_ckpt
+        
+        exp_manager.logger.info(
+            f"Resuming FINETUNE stage from epoch {finetune_start_epoch} "
+            f"(total epoch: {last_epoch + 1}, pretrain_epochs: {pretrain_epochs})"
+        )
+        return "finetune", finetune_start_epoch, checkpoint_path
+
+
+def _load_checkpoint_for_resume(
+    model: nn.Module,
+    checkpoint_path: Path,
+    device: torch.device,
+    optimizer: Optional[torch.optim.Optimizer] = None,
+    exp_manager = None
+) -> None:
+    """
+    Load checkpoint for resuming training.
+    
+    Handles both model state dict and optimizer state, with support for
+    torch.compile checkpoints (strips '_orig_mod.' prefix).
+    
+    Args:
+        model: Model to load weights into
+        checkpoint_path: Path to checkpoint file
+        device: Device to load checkpoint to
+        optimizer: Optional optimizer to load state into
+        exp_manager: Optional ExperimentManager for logging
+    """
+    logger = exp_manager.logger if exp_manager else None
+    
+    if logger:
+        logger.info(f"Loading checkpoint for resume: {checkpoint_path}")
+    
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    
+    # Extract state dict (handle different checkpoint formats)
+    if 'model_state_dict' in checkpoint:
+        state_dict = checkpoint['model_state_dict']
+    elif 'state_dict' in checkpoint:
+        state_dict = checkpoint['state_dict']
+    elif isinstance(checkpoint, dict) and not any(k in checkpoint for k in ['epoch', 'optimizer_state_dict']):
+        # Checkpoint is directly the state dict
+        state_dict = checkpoint
+    else:
+        state_dict = checkpoint
+    
+    # Handle torch.compile checkpoints (strip '_orig_mod.' prefix)
+    if isinstance(state_dict, dict) and any(key.startswith('_orig_mod.') for key in state_dict.keys()):
+        if logger:
+            logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix")
+        state_dict = {key.replace('_orig_mod.', ''): value for key, value in state_dict.items()}
+    
+    # Load model weights
+    model.load_state_dict(state_dict, strict=False)
+    
+    # Load optimizer state if available
+    if optimizer is not None and 'optimizer_state_dict' in checkpoint:
+        try:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            if logger:
+                logger.info("Loaded optimizer state from checkpoint")
+        except Exception as e:
+            if logger:
+                logger.warning(f"Could not load optimizer state: {e}")
+    
+    if logger:
+        ckpt_epoch = checkpoint.get('epoch', 'unknown')
+        ckpt_stage = checkpoint.get('stage', 'unknown')
+        logger.info(f"Checkpoint loaded (epoch: {ckpt_epoch}, stage: {ckpt_stage})")
+
+
 # =============================================================================
 # PyTorch Lightning Training
 # =============================================================================
@@ -327,11 +485,33 @@ if HAS_LIGHTNING:
             return [optimizer], [lr_scheduler]
 
 
-def _run_lightning_pretrain(args, exp_manager, data_module, leret_config):
-    """Run Lightning pretrain stage."""
+def _run_lightning_pretrain(
+    args, 
+    exp_manager, 
+    data_module, 
+    leret_config,
+    start_epoch: int = 1,
+    resume_checkpoint: Optional[Path] = None
+):
+    """
+    Run Lightning pretrain stage.
+    
+    Args:
+        args: Experiment arguments
+        exp_manager: ExperimentManager for tracking
+        data_module: Lightning data module
+        leret_config: LeRet training configuration
+        start_epoch: Epoch to start from (1-indexed, for resume)
+        resume_checkpoint: Optional checkpoint path to load for resume
+    
+    Returns:
+        Path to pretrain checkpoint
+    """
     exp_manager.logger.info("=" * 60)
     exp_manager.logger.info("Stage 1: Auto-Regressive Pretraining (Lightning)")
     exp_manager.logger.info(f"  Epochs: {leret_config.pretrain_epochs}")
+    if start_epoch > 1:
+        exp_manager.logger.info(f"  Resuming from epoch: {start_epoch}")
     exp_manager.logger.info("=" * 60)
     
     # Ensure enc_in is set before creating model
@@ -339,6 +519,13 @@ def _run_lightning_pretrain(args, exp_manager, data_module, leret_config):
     
     model = LeRetLightningModule(args, exp_manager, "pretrain", leret_config)
     checkpoint_dir = str(exp_manager.get_checkpoint_dir())
+    
+    # Load checkpoint if resuming
+    ckpt_path_for_resume = None
+    if resume_checkpoint is not None and resume_checkpoint.exists():
+        exp_manager.logger.info(f"Loading checkpoint for resume: {resume_checkpoint}")
+        # Lightning can resume from checkpoint directly via ckpt_path in trainer.fit()
+        ckpt_path_for_resume = str(resume_checkpoint)
     
     checkpoint_cb = ModelCheckpoint(
         dirpath=checkpoint_dir,
@@ -370,7 +557,8 @@ def _run_lightning_pretrain(args, exp_manager, data_module, leret_config):
         enable_progress_bar=True,
     )
     
-    trainer.fit(model, data_module)
+    # Fit with optional checkpoint resume
+    trainer.fit(model, data_module, ckpt_path=ckpt_path_for_resume)
     
     # Save pretrain checkpoint
     pretrain_ckpt_path = exp_manager.get_checkpoint_dir() / 'pretrain_checkpoint.ckpt'
@@ -431,17 +619,55 @@ def _ensure_enc_in_for_lightning(args, exp_manager, data_module):
         )
 
 
-def _run_lightning_finetune(args, exp_manager, data_module, leret_config, pretrain_ckpt_path=None):
-    """Run Lightning finetune stage."""
+def _run_lightning_finetune(
+    args, 
+    exp_manager, 
+    data_module, 
+    leret_config, 
+    pretrain_ckpt_path: Optional[Path] = None,
+    start_epoch: int = 1,
+    resume_checkpoint: Optional[Path] = None
+):
+    """
+    Run Lightning finetune stage.
+    
+    Args:
+        args: Experiment arguments
+        exp_manager: ExperimentManager for tracking
+        data_module: Lightning data module
+        leret_config: LeRet training configuration
+        pretrain_ckpt_path: Path to pretrain checkpoint (for initial weights if not resuming)
+        start_epoch: Epoch to start from within finetune stage (1-indexed, for resume)
+        resume_checkpoint: Optional finetune checkpoint to load for resume
+    
+    Returns:
+        Path to best finetune checkpoint
+    """
     exp_manager.logger.info("=" * 60)
     exp_manager.logger.info("Stage 2: Forecasting Finetuning (Lightning)")
     exp_manager.logger.info(f"  Epochs: {args.train_epochs}")
+    if start_epoch > 1:
+        exp_manager.logger.info(f"  Resuming from finetune epoch: {start_epoch}")
     exp_manager.logger.info("=" * 60)
     
-    if pretrain_ckpt_path is None:
-        pretrain_ckpt_path = _get_pretrain_checkpoint(exp_manager, leret_config)
+    epoch_offset = leret_config.pretrain_epochs
     
-    checkpoint = torch.load(pretrain_ckpt_path, map_location='cpu')
+    # Determine which checkpoint to load for model initialization
+    ckpt_path_for_resume = None
+    
+    if resume_checkpoint is not None and resume_checkpoint.exists():
+        # Resuming finetune - Lightning can resume directly from checkpoint
+        exp_manager.logger.info(f"Resuming from finetune checkpoint: {resume_checkpoint}")
+        ckpt_path_for_resume = str(resume_checkpoint)
+        # Load for epoch offset info if available
+        checkpoint = torch.load(resume_checkpoint, map_location='cpu')
+    else:
+        # Starting finetune fresh - load pretrain checkpoint for initial weights
+        if pretrain_ckpt_path is None:
+            pretrain_ckpt_path = _get_pretrain_checkpoint(exp_manager, leret_config)
+        
+        exp_manager.logger.info(f"Loading pretrain checkpoint: {pretrain_ckpt_path}")
+        checkpoint = torch.load(pretrain_ckpt_path, map_location='cpu')
     
     # Validate experiment ID
     ckpt_exp_id = checkpoint.get('experiment_id')
@@ -453,13 +679,15 @@ def _run_lightning_finetune(args, exp_manager, data_module, leret_config, pretra
     
     model = LeRetLightningModule(args, exp_manager, "finetune", leret_config)
     
-    # Extract state dict and handle torch.compile checkpoints
-    state_dict = checkpoint['state_dict']
-    if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
-        exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys")
-        state_dict = {key.replace('_orig_mod.', ''): value for key in state_dict.keys() for value in [state_dict[key]]}
-    
-    model.load_state_dict(state_dict, strict=False)
+    # Only manually load state dict if NOT resuming (Lightning handles resume automatically)
+    if ckpt_path_for_resume is None:
+        # Extract state dict and handle torch.compile checkpoints
+        state_dict = checkpoint.get('state_dict', checkpoint)
+        if isinstance(state_dict, dict) and any(key.startswith('_orig_mod.') for key in state_dict.keys()):
+            exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix")
+            state_dict = {key.replace('_orig_mod.', ''): value for key, value in state_dict.items()}
+        
+        model.load_state_dict(state_dict, strict=False)
     
     checkpoint_dir = str(exp_manager.get_checkpoint_dir())
     checkpoint_cb = ModelCheckpoint(
@@ -467,8 +695,6 @@ def _run_lightning_finetune(args, exp_manager, data_module, leret_config, pretra
         filename='checkpoint-{epoch:02d}-{val_loss:.6f}',
         save_top_k=1, monitor='val_loss', mode='min', save_last=True
     )
-    
-    epoch_offset = checkpoint.get('pretrain_epochs', leret_config.pretrain_epochs)
     
     class JobHistoryCallback(pl.Callback):
         def __init__(self, em, offset): self.em, self.offset = em, offset
@@ -498,7 +724,8 @@ def _run_lightning_finetune(args, exp_manager, data_module, leret_config, pretra
         enable_progress_bar=True,
     )
     
-    trainer.fit(model, data_module)
+    # Fit with optional checkpoint resume
+    trainer.fit(model, data_module, ckpt_path=ckpt_path_for_resume)
     
     best_model_path = checkpoint_cb.best_model_path or checkpoint_cb.last_model_path
     
@@ -529,6 +756,11 @@ def train_leret_lightning(args, exp_manager) -> Path:
     """
     Train LeRet model using PyTorch Lightning.
     
+    Handles resume logic for LeRet's two-stage training:
+    - If resuming from pretrain stage, continues pretrain then finetune
+    - If resuming from finetune stage, skips pretrain and continues finetune
+    - If no resume needed, runs stages according to training_stage config
+    
     Args:
         args: Experiment arguments with leret config
         exp_manager: ExperimentManager for tracking
@@ -544,10 +776,38 @@ def train_leret_lightning(args, exp_manager) -> Path:
     leret_config = _get_leret_config(args)
     training_stage = leret_config.training_stage
     
-    exp_manager.logger.info(f"LeRet Lightning Training (stage: {training_stage})")
+    exp_manager.logger.info(f"LeRet Lightning Training (configured stage: {training_stage})")
+    
+    # Check for resume
+    resume_stage, start_epoch, resume_checkpoint = _determine_resume_stage(exp_manager, leret_config)
     
     data_module = TimeSeriesDataModule(args)
     
+    # Handle resume scenarios
+    if resume_stage is not None:
+        exp_manager.logger.info(f"Resume detected: stage={resume_stage}, start_epoch={start_epoch}")
+        
+        if resume_stage == "pretrain":
+            # Resume pretrain, then run finetune if training_stage is "both"
+            pretrain_ckpt = _run_lightning_pretrain(
+                args, exp_manager, data_module, leret_config,
+                start_epoch=start_epoch,
+                resume_checkpoint=resume_checkpoint
+            )
+            if training_stage == "both":
+                return _run_lightning_finetune(args, exp_manager, data_module, leret_config, pretrain_ckpt)
+            return pretrain_ckpt
+        
+        elif resume_stage == "finetune":
+            # Resume finetune (pretrain already done)
+            return _run_lightning_finetune(
+                args, exp_manager, data_module, leret_config,
+                pretrain_ckpt_path=None,  # Will auto-detect from job_history
+                start_epoch=start_epoch,
+                resume_checkpoint=resume_checkpoint
+            )
+    
+    # No resume - run stages according to config
     if training_stage == "pretrain":
         return _run_lightning_pretrain(args, exp_manager, data_module, leret_config)
     elif training_stage == "finetune":
@@ -812,11 +1072,23 @@ class LeRetPyTorchTrainer:
         self.model.train()
         return results, overall_loss / overall_samples if overall_samples > 0 else 0.0
     
-    def run_pretrain_stage(self, leret_config: LeRetTrainingConfig) -> Path:
-        """Run Stage 1: Auto-regressive pretraining."""
+    def run_pretrain_stage(self, leret_config: LeRetTrainingConfig, start_epoch: int = 1, resume_checkpoint: Optional[Path] = None) -> Path:
+        """
+        Run Stage 1: Auto-regressive pretraining.
+        
+        Args:
+            leret_config: LeRet training configuration
+            start_epoch: Epoch to start from (1-indexed, for resume)
+            resume_checkpoint: Optional checkpoint path to load for resume
+        
+        Returns:
+            Path to pretrain checkpoint
+        """
         self.exp_manager.logger.info("=" * 60)
         self.exp_manager.logger.info("Stage 1: Auto-Regressive Pretraining (PyTorch)")
         self.exp_manager.logger.info(f"  Epochs: {leret_config.pretrain_epochs}")
+        if start_epoch > 1:
+            self.exp_manager.logger.info(f"  Resuming from epoch: {start_epoch}")
         self.exp_manager.logger.info("=" * 60)
         
         train_loader = self.data_provider.get_train(return_type='loader')
@@ -825,7 +1097,7 @@ class LeRetPyTorchTrainer:
         # Clear data buffer
         self.data_provider.data_buffer.clear()
         
-        # Setup
+        # Setup optimizer and criterion
         lr = leret_config.pretrain_learning_rate or self.args.learning_rate
         optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         criterion = _select_criterion(leret_config.pretrain_loss)
@@ -834,7 +1106,18 @@ class LeRetPyTorchTrainer:
         checkpoint_dir = self.exp_manager.get_checkpoint_dir()
         best_val_loss = float('inf')
         
-        for epoch in range(1, leret_config.pretrain_epochs + 1):
+        # Load checkpoint if resuming
+        if resume_checkpoint is not None and resume_checkpoint.exists():
+            _load_checkpoint_for_resume(
+                self.model, resume_checkpoint, self.device, 
+                optimizer=optimizer, exp_manager=self.exp_manager
+            )
+            # Adjust learning rate to match resumed epoch
+            for ep in range(1, start_epoch):
+                adjust_learning_rate(optimizer, ep, self.args)
+        
+        # Training loop - start from start_epoch instead of 1
+        for epoch in range(start_epoch, leret_config.pretrain_epochs + 1):
             train_loss, epoch_time = self._train_epoch_pretrain(train_loader, optimizer, criterion, epoch)
             val_loss = self._validate(val_loader, criterion, stage="pretrain")
             
@@ -846,7 +1129,14 @@ class LeRetPyTorchTrainer:
             # Save best model
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                torch.save(self.model.state_dict(), checkpoint_dir / 'pretrain_best.pth')
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': self.model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'stage': 'pretrain',
+                    'val_loss': val_loss,
+                    'experiment_id': self.exp_manager.experiment_id,
+                }, checkpoint_dir / 'pretrain_best.pth')
             
             early_stopping(val_loss, self.model, str(checkpoint_dir), epoch=epoch)
             if early_stopping.early_stop:
@@ -867,6 +1157,7 @@ class LeRetPyTorchTrainer:
         torch.save({
             'epoch': leret_config.pretrain_epochs,
             'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
             'stage': 'pretrain',
             'experiment_id': self.exp_manager.experiment_id,
             'pretrain_epochs': leret_config.pretrain_epochs,
@@ -879,18 +1170,47 @@ class LeRetPyTorchTrainer:
         self.exp_manager.logger.info(f"Stage 1 complete. Checkpoint: {pretrain_ckpt_path}")
         return pretrain_ckpt_path
     
-    def run_finetune_stage(self, leret_config: LeRetTrainingConfig, pretrain_ckpt_path=None) -> Path:
-        """Run Stage 2: Forecasting finetuning."""
+    def run_finetune_stage(
+        self, 
+        leret_config: LeRetTrainingConfig, 
+        pretrain_ckpt_path: Optional[Path] = None,
+        start_epoch: int = 1,
+        resume_checkpoint: Optional[Path] = None
+    ) -> Path:
+        """
+        Run Stage 2: Forecasting finetuning.
+        
+        Args:
+            leret_config: LeRet training configuration
+            pretrain_ckpt_path: Path to pretrain checkpoint (for loading initial weights)
+            start_epoch: Epoch to start from within finetune stage (1-indexed, for resume)
+            resume_checkpoint: Optional finetune checkpoint to load for resume
+        
+        Returns:
+            Path to best finetune checkpoint
+        """
         self.exp_manager.logger.info("=" * 60)
         self.exp_manager.logger.info("Stage 2: Forecasting Finetuning (PyTorch)")
         self.exp_manager.logger.info(f"  Epochs: {self.args.train_epochs}")
+        if start_epoch > 1:
+            self.exp_manager.logger.info(f"  Resuming from finetune epoch: {start_epoch}")
         self.exp_manager.logger.info("=" * 60)
         
-        # Load pretrain checkpoint
-        if pretrain_ckpt_path is None:
-            pretrain_ckpt_path = _get_pretrain_checkpoint(self.exp_manager, leret_config)
+        # Get epoch offset from pretrain
+        epoch_offset = leret_config.pretrain_epochs
         
-        checkpoint = torch.load(pretrain_ckpt_path, map_location=self.device)
+        # Determine which checkpoint to load for model initialization
+        if resume_checkpoint is not None and resume_checkpoint.exists():
+            # Resuming finetune - load finetune checkpoint
+            self.exp_manager.logger.info(f"Loading finetune checkpoint for resume: {resume_checkpoint}")
+            checkpoint = torch.load(resume_checkpoint, map_location=self.device)
+        else:
+            # Starting finetune fresh - load pretrain checkpoint
+            if pretrain_ckpt_path is None:
+                pretrain_ckpt_path = _get_pretrain_checkpoint(self.exp_manager, leret_config)
+            
+            self.exp_manager.logger.info(f"Loading pretrain checkpoint: {pretrain_ckpt_path}")
+            checkpoint = torch.load(pretrain_ckpt_path, map_location=self.device)
         
         # Validate experiment ID
         ckpt_exp_id = checkpoint.get('experiment_id')
@@ -900,17 +1220,18 @@ class LeRetPyTorchTrainer:
         # Extract state dict and handle torch.compile checkpoints
         if 'model_state_dict' in checkpoint:
             state_dict = checkpoint['model_state_dict']
-        else:
+        elif 'state_dict' in checkpoint:
             state_dict = checkpoint['state_dict']
+        else:
+            # Checkpoint is directly the state dict
+            state_dict = checkpoint
         
-        if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
-            self.exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys")
-            state_dict = {key.replace('_orig_mod.', ''): value for key in state_dict.keys() for value in [state_dict[key]]}
+        if isinstance(state_dict, dict) and any(key.startswith('_orig_mod.') for key in state_dict.keys()):
+            self.exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix")
+            state_dict = {key.replace('_orig_mod.', ''): value for key, value in state_dict.items()}
         
         # Load weights
         self.model.load_state_dict(state_dict, strict=False)
-        
-        self.exp_manager.logger.info(f"Loaded pretrain checkpoint: {pretrain_ckpt_path}")
         
         train_loader = self.data_provider.get_train(return_type='loader')
         val_loader = self.data_provider.get_val(return_type='loader')
@@ -923,12 +1244,31 @@ class LeRetPyTorchTrainer:
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
         
         checkpoint_dir = self.exp_manager.get_checkpoint_dir()
-        epoch_offset = checkpoint.get('pretrain_epochs', leret_config.pretrain_epochs)
         best_val_loss = float('inf')
         
-        for epoch in range(1, self.args.train_epochs + 1):
+        # Load optimizer state if resuming from finetune checkpoint
+        if resume_checkpoint is not None and resume_checkpoint.exists():
+            if 'optimizer_state_dict' in checkpoint:
+                try:
+                    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                    self.exp_manager.logger.info("Loaded optimizer state from finetune checkpoint")
+                except Exception as e:
+                    self.exp_manager.logger.warning(f"Could not load optimizer state: {e}")
+            
+            # Adjust learning rate to match resumed epoch
+            for ep in range(1, start_epoch):
+                adjust_learning_rate(optimizer, ep, self.args)
+        
+        # Track final values for job end
+        train_loss = 0.0
+        val_loss = 0.0
+        final_epoch = start_epoch
+        
+        # Training loop - start from start_epoch
+        for epoch in range(start_epoch, self.args.train_epochs + 1):
             train_loss, epoch_time = self._train_epoch_finetune(train_loader, optimizer, criterion, epoch)
             val_loss = self._validate(val_loader, criterion, stage="finetune")
+            final_epoch = epoch
             
             total_epoch = epoch_offset + epoch
             self.exp_manager.logger.info(
@@ -936,9 +1276,19 @@ class LeRetPyTorchTrainer:
                 f"Train: {train_loss:.7f} | Val: {val_loss:.7f} | Time: {epoch_time:.2f}s"
             )
             
+            # Save checkpoint with full state for resume
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                torch.save(self.model.state_dict(), checkpoint_dir / 'checkpoint.pth')
+                torch.save({
+                    'epoch': epoch,
+                    'total_epoch': total_epoch,
+                    'model_state_dict': self.model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'stage': 'finetune',
+                    'val_loss': val_loss,
+                    'experiment_id': self.exp_manager.experiment_id,
+                    'pretrain_epochs': epoch_offset,
+                }, checkpoint_dir / 'checkpoint.pth')
             
             early_stopping(val_loss, self.model, str(checkpoint_dir), epoch=epoch)
             if early_stopping.early_stop:
@@ -956,14 +1306,19 @@ class LeRetPyTorchTrainer:
         
         # Load best model for testing
         best_model_path = checkpoint_dir / 'checkpoint.pth'
-        state_dict = torch.load(best_model_path, map_location=self.device)
-        
-        # Handle torch.compile checkpoints (state dict keys have "_orig_mod." prefix)
-        if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
-            self.exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys")
-            state_dict = {key.replace('_orig_mod.', ''): value for key in state_dict.keys() for value in [state_dict[key]]}
-        
-        self.model.load_state_dict(state_dict)
+        if best_model_path.exists():
+            ckpt = torch.load(best_model_path, map_location=self.device)
+            if 'model_state_dict' in ckpt:
+                state_dict = ckpt['model_state_dict']
+            else:
+                state_dict = ckpt
+            
+            # Handle torch.compile checkpoints
+            if isinstance(state_dict, dict) and any(key.startswith('_orig_mod.') for key in state_dict.keys()):
+                self.exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix")
+                state_dict = {key.replace('_orig_mod.', ''): value for key, value in state_dict.items()}
+            
+            self.model.load_state_dict(state_dict)
         
         # Final testing
         self.exp_manager.logger.info("Running final testing...")
@@ -975,7 +1330,7 @@ class LeRetPyTorchTrainer:
         with open(checkpoint_dir / 'test_results.json', 'w') as f:
             json.dump(test_results, f, indent=2)
         
-        total_epochs = epoch_offset + epoch
+        total_epochs = epoch_offset + final_epoch
         self.exp_manager.register_job_end(
             end_epoch=total_epochs, status="completed",
             checkpoint_path=str(best_model_path),
@@ -993,6 +1348,11 @@ def train_leret_pytorch(args, exp_manager) -> Path:
     """
     Train LeRet model using standard PyTorch.
     
+    Handles resume logic for LeRet's two-stage training:
+    - If resuming from pretrain stage, continues pretrain then finetune
+    - If resuming from finetune stage, skips pretrain and continues finetune
+    - If no resume needed, runs stages according to training_stage config
+    
     Args:
         args: Experiment arguments with leret config
         exp_manager: ExperimentManager for tracking
@@ -1003,10 +1363,38 @@ def train_leret_pytorch(args, exp_manager) -> Path:
     leret_config = _get_leret_config(args)
     training_stage = leret_config.training_stage
     
-    exp_manager.logger.info(f"LeRet PyTorch Training (stage: {training_stage})")
+    exp_manager.logger.info(f"LeRet PyTorch Training (configured stage: {training_stage})")
+    
+    # Check for resume
+    resume_stage, start_epoch, resume_checkpoint = _determine_resume_stage(exp_manager, leret_config)
     
     trainer = LeRetPyTorchTrainer(args, exp_manager)
     
+    # Handle resume scenarios
+    if resume_stage is not None:
+        exp_manager.logger.info(f"Resume detected: stage={resume_stage}, start_epoch={start_epoch}")
+        
+        if resume_stage == "pretrain":
+            # Resume pretrain, then run finetune if training_stage is "both"
+            pretrain_ckpt = trainer.run_pretrain_stage(
+                leret_config, 
+                start_epoch=start_epoch, 
+                resume_checkpoint=resume_checkpoint
+            )
+            if training_stage == "both":
+                return trainer.run_finetune_stage(leret_config, pretrain_ckpt)
+            return pretrain_ckpt
+        
+        elif resume_stage == "finetune":
+            # Resume finetune (pretrain already done)
+            return trainer.run_finetune_stage(
+                leret_config,
+                pretrain_ckpt_path=None,  # Will auto-detect from job_history
+                start_epoch=start_epoch,
+                resume_checkpoint=resume_checkpoint
+            )
+    
+    # No resume - run stages according to config
     if training_stage == "pretrain":
         return trainer.run_pretrain_stage(leret_config)
     elif training_stage == "finetune":
