@@ -386,15 +386,38 @@ def build_cache_config(args: dotdict) -> dict:
     embedding_aggregation = None
     if hasattr(args, 'data_config') and args.data_config.get('hetero_info'):
         hetero_info = args.data_config.hetero_info
-        # Handle both dict and dotdict for embedding_config
-        emb_cfg = hetero_info.get('embedding_config') if isinstance(hetero_info, dict) else getattr(hetero_info, 'embedding_config', None)
-        if emb_cfg:
-            # Handle both dict and dotdict for embedding config values
-            embedding_model = emb_cfg.get('model_name', 'bert-base-uncased') if isinstance(emb_cfg, dict) else getattr(emb_cfg, 'model_name', 'bert-base-uncased')
-            embedding_aggregation = emb_cfg.get('aggregation_method', 'cls') if isinstance(emb_cfg, dict) else getattr(emb_cfg, 'aggregation_method', 'cls')
-            # Version defaults to '2.0' for new embeddings (will be set explicitly by embedder)
-            # This ensures tensor caches built with old embeddings are invalidated
-            embedding_version = '2.0'  # Current embedding implementation version
+
+        # Check if using old embeddings (legacy .pkl files)
+        use_old_embeddings = hetero_info.get('use_old_embeddings', False) if isinstance(hetero_info, dict) else getattr(hetero_info, 'use_old_embeddings', False)
+
+        if use_old_embeddings:
+            # Using old .pkl files - mark as version 1.0 (buggy concatenated embeddings)
+            embedding_version = '1.0'
+            # Old embeddings don't have standardized model/aggregation tracking
+            embedding_model = None
+            embedding_aggregation = None
+        else:
+            # Using new embedding system - embedding_config MUST exist
+            # Handle both dict and dotdict for embedding_config
+            emb_cfg = hetero_info.get('embedding_config') if isinstance(hetero_info, dict) else getattr(hetero_info, 'embedding_config', None)
+
+            if emb_cfg:
+                # Handle both dict and dotdict for embedding config values
+                embedding_model = emb_cfg.get('model_name', 'bert-base-uncased') if isinstance(emb_cfg, dict) else getattr(emb_cfg, 'model_name', 'bert-base-uncased')
+                embedding_aggregation = emb_cfg.get('aggregation_method', 'cls') if isinstance(emb_cfg, dict) else getattr(emb_cfg, 'aggregation_method', 'cls')
+                # Version defaults to '2.0' for new embeddings (will be set explicitly by embedder)
+                # This ensures tensor caches built with old embeddings are invalidated
+                embedding_version = '2.0'  # Current embedding implementation version
+            else:
+                # ERROR: hetero_info exists but no embedding_config and not using old embeddings
+                # This is a configuration error - fail loudly
+                raise ValueError(
+                    "hetero_info is present but missing 'embedding_config'. "
+                    "This indicates a configuration error. "
+                    "Either provide 'embedding_config' with 'model_name' and 'aggregation_method', "
+                    "or set 'use_old_embeddings: true' to use legacy .pkl files. "
+                    "See data_configs/ for examples."
+                )
 
     return {
         'input_len': args.input_len,
