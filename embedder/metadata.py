@@ -148,12 +148,12 @@ class EmbeddingMetadata:
     def matches(self, other: 'EmbeddingMetadata') -> bool:
         """
         Check if this metadata matches another (for cache lookup).
-        
+
         Compares fields that affect embedding computation.
-        
+
         Args:
             other: Another EmbeddingMetadata instance
-        
+
         Returns:
             True if metadata matches (embeddings are compatible)
         """
@@ -163,6 +163,7 @@ class EmbeddingMetadata:
             self.aggregation_method == other.aggregation_method and
             self.embedding_dim == other.embedding_dim and
             self.max_length == other.max_length and
+            self.embedding_version == other.embedding_version and
             (self.aggregation_method != 'none' or self.sequence_length == other.sequence_length)
         )
 
