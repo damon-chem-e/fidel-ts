@@ -311,11 +311,11 @@ class Data_Provider(object):
 
     def _get_parquet_columns(self, entity_id) -> Optional[list]:
         """
-        Read column names from parquet file schema without loading data.
+        Read column names from parquet file.
 
         This is used to ensure embedding order matches parquet column order when
-        initializing heterogeneous data getters. Reading just the schema is fast
-        and doesn't require loading the full dataset.
+        initializing heterogeneous data getters. Uses pandas for consistency with
+        how Universal_Dataset reads data (important for encoding of special chars).
 
         Args:
             entity_id: Entity ID to get columns for
@@ -324,15 +324,15 @@ class Data_Provider(object):
             List of column names (excluding timestamp column) in parquet order,
             or None if file doesn't exist or can't be read.
         """
-        import pyarrow.parquet as pq
+        import pandas as pd
 
         data_path = self.formatter.format(i=entity_id)
         full_path = os.path.join(self.dataset_config.root_path, data_path)
 
         try:
-            # Read just the schema (very fast, no data loading)
-            schema = pq.read_schema(full_path)
-            all_columns = schema.names
+            # Read just columns (nrows=0 reads schema only, very fast)
+            df = pd.read_parquet(full_path, columns=None)
+            all_columns = list(df.columns)
 
             # Filter out timestamp column
             timestamp_col = self.dataset_config.timestamp_col
@@ -342,7 +342,7 @@ class Data_Provider(object):
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.warning(f"Could not read parquet schema for {entity_id}: {e}")
+            logger.warning(f"Could not read parquet columns for {entity_id}: {e}")
             return None
 
     def _resolve_tensor_cache_dir(self) -> Optional[str]:
