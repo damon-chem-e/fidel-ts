@@ -25,18 +25,19 @@ class EmbeddingMetadata:
     Stores all information needed to identify and validate embedding cache.
     """
     
-    def __init__(self, 
+    def __init__(self,
                  tokenizer_name: str,
                  model_name: str,
                  aggregation_method: str,
                  embedding_dim: int,
                  sequence_length: Optional[int] = None,
                  max_length: int = 512,
+                 embedding_version: str = '2.0',
                  created_at: Optional[str] = None,
                  **extra_config):
         """
         Initialize embedding metadata.
-        
+
         Args:
             tokenizer_name: Name of tokenizer (e.g., 'bert-base-uncased')
             model_name: Name of embedding model (e.g., 'bert-base-uncased')
@@ -44,6 +45,10 @@ class EmbeddingMetadata:
             embedding_dim: Dimension of embeddings
             sequence_length: Max sequence length (if aggregation='none', this is the padded length)
             max_length: Maximum tokenization length
+            embedding_version: Version of embedding generation logic (default '2.0' for per-variable embeddings)
+                               Version history:
+                               - '1.0': Original implementation with concatenated channel descriptions (buggy)
+                               - '2.0': Fixed per-variable embeddings with parquet column order alignment
             created_at: ISO format timestamp (auto-generated if None)
             **extra_config: Additional configuration parameters
         """
@@ -53,6 +58,7 @@ class EmbeddingMetadata:
         self.embedding_dim = embedding_dim
         self.sequence_length = sequence_length
         self.max_length = max_length
+        self.embedding_version = embedding_version
         self.created_at = created_at or datetime.now().isoformat()
         self.extra_config = extra_config
     
@@ -65,6 +71,7 @@ class EmbeddingMetadata:
             'embedding_dim': self.embedding_dim,
             'sequence_length': self.sequence_length,
             'max_length': self.max_length,
+            'embedding_version': self.embedding_version,
             'created_at': self.created_at,
         }
         result.update(self.extra_config)
@@ -75,10 +82,13 @@ class EmbeddingMetadata:
         """Create metadata from dictionary."""
         # Extract known fields
         known_fields = {
-            'tokenizer_name', 'model_name', 'aggregation_method', 
-            'embedding_dim', 'sequence_length', 'max_length', 'created_at'
+            'tokenizer_name', 'model_name', 'aggregation_method',
+            'embedding_dim', 'sequence_length', 'max_length', 'embedding_version', 'created_at'
         }
         kwargs = {k: data.pop(k) for k in list(data.keys()) if k in known_fields}
+        # Default to version 1.0 for old caches without version field
+        if 'embedding_version' not in kwargs:
+            kwargs['embedding_version'] = '1.0'
         # Remaining fields go to extra_config
         kwargs['extra_config'] = data
         return cls(**kwargs)
@@ -106,9 +116,13 @@ class EmbeddingMetadata:
     def compute_hash(self) -> str:
         """
         Compute hash identifier for this metadata configuration.
-        
+
         Uses a subset of metadata fields that determine the embedding characteristics.
         Returns first 16 characters of SHA256 hash for use in folder names.
+
+        IMPORTANT: embedding_version is included in the hash to ensure that changes
+        to embedding generation logic produce different cache directories. This prevents
+        accidentally using old (potentially buggy) embeddings with new code.
         """
         # Fields that affect embedding computation
         hash_fields = {
@@ -117,15 +131,16 @@ class EmbeddingMetadata:
             'aggregation_method': self.aggregation_method,
             'embedding_dim': self.embedding_dim,
             'max_length': self.max_length,
+            'embedding_version': self.embedding_version,  # CRITICAL: Invalidate cache on logic changes
         }
-        
+
         # Include sequence_length only if aggregation='none'
         if self.aggregation_method == 'none':
             hash_fields['sequence_length'] = self.sequence_length
-        
+
         # Sort for consistent hashing
         hash_str = json.dumps(hash_fields, sort_keys=True)
-        
+
         # Compute hash
         hash_obj = hashlib.sha256(hash_str.encode())
         return hash_obj.hexdigest()[:16]  # Use first 16 chars for folder name

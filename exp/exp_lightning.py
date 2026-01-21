@@ -334,9 +334,9 @@ def train_lightning_model(args, exp_manager):
         raise ValueError("exp_manager is required for training")
 
     from data_provider.lightning_data_module import TimeSeriesDataModule
-    
+
     # Initialize data module
-    data_module = TimeSeriesDataModule(args)
+    data_module = TimeSeriesDataModule(args, exp_manager=exp_manager)
     
     # Check for resume information from exp_manager
     resume_info = exp_manager.get_resume_info()

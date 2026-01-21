@@ -368,7 +368,7 @@ class ExperimentManager:
     def _capture_metadata(self) -> Dict[str, Any]:
         """
         Capture complete experiment metadata.
-        
+
         Returns:
             Dictionary containing all metadata
         """
@@ -380,24 +380,29 @@ class ExperimentManager:
             "job_name": self.job_name,
             "random_seed": self.config.random_seed,
         }
-        
+
         # Suite information (if experiment is part of a suite)
         if self.suite_name:
             metadata["suite"] = {
                 "suite_name": self.suite_name,
                 **self.suite_info
             }
-        
+
         # Git information
         git_info = self._get_git_info()
         metadata.update(git_info)
-        
+
         # Environment information
         metadata["environment"] = {
             "python_version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
             "cwd": str(Path.cwd()),
         }
-        
+
+        # Embedding information (if available)
+        # NOTE: This will be None initially and populated later via capture_embedding_metadata()
+        # For backwards compatibility: absence of embedding_info indicates pre-version-tracking embeddings
+        metadata["embedding_info"] = None
+
         return metadata
     
     def _get_git_info(self) -> Dict[str, Any]:
@@ -1121,6 +1126,50 @@ class ExperimentManager:
     def get_experiment_dir(self) -> Path:
         """Get experiment directory path."""
         return self.experiment_dir
+
+    def capture_embedding_metadata(self, dataset) -> None:
+        """
+        Capture embedding metadata from dataset and save to experiment metadata.
+
+        This method extracts embedding version information from the dataset
+        (if available) and updates the experiment metadata.json file. This allows
+        experiments to track which version of embeddings was used.
+
+        Args:
+            dataset: Dataset object (typically train_dataset) that may contain
+                    embedding_metadata attribute
+
+        Usage:
+            After creating train dataset:
+            ```python
+            exp_manager.capture_embedding_metadata(train_dataset)
+            ```
+
+        Note:
+            - If dataset has no embedding_metadata, embedding_info remains None
+            - None indicates either no embeddings used, or pre-version-tracking
+            - For Fidel-TS: embedding_version='1.0' (old) or '2.0' (fixed)
+        """
+        if dataset is None:
+            self.logger.debug("Dataset is None, cannot capture embedding metadata")
+            return
+
+        # Check if dataset has embedding metadata
+        if hasattr(dataset, 'embedding_metadata') and dataset.embedding_metadata is not None:
+            # Update metadata dict
+            self.metadata["embedding_info"] = dataset.embedding_metadata
+
+            # Save updated metadata immediately
+            metadata_path = self.experiment_dir / "metadata.json"
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(self.metadata, f, indent=2, default=str)
+
+            self.logger.info(
+                f"Captured embedding metadata: version={dataset.embedding_metadata.get('embedding_version', 'unknown')}, "
+                f"model={dataset.embedding_metadata.get('model_name', 'unknown')}"
+            )
+        else:
+            self.logger.debug("Dataset has no embedding_metadata attribute")
     
     def get_console(self) -> Console:
         """Get Rich Console instance for terminal output."""

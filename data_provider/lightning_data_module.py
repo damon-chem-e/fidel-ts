@@ -21,21 +21,23 @@ class TimeSeriesDataModule(pl.LightningDataModule):
         val_dataset: Validation dataset  
         test_dataset: Test dataset
     """
-    def __init__(self, args):
+    def __init__(self, args, exp_manager=None):
         """
         Initialize the TimeSeriesDataModule with configuration arguments.
-        
+
         Args:
             args (object): Configuration object containing data parameters with attributes:
                 - batch_size (int): Number of samples per batch
                 - num_workers (int): Number of worker processes for data loading
                 - disable_buffer (bool): Whether to disable data buffering for memory efficiency
                 - And other data-related configuration parameters required by Data_Provider
+            exp_manager: Optional ExperimentManager for capturing embedding metadata
         """
         super().__init__()
         self.args = args
         self.batch_size = args.batch_size
         self.num_workers = args.num_workers
+        self.exp_manager = exp_manager
 
     def setup(self, stage=None):
         """
@@ -63,7 +65,11 @@ class TimeSeriesDataModule(pl.LightningDataModule):
         """
         # Create data provider, reusing the existing implementation
         if not hasattr(self, 'data_provider'):
-            self.data_provider = Data_Provider(self.args, buffer=(not self.args.disable_buffer))
+            self.data_provider = Data_Provider(
+                self.args,
+                buffer=(not self.args.disable_buffer),
+                exp_manager=self.exp_manager
+            )
         
         if stage == 'fit' or stage is None:
             self.train_dataset = self.data_provider.get_train(return_type='set')

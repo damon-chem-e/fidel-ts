@@ -172,6 +172,9 @@ class FidelTSEmbeddingLoader:
         self.hetero_info = hetero_info
         self.base_data_path = base_data_path
         self.embed_model_name = embed_model_name
+
+        # Embedding metadata (populated after load_embeddings)
+        self.embedding_metadata: Optional['EmbeddingMetadata'] = None
         self.aggregation_method = aggregation_method
         self.device = device
         self.hf_cache_dir = hf_cache_dir
@@ -319,6 +322,7 @@ class FidelTSEmbeddingLoader:
             embedding_dim=embedding_dim,
             sequence_length=sequence_length,
             max_length=512,
+            embedding_version='2.0',  # Per-variable embeddings with parquet column order alignment
             device=self.device,
             hf_cache_dir=self.hf_cache_dir
         )
@@ -491,7 +495,7 @@ class FidelTSEmbeddingLoader:
                 f"Set use_old_embeddings=False to use the new cache system which will "
                 f"recompute embeddings from the text source (static_info.json)."
             )
-        
+
         return dynamic_embeddings, static_embeddings
     
     def has_cached_embeddings(self) -> bool:
@@ -579,22 +583,30 @@ class FidelTSEmbeddingLoader:
     def _load_from_cache(self, cache_dir: Path) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
         """
         Load embeddings from new cache directory.
-        
+
         Validates that static embeddings contain required keys (channel_info).
         If validation fails and text source is available, triggers recomputation.
-        
+
         Args:
             cache_dir: Path to cache directory
-        
+
         Returns:
             tuple: (dynamic_embeddings, static_embeddings)
-        
+
         Raises:
             ValueError: If cache is invalid and no text source available for recomputation
         """
         cached_data = EmbeddingCacheManager.load_fidel_ts_embeddings(cache_dir)
         dynamic_embeddings = cached_data['dynamic']
         static_embeddings = cached_data['static']
+
+        # Load metadata from cache
+        metadata_path = cache_dir / 'metadata.json'
+        if metadata_path.exists():
+            from .metadata import EmbeddingMetadata
+            self.embedding_metadata = EmbeddingMetadata.load(metadata_path)
+        else:
+            print(f'[ warning ] No metadata.json found in cache directory: {cache_dir}')
         
         # Validate static embeddings have required keys
         # channel_info is required for Fidel-TS datasets with hetero_info
@@ -878,31 +890,50 @@ class FidelTSEmbeddingLoader:
         print(f'[ info ] Computed static embeddings with aggregation method: {self.aggregation_method}')
         return static_embeddings
     
-    def _save_to_cache(self, dynamic_embeddings: Dict[str, np.ndarray], 
+    def _save_to_cache(self, dynamic_embeddings: Dict[str, np.ndarray],
                        static_embeddings: Optional[Dict[str, np.ndarray]],
                        force: bool = False):
         """
         Save embeddings to cache directory.
-        
+
         Args:
             dynamic_embeddings: Dictionary mapping timestamps to embedding arrays
             static_embeddings: Dictionary of static embeddings (or None)
             force: If True, overwrite existing cache directory
         """
         cache_base = self.paths['cache_base']
-        
+
         # Get metadata
         metadata = self.embedder.create_metadata()
-        
+
+        # Store metadata for later access
+        self.embedding_metadata = metadata
+
         # Create cache directory using static method
         cache_dir = EmbeddingCacheManager.create_fidel_ts_cache_dir(cache_base, metadata, force=force)
-        
+
         # Save embeddings using static method
         EmbeddingCacheManager.save_fidel_ts_embeddings(
             dynamic_embeddings,
             cache_dir,
             static_embeddings=static_embeddings
         )
-        
+
         print(f'[ info ] Saved embeddings to cache: {cache_dir}')
+
+    def get_embedding_metadata_dict(self) -> Optional[Dict[str, Any]]:
+        """
+        Get embedding metadata as a dictionary for experiment tracking.
+
+        Returns:
+            Dictionary with embedding metadata, or None if not yet loaded.
+
+        Usage:
+            After calling load_embeddings(), this method returns metadata that can be
+            included in experiment configs to identify which embedding version was used.
+        """
+        if self.embedding_metadata is None:
+            return None
+
+        return self.embedding_metadata.to_dict()
 

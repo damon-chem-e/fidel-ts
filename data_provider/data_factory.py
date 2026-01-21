@@ -48,19 +48,21 @@ class Data_Provider(object):
         val_loader = data_provider.get_val(return_type='loader')
         ```
     """
-    def __init__(self, args, buffer=False, console: Optional[Any] = None):
+    def __init__(self, args, buffer=False, console: Optional[Any] = None, exp_manager: Optional[Any] = None):
         """
         Initialize Data_Provider.
-        
+
         Args:
             args: Configuration object containing all data and model parameters
             buffer: Whether to enable data buffering for improved performance
             console: Optional Rich Console instance for progress bar display
+            exp_manager: Optional ExperimentManager for capturing embedding metadata
         """
         self.args = args
         self.buffer = buffer
         self.batch_size = args.batch_size
         self.console = console
+        self._exp_manager = exp_manager
 
         self.dataset_config = args.data_config
 
@@ -893,6 +895,12 @@ class Data_Provider(object):
                 return None, loader
 
         self.train_dataset=self.get_datasets('train')
+
+        # Capture embedding metadata for experiment tracking (if exp_manager available)
+        # This must be done AFTER dataset is created but BEFORE training starts
+        if hasattr(self, '_exp_manager') and self._exp_manager is not None:
+            self._exp_manager.capture_embedding_metadata(self.train_dataset)
+
         if return_type == 'set':
             return self.train_dataset
         elif return_type == 'loader':

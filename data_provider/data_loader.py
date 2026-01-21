@@ -664,10 +664,13 @@ class Heterogeneous_Dataset(Dataset):
         
         # Load embeddings
         dynamic_embeddings, static_embeddings = loader.load_embeddings()
-        
+
         # Store embeddings in same format as old system
         self.embeddings = dynamic_embeddings
         self.static_data = static_embeddings
+
+        # Store embedding metadata for experiment tracking
+        self.embedding_metadata = loader.get_embedding_metadata_dict()
         
         # Create dynamic data for timestamp matching (shared helper method)
         if self.hetero_type == 'all_for_one':

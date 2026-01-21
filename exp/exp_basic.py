@@ -59,7 +59,12 @@ class Exp_Basic(object):
         # Get indicator column count before building model (needed for enc_in adjustment)
         # Create data_provider first to access required_indicator_columns
         console = exp_manager.get_console() if exp_manager else None
-        self.data_provider = Data_Provider(args, buffer=(not args.disable_buffer), console=console)
+        self.data_provider = Data_Provider(
+            args,
+            buffer=(not args.disable_buffer),
+            console=console,
+            exp_manager=exp_manager
+        )
         
         # Get number of indicator columns that will be added to the data
         num_indicator_columns = len(getattr(self.data_provider, 'required_indicator_columns', []))
