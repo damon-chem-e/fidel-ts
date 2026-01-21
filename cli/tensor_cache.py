@@ -157,7 +157,9 @@ def get_all_experiments(
             merged_config = merge_configs(template, overrides)
             result.append((exp_name, merged_config))
         except Exception as e:
+            import traceback
             logger.warning(f"Error loading config for '{exp_name}': {e}, skipping")
+            logger.debug(traceback.format_exc())
             continue
 
     return result
@@ -326,6 +328,8 @@ def _check_embeddings_cached(args: dotdict) -> Tuple[bool, str]:
                 return False, "Fidel-TS embeddings not found in cache"
         
         except Exception as e:
+            import traceback
+            logger.error(f"Error checking Fidel-TS embedding cache: {e}\n{traceback.format_exc()}")
             return False, f"Error checking Fidel-TS embedding cache: {e}"
     
     # =========================================================================
@@ -469,7 +473,9 @@ def generate(
                     console.print(f"  [green]●[/green] {exp_name}: hash={config_hash[:8]} (new)")
 
             except Exception as e:
+                import traceback
                 console.print(f"  [yellow]⚠[/yellow] {exp_name}: Error analyzing: {e}")
+                logger.error(f"Error analyzing experiment '{exp_name}': {e}\n{traceback.format_exc()}")
                 skipped_experiments.append(exp_name)
                 continue
 
@@ -688,7 +694,9 @@ def validate(
                 else:
                     cache_groups[config_hash][2].append(exp_name)
             except Exception as e:
+                import traceback
                 console.print(f"  [yellow]⚠[/yellow] {exp_name}: Error analyzing: {e}")
+                logger.error(f"Error analyzing experiment '{exp_name}': {e}\n{traceback.format_exc()}")
                 continue
 
         # Validate each unique cache
@@ -723,7 +731,9 @@ def validate(
     except typer.Exit:
         raise
     except Exception as e:
+        import traceback
         console.print(f"[red]Error validating cache: {str(e)}[/red]")
+        logger.error(f"Error validating cache: {e}\n{traceback.format_exc()}")
         raise typer.Exit(code=1)
 
 
@@ -799,7 +809,9 @@ def info(
         console.print(f"  [bold]Total: {total_size / 1e9:.2f} GB[/bold]")
 
     except Exception as e:
+        import traceback
         console.print(f"[red]Error reading cache info: {str(e)}[/red]")
+        logger.error(f"Error reading cache info: {e}\n{traceback.format_exc()}")
         raise typer.Exit(code=1)
 
 

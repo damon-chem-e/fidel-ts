@@ -386,10 +386,12 @@ def build_cache_config(args: dotdict) -> dict:
     embedding_aggregation = None
     if hasattr(args, 'data_config') and args.data_config.get('hetero_info'):
         hetero_info = args.data_config.hetero_info
-        if hetero_info.get('embedding_config'):
-            emb_cfg = hetero_info.embedding_config
-            embedding_model = emb_cfg.get('model_name', 'bert-base-uncased')
-            embedding_aggregation = emb_cfg.get('aggregation_method', 'cls')
+        # Handle both dict and dotdict for embedding_config
+        emb_cfg = hetero_info.get('embedding_config') if isinstance(hetero_info, dict) else getattr(hetero_info, 'embedding_config', None)
+        if emb_cfg:
+            # Handle both dict and dotdict for embedding config values
+            embedding_model = emb_cfg.get('model_name', 'bert-base-uncased') if isinstance(emb_cfg, dict) else getattr(emb_cfg, 'model_name', 'bert-base-uncased')
+            embedding_aggregation = emb_cfg.get('aggregation_method', 'cls') if isinstance(emb_cfg, dict) else getattr(emb_cfg, 'aggregation_method', 'cls')
             # Version defaults to '2.0' for new embeddings (will be set explicitly by embedder)
             # This ensures tensor caches built with old embeddings are invalidated
             embedding_version = '2.0'  # Current embedding implementation version
