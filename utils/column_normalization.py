@@ -54,15 +54,16 @@ def build_normalized_embedding_map(
         - normalized_map: Dict mapping normalized name -> original embedding key
         - duplicates: Dict of normalized name -> set of original keys (collisions)
     """
-    # Track the best mapping from normalized name to original key.
+    # Track the best mapping from normalized or raw name to original key.
     normalized_map: Dict[str, str] = {}
-    # Track collisions where multiple keys normalize to the same string.
+    # Track collisions where multiple keys map to the same string.
     duplicates: Dict[str, Set[str]] = {}
     for key in embedding_keys:
         normalized_key = normalize_jena_column_name(key)
-        if normalized_key in normalized_map and normalized_map[normalized_key] != key:
-            duplicates.setdefault(normalized_key, set()).update(
-                {normalized_map[normalized_key], key}
-            )
-        normalized_map[normalized_key] = key
+        for candidate in {key, normalized_key}:
+            if candidate in normalized_map and normalized_map[candidate] != key:
+                duplicates.setdefault(candidate, set()).update(
+                    {normalized_map[candidate], key}
+                )
+            normalized_map[candidate] = key
     return normalized_map, duplicates
