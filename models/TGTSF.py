@@ -380,6 +380,38 @@ class Model(nn.Module):
         # Project text embeddings if input dimension differs from operational dimension
         text_input, channel_description = self._project_text_embeddings(text_input, channel_description)
 
+        # ============================================================================
+        # WORKAROUND: Handle channel dimension mismatch (concatenated descriptions)
+        # ============================================================================
+        # channel_description should have shape [B, C, D] where C = number of variables
+        # Due to embedding generation bug (fidel_ts_embedder.py concatenates per-variable
+        # descriptions), it may arrive as [B, 1, D] for multi-variable datasets.
+        # We broadcast the single description to all variables to prevent reshape errors.
+        # See docs/planning/fidel_ts_embedder_channel_concat_issue.md for details.
+        C_time_series = x.shape[2]  # Number of variables in time series
+
+        if channel_description.ndim == 3:
+            # Expected: [B, C, D] where C = nvars
+            C_desc = channel_description.shape[1]
+            if C_desc == 1 and C_time_series > 1:
+                # Mismatch detected: single description for multi-variable dataset
+                print(f'[ WARNING ] TGTSF: channel_description has C={C_desc} but time series has '
+                      f'C={C_time_series} variables. Broadcasting single channel description to all '
+                      f'variables. This is a WORKAROUND due to embedding generation concatenating '
+                      f'per-variable descriptions. For optimal performance with per-variable semantic '
+                      f'descriptions, regenerate embeddings with the fixed fidel_ts_embedder. '
+                      f'See docs/planning/fidel_ts_embedder_channel_concat_issue.md')
+                channel_description = channel_description.repeat(1, C_time_series, 1)  # [B, 1, D] → [B, C, D]
+        elif channel_description.ndim == 4:
+            # Expected: [B, 1, C, D] from some preprocessing
+            C_desc = channel_description.shape[2]
+            if C_desc == 1 and C_time_series > 1:
+                print(f'[ WARNING ] TGTSF: channel_description has C={C_desc} but time series has '
+                      f'C={C_time_series} variables. Broadcasting single channel description to all '
+                      f'variables. See docs/planning/fidel_ts_embedder_channel_concat_issue.md')
+                channel_description = channel_description.repeat(1, 1, C_time_series, 1)  # [B, 1, 1, D] → [B, 1, C, D]
+        # ============================================================================
+
         # convert description to [bs, l, nvars, d_model]
         channel_description = channel_description.unsqueeze(1) # [bs, 1, nvars, text_dim]
         description = channel_description.repeat(1, text_input.shape[1], 1, 1) # [bs, l, nvars, text_dim]

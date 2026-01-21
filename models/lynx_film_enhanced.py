@@ -527,7 +527,27 @@ class Model(nn.Module):
         
         # Step 2: Project text embeddings if needed
         text_input, channel_description = self._project_text_embeddings(text_input, channel_description)
-        
+
+        # ============================================================================
+        # PERFORMANCE WARNING: Check for concatenated channel descriptions
+        # ============================================================================
+        # LYNX/FILM models can operate with C=1 (single description broadcast to all variables)
+        # due to FiLM's inherent broadcasting mechanism. However, this is suboptimal when
+        # per-variable descriptions are available but were concatenated during embedding generation.
+        # See docs/planning/fidel_ts_embedder_channel_concat_issue.md for details.
+        C_time_series = x.shape[2]  # Number of variables in time series
+
+        if len(channel_description.shape) == 3:  # [B, C, D]
+            C_desc = channel_description.shape[1]
+            if C_desc == 1 and C_time_series > 1:
+                print(f'[ INFO ] LYNX/FILM_ENHANCED: Using single channel description for {C_time_series} variables. '
+                      f'This works but is suboptimal if per-variable descriptions exist. '
+                      f'Consider regenerating embeddings with fixed fidel_ts_embedder for improved '
+                      f'semantic alignment between text and time series variables. '
+                      f'See docs/planning/fidel_ts_embedder_channel_concat_issue.md')
+                # Note: No broadcasting needed for FILM - it naturally handles C=1
+        # ============================================================================
+
         # Step 3: Get Text Embeddings via text encoder
         if len(channel_description.shape) == 3:
             channel_description = channel_description.unsqueeze(1)
