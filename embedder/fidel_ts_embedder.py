@@ -787,22 +787,28 @@ class FidelTSEmbeddingLoader:
         
         # Collect channel_info texts
         # Handles both flat (channel_id -> string) and nested (channel_id -> {measurement_type: string}) structures
+        # FIXED: Create separate embeddings for each variable in nested structures
         if 'channel_info' in static_text:
             channel_info_text = static_text['channel_info']
             if isinstance(channel_info_text, dict):
                 for channel_id, channel_text in channel_info_text.items():
-                    # Handle nested dict structure (e.g., Bear_room has {measurement_type: description})
-                    # Flatten by concatenating all values with separator
                     if isinstance(channel_text, dict):
-                        # Concatenate all measurement descriptions into a single string
-                        flattened_text = ' '.join(str(v) for v in channel_text.values() if v)
-                        if flattened_text.strip():
-                            static_texts_list.append(flattened_text)
-                            key = f'channel_info_{channel_id}'
-                            text_keys_list.append(key)
-                            keys_to_type[key] = 'channel_info'
+                        # ====================================================================
+                        # FIXED: Create separate embedding for each variable
+                        # ====================================================================
+                        # Nested structure: channel_id -> {var_name: description}
+                        # Generate per-variable embeddings and store as nested dict
+                        for var_name, var_description in channel_text.items():
+                            if isinstance(var_description, str) and var_description.strip():
+                                static_texts_list.append(var_description)
+                                # Key format: 'channel_info_{entity_id}_{var_name}'
+                                # Use '__SEP__' as separator to handle variable names with underscores
+                                key = f'channel_info__{channel_id}__SEP__{var_name}'
+                                text_keys_list.append(key)
+                                keys_to_type[key] = 'channel_info_nested'
                     elif isinstance(channel_text, str) and channel_text.strip():
-                        # Simple string case (e.g., NYC)
+                        # Flat structure: channel_id -> description (Germany, NYC)
+                        # Keep existing behavior for single-variable datasets
                         static_texts_list.append(channel_text)
                         key = f'channel_info_{channel_id}'
                         text_keys_list.append(key)
@@ -820,21 +826,55 @@ class FidelTSEmbeddingLoader:
         # Map embeddings back to the correct structure
         static_embeddings = {}
         
+        # Track variable ordering for each entity (needed for proper data loading)
+        variable_order = {}
+
         for i, key in enumerate(text_keys_list):
             emb = embeddings_array[i]
             text_type = keys_to_type[key]
-            
+
             if text_type == 'general_info':
                 static_embeddings['general_info'] = emb
             elif text_type == 'downtime_prompt':
                 static_embeddings['downtime_prompt'] = emb
             elif text_type == 'channel_info':
-                # Extract channel_id from key
+                # Flat structure (single variable per entity)
                 channel_id = key.replace('channel_info_', '')
                 if 'channel_info' not in static_embeddings:
                     static_embeddings['channel_info'] = {}
                 static_embeddings['channel_info'][channel_id] = emb
-        
+            elif text_type == 'channel_info_nested':
+                # ====================================================================
+                # FIXED: Nested structure (multiple variables per entity)
+                # ====================================================================
+                # Parse key: 'channel_info__{entity_id}__SEP__{var_name}'
+                key_parts = key.replace('channel_info__', '', 1).split('__SEP__')
+                if len(key_parts) != 2:
+                    print(f'[ warning ] Malformed nested channel_info key: {key}, skipping')
+                    continue
+
+                entity_id, var_name = key_parts
+
+                if 'channel_info' not in static_embeddings:
+                    static_embeddings['channel_info'] = {}
+                if entity_id not in static_embeddings['channel_info']:
+                    # Initialize as dict to hold per-variable embeddings
+                    static_embeddings['channel_info'][entity_id] = {}
+
+                static_embeddings['channel_info'][entity_id][var_name] = emb
+
+                # Track variable order for this entity
+                if entity_id not in variable_order:
+                    variable_order[entity_id] = []
+                variable_order[entity_id].append(var_name)
+
+        # Store variable ordering metadata (critical for proper data loading)
+        if variable_order:
+            static_embeddings['_variable_order'] = variable_order
+            print(f'[ info ] Computed per-variable embeddings for entities: {list(variable_order.keys())}')
+            for entity_id, vars_list in variable_order.items():
+                print(f'[ info ]   {entity_id}: {len(vars_list)} variables')
+
         print(f'[ info ] Computed static embeddings with aggregation method: {self.aggregation_method}')
         return static_embeddings
     

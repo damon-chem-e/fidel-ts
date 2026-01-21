@@ -656,20 +656,27 @@ var_names = df.columns.tolist()
 **Goal**: Enable per-variable embedding generation.
 
 **Tasks**:
-1. [ ] Implement embedding generation fix (Phase 1)
-2. [ ] Implement data loader fix (Phase 2)
-3. [ ] Add variable ordering metadata to embedding cache
+1. [x] Implement embedding generation fix (Phase 1) - COMPLETED
+2. [x] Implement data loader fix (Phase 2) - COMPLETED
+3. [x] Add variable ordering metadata to embedding cache - COMPLETED
 4. [ ] Write unit tests:
    - Test nested channel_info embedding
    - Test variable ordering consistency
    - Test backward compatibility with flat structure
-5. [ ] Update documentation
+5. [x] Update documentation - COMPLETED
 
 **Deliverables**:
-- Fixed `fidel_ts_embedder.py`
-- Fixed `data_loader.py`
-- Test suite
-- Updated documentation
+- ✅ Fixed `fidel_ts_embedder.py` (lines 788-879)
+- ✅ Fixed `data_loader.py` (lines 799-842)
+- ✅ Variable ordering metadata support
+- ⏳ Test suite (pending)
+- ✅ Updated documentation
+
+**Implementation Notes**:
+- **Key separator**: Uses `__SEP__` to handle variable names with underscores
+- **Variable ordering**: Preserved from static_info.json iteration order, stored in `_variable_order` metadata
+- **Backward compatibility**: Automatically detects old (np.ndarray) vs new (dict) format
+- **Fallback**: If metadata missing, sorts variables alphabetically with warning
 
 ### Stage 3: Re-Embedding & Validation (Week 4)
 
@@ -942,7 +949,167 @@ NEW BEHAVIOR (FIXED):
 
 ---
 
-**Document Version**: 1.0
-**Date**: 2026-01-20
+## Implementation Status & Usage Guide
+
+### What's Been Implemented
+
+#### Stage 1: Broadcasting Workaround ✅ (2026-01-21)
+
+**Files Modified**:
+- `models/TGTSF.py` (lines 383-413): Automatic broadcasting with warning
+- `models/lynx_film.py` (lines 186-204): Informational warning
+- `models/lynx_film_raw.py` (lines 287-305): Informational warning
+- `models/lynx_film_enhanced.py` (lines 531-549): Informational warning
+
+**Status**: READY TO USE
+- TGTSF now works on multi-variable datasets without crashing
+- All LYNX/FILM models inform users about suboptimal embeddings
+- No re-embedding required
+
+#### Stage 2: Proper Fix ✅ (2026-01-21)
+
+**Files Modified**:
+- `embedder/fidel_ts_embedder.py` (lines 788-879): Per-variable embedding generation
+- `data_provider/data_loader.py` (lines 799-842): Nested channel_info handling
+
+**Status**: READY FOR RE-EMBEDDING
+- Code is production-ready
+- Requires regenerating embeddings to take effect
+- Backward compatible with old embeddings
+
+### How to Use
+
+#### Option 1: Use Existing Embeddings (Immediate)
+
+No changes needed! The Stage 1 workaround is already active:
+
+```bash
+# On remote (RunPod)
+cd /workspace/fidel-ts
+source .venv/bin/activate
+
+# Run TGTSF on Jena - will work now with broadcasting
+python -m cli.suite run configs/experiment_suites/tgtsf/jena_atmospheric.yaml
+```
+
+**Expected output**:
+```
+[ WARNING ] TGTSF: channel_description has C=1 but time series has C=21 variables.
+Broadcasting single channel description to all variables...
+```
+
+**Trade-off**: All variables use same (concatenated) description - suboptimal but functional.
+
+#### Option 2: Regenerate Embeddings (Optimal)
+
+For best performance with per-variable semantic descriptions:
+
+**Step 1: Regenerate embeddings** (requires GPU)
+```bash
+# On remote GPU node
+cd /workspace/fidel-ts
+source .venv/bin/activate
+
+# Regenerate embeddings for Jena
+python -c "
+from embedder.fidel_ts_embedder import FidelTSEmbeddingLoader
+from pathlib import Path
+import yaml
+
+# Load data config
+with open('data_configs/Jena_Atmospheric_Physics/fullJAP_hetero_TGTSF_H.yaml') as f:
+    data_config = yaml.safe_load(f)
+
+# Create embedder
+loader = FidelTSEmbeddingLoader(
+    dataset_name='Jena_Atmospheric_Physics',
+    hetero_info=data_config['hetero_info'],
+    base_data_path='./data',
+    embed_model_name='bert-base-uncased',
+    aggregation_method='cls',
+    device='cuda',
+    force_reembed=True  # Force regeneration
+)
+
+# Generate embeddings
+dynamic_emb, static_emb = loader.load_embeddings()
+print('✅ Embeddings regenerated successfully!')
+print(f'Static channel_info structure: {type(static_emb[\"channel_info\"][\"weather_large\"])}')
+"
+```
+
+**Expected output**:
+```
+[ info ] Computing embeddings for Jena_Atmospheric_Physics from text files...
+[ info ] Computed per-variable embeddings for entities: ['weather_large']
+[ info ]   weather_large: 21 variables
+[ info ] Saved embeddings to cache: ./data/Jena_Atmospheric_Physics/weather/embeddings_cache/...
+✅ Embeddings regenerated successfully!
+Static channel_info structure: <class 'dict'>
+```
+
+**Step 2: Regenerate tensor cache**
+```bash
+python -m cli.tensor_cache generate configs/experiment_suites/tgtsf/jena_atmospheric.yaml
+```
+
+**Step 3: Train with new embeddings**
+```bash
+python -m cli.suite run configs/experiment_suites/tgtsf/jena_atmospheric.yaml
+```
+
+**Expected output**: NO warning (embeddings have C=21, no broadcasting needed)
+
+**Benefits**:
+- Each variable gets its own semantic description
+- Better model performance (variables can attend to relevant text)
+- Cleaner architecture (no workarounds)
+
+### Verification Checklist
+
+#### Stage 1 Verification (Workaround Active)
+
+- [ ] TGTSF trains on Jena without crashing
+- [ ] Warning message appears once per epoch
+- [ ] LYNX/FILM models show info message
+- [ ] Training completes successfully
+- [ ] Loss curves are reasonable
+
+#### Stage 2 Verification (After Re-embedding)
+
+- [ ] Embeddings regenerated successfully
+- [ ] `static_embeddings['channel_info'][entity_id]` is a dict (not np.ndarray)
+- [ ] Dict has 21 keys for Jena (variable names)
+- [ ] `_variable_order` metadata present in static_embeddings
+- [ ] Tensor cache regenerated
+- [ ] TGTSF trains WITHOUT warning message
+- [ ] Model performance improves vs Stage 1 baseline
+
+### Troubleshooting
+
+**Issue**: TGTSF still crashes after Stage 1
+- Check you pulled latest code with broadcasting fix
+- Verify warning message appears (if not, fix not active)
+- Check `channel_description.shape` in debugger
+
+**Issue**: Re-embedding fails with "No GPU available"
+- Must run on GPU node for embedding computation
+- Tensor cache generation can use `--cpu-only` AFTER embeddings exist
+
+**Issue**: Variable order mismatch warning
+- Check parquet file column order matches static_info.json order
+- Manually specify order in data config if needed
+- Safe to ignore if alphabetical order matches parquet
+
+**Issue**: Old embeddings not loading after Stage 2
+- Stage 2 is backward compatible - old embeddings still work
+- Old embeddings trigger Stage 1 broadcasting (expected)
+- To use new format, must regenerate embeddings
+
+---
+
+**Document Version**: 2.0 (Implementation Complete)
+**Date Created**: 2026-01-20
+**Date Updated**: 2026-01-21
 **Author**: Claude Code (claude-sonnet-4-5)
-**Status**: Ready for Implementation
+**Status**: ✅ Stages 1 & 2 Implemented - Ready for Testing

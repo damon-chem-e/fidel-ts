@@ -795,13 +795,51 @@ class Heterogeneous_Dataset(Dataset):
 
         general_info = self.static_data['general_info']
         channel_info = self.static_data['channel_info'][id]
-        
-        # Normalize channel_info shape to (1, embedding_dim) if it's an embedding
-        # This ensures it works with TGTSF projection which expects 3D/4D inputs [B, 1, D] or [B, C, D]
-        if isinstance(channel_info, np.ndarray):
-            channel_info = self._normalize_embedding_shape(channel_info)
 
-        # channel_info = channel_info.reshape(1, 256) if channel_info.shape == (256,) else channel_info
+        # ============================================================================
+        # FIXED: Handle nested channel_info (per-variable embeddings)
+        # ============================================================================
+        # After embedding generation fix, channel_info can be:
+        # 1. Dict (nested): {var_name: embedding} for multi-variable datasets
+        # 2. np.ndarray (flat): single embedding for single-variable datasets
+        if isinstance(channel_info, dict):
+            # Nested structure: per-variable embeddings
+            # Stack into (nvars, embed_dim) array
+            # CRITICAL: Variable order must match parquet file column order!
+
+            # Get variable ordering from metadata if available
+            variable_order_meta = self.static_data.get('_variable_order', {})
+            if id in variable_order_meta:
+                # Use metadata order (preserved from static_info.json iteration order)
+                var_names = variable_order_meta[id]
+            else:
+                # Fallback: sort alphabetically (less reliable but deterministic)
+                var_names = sorted(channel_info.keys())
+                print(f'[ warning ] No variable ordering metadata found for {id}, '
+                      f'using alphabetical sort. This may cause misalignment if parquet '
+                      f'columns are not alphabetically ordered.')
+
+            # Stack embeddings in order
+            try:
+                channel_info = np.stack([channel_info[var_name] for var_name in var_names])
+                # Result shape: (nvars, embed_dim)
+                print(f'[ info ] Loaded {len(var_names)} per-variable embeddings for {id}')
+            except KeyError as e:
+                raise ValueError(
+                    f"Variable {e} in ordering metadata not found in channel_info for {id}. "
+                    f"This indicates a mismatch between metadata and embeddings."
+                )
+
+        elif isinstance(channel_info, np.ndarray):
+            # Flat structure: single embedding (single-variable datasets like Germany, NYC)
+            # Normalize shape to (1, embedding_dim) for consistency
+            channel_info = self._normalize_embedding_shape(channel_info)
+        else:
+            raise TypeError(
+                f"Unexpected channel_info type for {id}: {type(channel_info)}. "
+                f"Expected dict (nested per-variable) or np.ndarray (flat single-variable)."
+            )
+        # ============================================================================
         
         downtime_prompt = self.static_data['downtime_prompt']
         # Convert downtime ranges to IntervalIndex using from_arrays
