@@ -221,7 +221,10 @@ CACHE_RELEVANT_KEYS = [
     'hetero_type',                # Type of heterogeneous data
     'data_name',                  # Dataset identifier
     'timemmd_text_output',        # 'text' vs 'embedding' changes hetero payload + shapes
-    'missing_value_strategy'      # How missing values are handled
+    'missing_value_strategy',     # How missing values are handled
+    'embedding_version',          # Embedding generation version (v1.0 buggy, v2.0 fixed)
+    'embedding_model',            # Embedding model (bert-base-uncased, roberta-base, etc.)
+    'embedding_aggregation',      # Embedding aggregation method (cls, average, none)
 ]
 
 

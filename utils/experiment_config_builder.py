@@ -379,6 +379,21 @@ def build_cache_config(args: dotdict) -> dict:
     if hasattr(args, 'data_config'):
         timemmd_text_output = args.data_config.get('timemmd_text_output')
 
+    # Get embedding configuration - critical for cache validity!
+    # If embeddings change (different version, model, or aggregation), cache must be regenerated
+    embedding_version = None
+    embedding_model = None
+    embedding_aggregation = None
+    if hasattr(args, 'data_config') and args.data_config.get('hetero_info'):
+        hetero_info = args.data_config.hetero_info
+        if hetero_info.get('embedding_config'):
+            emb_cfg = hetero_info.embedding_config
+            embedding_model = emb_cfg.get('model_name', 'bert-base-uncased')
+            embedding_aggregation = emb_cfg.get('aggregation_method', 'cls')
+            # Version defaults to '2.0' for new embeddings (will be set explicitly by embedder)
+            # This ensures tensor caches built with old embeddings are invalidated
+            embedding_version = '2.0'  # Current embedding implementation version
+
     return {
         'input_len': args.input_len,
         'output_len': args.output_len,
@@ -391,4 +406,7 @@ def build_cache_config(args: dotdict) -> dict:
         'timemmd_text_output': timemmd_text_output,  # Include in hash!
         'missing_value_strategy': args.data_config.get('missing_value_strategy', 'none') if args.data_config else 'none',
         'split_info': str(args.data_config.get('split_info', '')) if args.data_config else '',
+        'embedding_version': embedding_version,  # Invalidate cache when embedding version changes
+        'embedding_model': embedding_model,  # Invalidate cache when embedding model changes
+        'embedding_aggregation': embedding_aggregation,  # Invalidate cache when aggregation changes
     }
