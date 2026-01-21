@@ -1,0 +1,57 @@
+# Experiment Suite: ZhangHanBest (DLinear) on Germany_Renewable_Power_Grid
+# Description: Train ZhangHanBest with DLinear encoder on Germany_Renewable_Power_Grid dataset
+# Notes:
+# - Mirrors configs/experiment_suites/zhanghanbest-patchtst/germany_renewable.yaml
+# - Only change vs PatchTST suite: unimodal_model_type="DLinear"
+
+suite:
+  name: "zhanghanbest_dlinear_germany_renewable"
+  description: "ZhangHanBest (DLinear encoder) on Germany_Renewable_Power_Grid with 15-day context, 1-week prediction"
+  tags: ["zhanghanbest", "dlinear", "multimodal", "pytorch", "fidel-ts", "germany_renewable"]
+  
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/zhanghanbest_dlinear/germany_renewable"
+    
+  experiments:
+    - name: "zhanghanbest_dlinear_germany_renewable"
+      description: "ZhangHanBest with DLinear encoder on Germany_Renewable_Power_Grid (15-day context, 1-week prediction)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "ZhangHanBest"
+          config_path: "model_configs/general/ZhangHanBest.yaml"
+        model_config_overrides:
+          unimodal_model_type: "DLinear"
+          seq_len: 360
+          pred_len: 168
+          d_model: 512
+          revin: true
+          input_text_dim: 768
+        data:
+          name: "Germany_Renewable_Power_Grid"
+          config_path: "data_configs/Germany_Renewable_Power_Grid/fullGRPG_hetero_TGTSF_H.yaml"
+        training:
+          text_embedding_stride: "full"
+          input_len: 360
+          output_len: 168
+          batch_size: 256
+          learning_rate: 0.0001           # Time series model LR
+          projector_learning_rate: 0.01   # Residual projection LR (100x higher per Zhang et al.)
+          lradj: constant
+          patience: 5
+          epochs: 50
+          track_per_sample: false
+          evaluate_test_during_training: false
+          truncate_train_for_purge: true
+          torch_compile: true
+          compile_mode: "reduce-overhead"
+          use_tensor_cache: true
+        wandb:
+          tags: ["zhanghanbest", "dlinear", "germany_renewable"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/zhanghanbest_dlinear/germany_renewable"
+

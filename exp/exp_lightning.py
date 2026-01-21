@@ -301,8 +301,33 @@ class TimeSeriesLightningModel(pl.LightningModule):
 
 
     def configure_optimizers(self):
-        """Configure optimizers and LR schedulers."""
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.args.learning_rate)
+        """
+        Configure optimizers and LR schedulers.
+        
+        Supports differential learning rates for projection layers (e.g., ZhangHanBest):
+        - If projector_learning_rate is set, projection layers get a higher LR
+        - Otherwise, all parameters use the same learning_rate (backward compatible)
+        
+        Per Zhang et al. (2025), the projector should train at 100x higher LR (0.01)
+        than the time series model (0.0001) during joint training.
+        """
+        base_lr = self.args.learning_rate
+        projector_lr = getattr(self.args, 'projector_learning_rate', None)
+        
+        # Check if differential learning rates should be used
+        # Only apply if projector_learning_rate is explicitly set
+        if projector_lr is not None and hasattr(self.model, 'residual_proj'):
+            # Build parameter groups with different learning rates
+            param_groups = self._build_differential_param_groups(base_lr, projector_lr)
+            optimizer = torch.optim.Adam(param_groups)
+            
+            if self.exp_manager:
+                self.exp_manager.logger.info(
+                    f"Using differential learning rates: base_lr={base_lr}, projector_lr={projector_lr}"
+                )
+        else:
+            # Default: single learning rate for all parameters (backward compatible)
+            optimizer = torch.optim.Adam(self.parameters(), lr=base_lr)
         
         # Custom learning rate adjustment
         lr_scheduler = {
@@ -316,6 +341,62 @@ class TimeSeriesLightningModel(pl.LightningModule):
         }
         
         return [optimizer], [lr_scheduler]
+    
+    def _build_differential_param_groups(self, base_lr: float, projector_lr: float):
+        """
+        Build parameter groups with different learning rates for differential training.
+        
+        Separates model parameters into:
+        1. Projector parameters (residual_proj, prediction_head) - use projector_lr
+        2. Base model parameters (ts_encoder, etc.) - use base_lr
+        
+        Args:
+            base_lr: Learning rate for base model (time series encoder)
+            projector_lr: Learning rate for projection layers
+            
+        Returns:
+            List of parameter group dicts for optimizer
+        """
+        # Identify projection-related modules (train at higher LR)
+        projector_module_names = {'residual_proj', 'prediction_head', 'ts_proj'}
+        
+        # Collect parameters by group
+        projector_params = []
+        base_params = []
+        
+        # Get the underlying model (handle torch.compile wrapper)
+        model = self.model._orig_mod if hasattr(self.model, '_orig_mod') else self.model
+        
+        for name, param in model.named_parameters():
+            if not param.requires_grad:
+                continue
+            
+            # Check if this parameter belongs to a projector module
+            is_projector = any(mod_name in name for mod_name in projector_module_names)
+            
+            if is_projector:
+                projector_params.append(param)
+            else:
+                base_params.append(param)
+        
+        # Build parameter groups
+        param_groups = []
+        
+        if base_params:
+            param_groups.append({
+                'params': base_params,
+                'lr': base_lr,
+                'name': 'base_model'
+            })
+        
+        if projector_params:
+            param_groups.append({
+                'params': projector_params,
+                'lr': projector_lr,
+                'name': 'projector'
+            })
+        
+        return param_groups
 
 
 def train_lightning_model(args, exp_manager):

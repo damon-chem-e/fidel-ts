@@ -316,6 +316,9 @@ def build_experiment_args(
         args.train_epochs = training.get('epochs', 20)  # Pydantic default is 20
         args.patience = training.get('patience', 3)
         args.learning_rate = training.get('learning_rate', 5e-4)  # Pydantic default is 5e-4
+        # Differential learning rate for projection layers (e.g., ZhangHanBest residual_proj)
+        # If None, uses the same learning_rate for all parameters (backward compatible)
+        args.projector_learning_rate = training.get('projector_learning_rate', None)
         args.loss = training.get('loss', 'mse')
         args.lradj = training.get('lradj', 'type3')  # Pydantic default is 'type3'
         args.track_per_sample = training.get('track_per_sample', False)

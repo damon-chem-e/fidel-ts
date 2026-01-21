@@ -14,52 +14,67 @@ class ResidualProjection(nn.Module):
     """
     Residual block to project text representation to time series representation space.
     
-    Architecture (per paper):
-    - Linear projection: text_dim -> ts_rep_dim
-    - Residual connection (always used, with projection if dims differ)
-    - Optional: LayerNorm, activation, dropout
+    Architecture (per Zhang et al. 2025):
+    - Main path: text_dim -> hidden_dim -> ts_rep_dim (two-layer MLP)
+    - Residual path: text_dim -> ts_rep_dim (single linear, if dims differ)
+    - Output: main_path + residual_path
+    - Optional: LayerNorm, dropout after residual addition
     
-    Note: Residual connection always used (as per paper recommendation).
+    Default hidden_dim=2048 matches paper: 768 -> 2048 -> 512 + residual 768 -> 512.
     """
     
-    def __init__(self, text_dim, ts_rep_dim, 
+    def __init__(self, text_dim, ts_rep_dim, hidden_dim=2048,
                  use_layer_norm=True, activation='gelu', dropout=0.1):
         """
         Initialize residual projection block.
         
         Args:
-            text_dim: Dimension of input text embeddings
-            ts_rep_dim: Dimension of time series representation space
-            use_layer_norm: Whether to use LayerNorm
-            activation: Activation function ('gelu', 'relu', or None)
-            dropout: Dropout rate
+            text_dim: Dimension of input text embeddings (e.g., 768 for BERT)
+            ts_rep_dim: Dimension of time series representation space (e.g., 512)
+            hidden_dim: Hidden layer dimension in main MLP path (default 2048 per paper)
+            use_layer_norm: Whether to use LayerNorm after residual addition
+            activation: Activation function for hidden layer ('gelu', 'relu', or None)
+            dropout: Dropout rate after residual addition
         """
         super().__init__()
-        self.text_dim = text_dim
-        self.ts_rep_dim = ts_rep_dim
         
-        # Main projection
-        self.projection = nn.Linear(text_dim, ts_rep_dim)
+        # Validate and convert dimensions to integers (handle cases where configs might pass tuples/other types)
+        self.text_dim = int(text_dim) if text_dim is not None else 768
+        self.ts_rep_dim = int(ts_rep_dim) if ts_rep_dim is not None else 512
+        self.hidden_dim = int(hidden_dim) if hidden_dim is not None else 2048
         
-        # Residual projection (if dims differ, need to project residual too)
-        if text_dim != ts_rep_dim:
-            self.residual_proj = nn.Linear(text_dim, ts_rep_dim)
+        # Validate dimensions are positive integers
+        if self.text_dim <= 0 or self.ts_rep_dim <= 0 or self.hidden_dim <= 0:
+            raise ValueError(
+                f"ResidualProjection requires positive integer dimensions. "
+                f"Got text_dim={text_dim} -> {self.text_dim}, "
+                f"ts_rep_dim={ts_rep_dim} -> {self.ts_rep_dim}, "
+                f"hidden_dim={hidden_dim} -> {self.hidden_dim}"
+            )
+        
+        # Build activation for hidden layer
+        if activation == 'gelu':
+            act_fn = nn.GELU()
+        elif activation == 'relu':
+            act_fn = nn.ReLU()
+        else:
+            act_fn = nn.Identity()
+        
+        # Main projection path: text_dim -> hidden_dim -> ts_rep_dim (two-layer MLP)
+        self.main_proj = nn.Sequential(
+            nn.Linear(self.text_dim, self.hidden_dim),   # 768 -> 2048
+            act_fn,                                      # GELU activation
+            nn.Linear(self.hidden_dim, self.ts_rep_dim)  # 2048 -> 512
+        )
+        
+        # Residual projection: text_dim -> ts_rep_dim (single linear if dims differ)
+        if self.text_dim != self.ts_rep_dim:
+            self.residual_proj = nn.Linear(self.text_dim, self.ts_rep_dim)  # 768 -> 512
         else:
             self.residual_proj = None
         
-        # Optional components
-        if use_layer_norm:
-            self.layer_norm = nn.LayerNorm(ts_rep_dim)
-        else:
-            self.layer_norm = None
-            
-        if activation == 'gelu':
-            self.activation = nn.GELU()
-        elif activation == 'relu':
-            self.activation = nn.ReLU()
-        else:
-            self.activation = None
-            
+        # Optional components after residual addition
+        self.layer_norm = nn.LayerNorm(ts_rep_dim) if use_layer_norm else None
         self.dropout = nn.Dropout(dropout) if dropout > 0 else None
     
     def forward(self, text_repr):
@@ -72,23 +87,21 @@ class ResidualProjection(nn.Module):
         Returns:
             projected_repr: [B, ts_rep_dim] - projected to TS representation space
         """
-        # Project input
-        out = self.projection(text_repr)  # [B, ts_rep_dim]
+        # Main path: text_dim -> hidden_dim -> ts_rep_dim
+        out = self.main_proj(text_repr)  # [B, ts_rep_dim]
         
-        # Residual connection
+        # Residual path: text_dim -> ts_rep_dim
         if self.residual_proj is not None:
             residual = self.residual_proj(text_repr)  # [B, ts_rep_dim]
         else:
             residual = text_repr  # [B, text_dim] = [B, ts_rep_dim] (same dim)
         
-        out = out + residual  # Residual connection (always used)
+        # Add residual connection
+        out = out + residual
         
-        # Optional normalization, activation, dropout
+        # Optional normalization and dropout after residual
         if self.layer_norm is not None:
             out = self.layer_norm(out)
-        
-        if self.activation is not None:
-            out = self.activation(out)
         
         if self.dropout is not None:
             out = self.dropout(out)

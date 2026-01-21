@@ -99,6 +99,13 @@ class Model(nn.Module):
             # PatchTST, iTransformer, FEDformer, Informer all use d_model directly
             self.ts_proj = None
         
+        # Validate ts_rep_dim is an integer (handle cases where configs might pass tuples/other types)
+        self.ts_rep_dim = int(self.ts_rep_dim) if self.ts_rep_dim is not None else 512
+        if self.ts_rep_dim <= 0:
+            raise ValueError(
+                f"ZhangHanBest requires a positive integer ts_rep_dim (d_model); got {self.ts_rep_dim!r}"
+            )
+        
         # 2. Text input dimension (from pre-computed embeddings)
         # NOTE: `dotdict.__getattr__` returns None for missing keys, so treat None as unset.
         raw_input_text_dim = getattr(configs, 'input_text_dim', None)
@@ -111,9 +118,19 @@ class Model(nn.Module):
             )
         
         # 3. Residual projection (always uses residual connection)
+        # Architecture per paper: text_dim -> hidden_dim -> ts_rep_dim + residual
+        # Default hidden_dim=2048 for 768 -> 2048 -> 512 projection
+        raw_hidden_dim = getattr(configs, 'residual_proj_hidden_dim', 2048)
+        hidden_dim = int(raw_hidden_dim) if raw_hidden_dim is not None else 2048
+        if hidden_dim <= 0:
+            raise ValueError(
+                f"ZhangHanBest requires a positive integer residual_proj_hidden_dim; got {raw_hidden_dim!r} -> {hidden_dim!r}"
+            )
+        
         self.residual_proj = ResidualProjection(
             text_dim=self.text_dim,
             ts_rep_dim=self.ts_rep_dim,
+            hidden_dim=hidden_dim,
             use_layer_norm=getattr(configs, 'residual_proj_use_layer_norm', True),
             activation=getattr(configs, 'residual_proj_activation', 'gelu'),
             dropout=getattr(configs, 'residual_proj_dropout', 0.1)
