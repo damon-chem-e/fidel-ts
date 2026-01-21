@@ -807,27 +807,60 @@ class Heterogeneous_Dataset(Dataset):
             # Stack into (nvars, embed_dim) array
             # CRITICAL: Variable order must match parquet file column order!
 
-            # Get variable ordering from metadata if available
-            variable_order_meta = self.static_data.get('_variable_order', {})
-            if id in variable_order_meta:
-                # Use metadata order (preserved from static_info.json iteration order)
-                var_names = variable_order_meta[id]
-            else:
-                # Fallback: sort alphabetically (less reliable but deterministic)
-                var_names = sorted(channel_info.keys())
-                print(f'[ warning ] No variable ordering metadata found for {id}, '
-                      f'using alphabetical sort. This may cause misalignment if parquet '
-                      f'columns are not alphabetically ordered.')
+            # Get parquet column names as ground truth for ordering
+            # self.target_columns is set in __read_data__ and contains column names in parquet order
+            if self.target_columns is not None and len(self.target_columns) > 1:
+                # Multi-variable dataset: use parquet columns as ground truth
+                parquet_columns = self.target_columns
+                embedding_variables = set(channel_info.keys())
 
-            # Stack embeddings in order
+                # Check if all parquet columns have embeddings
+                missing_embeddings = set(parquet_columns) - embedding_variables
+                extra_embeddings = embedding_variables - set(parquet_columns)
+
+                if missing_embeddings:
+                    raise ValueError(
+                        f"Parquet columns missing embeddings for entity '{id}': {missing_embeddings}. "
+                        f"Embeddings available: {embedding_variables}"
+                    )
+
+                if extra_embeddings:
+                    print(f'[ warning ] Extra embeddings found for entity \'{id}\' (not in parquet): {extra_embeddings}')
+
+                # Use parquet column order for stacking
+                var_names = parquet_columns
+
+                # Check if metadata order matches parquet order
+                variable_order_meta = self.static_data.get('_variable_order', {})
+                if id in variable_order_meta:
+                    meta_order = variable_order_meta[id]
+                    if meta_order != parquet_columns:
+                        print(f'[ warning ] static_info.json variable order for \'{id}\' does not match '
+                              f'parquet columns. Reordering embeddings to match parquet.\n'
+                              f'  static_info.json order: {meta_order[:3]}...\n'
+                              f'  parquet column order:   {parquet_columns[:3]}...')
+            else:
+                # Single-variable dataset or no target_columns available: fall back to metadata
+                variable_order_meta = self.static_data.get('_variable_order', {})
+                if id in variable_order_meta:
+                    var_names = variable_order_meta[id]
+                else:
+                    # Last resort: alphabetical sort
+                    var_names = sorted(channel_info.keys())
+                    print(f'[ warning ] No variable ordering metadata found for {id}, '
+                          f'using alphabetical sort. This may cause misalignment if parquet '
+                          f'columns are not alphabetically ordered.')
+
+            # Stack embeddings in parquet column order
             try:
                 channel_info = np.stack([channel_info[var_name] for var_name in var_names])
                 # Result shape: (nvars, embed_dim)
-                print(f'[ info ] Loaded {len(var_names)} per-variable embeddings for {id}')
+                print(f'[ info ] Loaded {len(var_names)} per-variable embeddings for {id} '
+                      f'(ordered to match parquet columns)')
             except KeyError as e:
                 raise ValueError(
-                    f"Variable {e} in ordering metadata not found in channel_info for {id}. "
-                    f"This indicates a mismatch between metadata and embeddings."
+                    f"Variable {e} in parquet columns not found in channel_info embeddings for {id}. "
+                    f"Available embeddings: {list(channel_info.keys())}"
                 )
 
         elif isinstance(channel_info, np.ndarray):

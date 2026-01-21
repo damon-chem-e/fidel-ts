@@ -1,0 +1,29 @@
+{
+    "general_info": "This dataset contains time-series data from the California Independent System Operator (CAISO) regarding the state's electricity grid. It includes real-time and forecasted electricity demand, a breakdown of electricity supply by fuel source (both measured in Megawatts, MW), and the associated carbon dioxide emissions from various generation types (measured in metric tons of CO2 per hour, mtCO2/hr). The data is collected at high-frequency intervals, typically every 5 minutes.",
+    "downtime_prompt": "No reading at this time for unknown reason, set 0 as default, ignore.",
+    "channel_info": {
+        "all": {
+            "Biogas CO2": "CO2 emissions from electricity generation using Biogas.",
+            "Biomass CO2": "CO2 emissions from electricity generation using Biomass.",
+            "Coal CO2": "CO2 emissions from electricity generation using Coal.",
+            "Geothermal CO2": "CO2 emissions from electricity generation using Geothermal sources.",
+            "Imports CO2": "CO2 emissions associated with imported electricity.",
+            "Natural Gas CO2": "CO2 emissions from electricity generation using Natural Gas.",
+            "Current demand": "The current, real-time electricity demand on the California grid.",
+            "Day ahead forecast": "The forecasted electricity demand for the next day.",
+            "Hour ahead forecast": "The short-term forecasted electricity demand for the upcoming hour.",
+            "BATTERIES": "The amount of electricity being discharged from battery storage systems to the grid, A negative value indicates charging.",
+            "BIOGAS": "The amount of electricity supplied to the grid from Biogas generation.",
+            "BIOMASS": "The amount of electricity supplied to the grid from Biomass generation.",
+            "COAL": "The amount of electricity supplied to the grid from Coal-fired power plants.",
+            "GEOTHERMAL": "The amount of electricity supplied to the grid from Geothermal sources.",
+            "IMPORTS": "The total amount of electricity being imported into the California grid from neighboring areas.",
+            "LARGE HYDRO": "The amount of electricity supplied to the grid from large-scale hydroelectric power plants (typically > 30 MW).",
+            "NATURAL GAS": "The amount of electricity supplied to the grid from Natural Gas-fired power plants.",
+            "NUCLEAR": "The amount of electricity supplied to the grid from Nuclear power plants.",
+            "SMALL HYDRO": "The amount of electricity supplied to the grid from small-scale hydroelectric power plants (typically < 30 MW).",
+            "SOLAR": "The amount of electricity supplied to the grid from solar power generation (both photovoltaic and thermal).",
+            "WIND": "The amount of electricity supplied to the grid from wind turbines."
+        }
+    }
+}

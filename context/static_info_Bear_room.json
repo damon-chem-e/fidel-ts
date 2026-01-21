@@ -1,0 +1,406 @@
+{
+    "general_info": "This is a dataset collects HVAC relevant data of NAE-01 in the University of California San Diego,consisting of 4 floors and 80 rooms. The dataset contains 3 types of data of each room: Zone temperature, Real power mean, and Real energy into the load interval. The data is collected every 5 minutes.",
+    "downtime_prompt": "The sensor is down for unknown reasons, readings set to 0.",
+    "channel_info": {
+        "104": {
+            "Zone Temperature": "Located on the 1st floor, in the north-west corner. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 1st floor, in the north-west corner. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 1st floor, in the north-west corner. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "105": {
+            "Zone Temperature": "Located on the 1st floor, on the north side. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 1st floor, on the north side. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 1st floor, on the north side. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "122": {
+            "Zone Temperature": "Located on the 1st floor, on the south-west side. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 1st floor, on the south-west side. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 1st floor, on the south-west side. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "121": {
+            "Zone Temperature": "Located on the 1st floor, in the south-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 1st floor, in the south-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 1st floor, in the south-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "120": {
+            "Zone Temperature": "Located on the 1st floor, in the south-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 1st floor, in the south-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 1st floor, in the south-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "107": {
+            "Zone Temperature": "Located on the 1st floor, on the east side. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 1st floor, on the east side. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 1st floor, on the east side. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "108": {
+            "Zone Temperature": "Located on the 1st floor, on the east side. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 1st floor, on the east side. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 1st floor, on the east side. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "110": {
+            "Zone Temperature": "Located on the 1st floor, in the east-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 1st floor, in the east-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 1st floor, in the east-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "114": {
+            "Zone Temperature": "Located on the 1st floor, in the south-east corner. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 1st floor, in the south-east corner. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 1st floor, in the south-east corner. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "208": {
+            "Zone Temperature": "Located on the 2nd floor, in the north-west area. The room is next to the north window. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the north-west area. The room is next to the north window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the north-west area. The room is next to the north window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "290": {
+            "Zone Temperature": "Located on the 2nd floor, in the north-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the north-central area. The room is at the internal of the building. ower cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the north-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "288": {
+            "Zone Temperature": "Located on the 2nd floor, in the north-west area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the north-west area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the north-west area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "213": {
+            "Zone Temperature": "Located on the 2nd floor, in the north-central area. The room is next to the north window. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the north-central area. The room is next to the north window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the north-central area. The room is next to the north window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "281": {
+            "Zone Temperature": "Located on the 2nd floor, in the north-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the north-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the north-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "280": {
+            "Zone Temperature": "Located on the 2nd floor, in the north-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the north-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the north-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "216": {
+            "Zone Temperature": "Located on the 2nd floor, in the north-east corner. The room is next to the north and east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the north-east corner. The room is next to the north and east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the north-east corner. The room is next to the north and east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "217": {
+            "Zone Temperature": "Located on the 2nd floor, on the north-east side. The room is next to the east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, on the north-east side. The room is next to the east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, on the north-east side. The room is next to the east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "268": {
+            "Zone Temperature": "Located on the 2nd floor, in the east-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the east-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the east-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "264": {
+            "Zone Temperature": "Located on the 2nd floor, in the east-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the east-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the east-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "261": {
+            "Zone Temperature": "Located on the 2nd floor, in the east-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the east-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the east-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "221": {
+            "Zone Temperature": "Located on the 2nd floor, on the east side. The room is next to the east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, on the east side. The room is next to the east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, on the east side. The room is next to the east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "223": {
+            "Zone Temperature": "Located on the 2nd floor, on the east side. The room is next to the east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, on the east side. The room is next to the east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, on the east side. The room is next to the east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "227": {
+            "Zone Temperature": "Located on the 2nd floor, in the south-east area. The room is next to the east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the south-east area. The room is next to the east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the south-east area. The room is next to the east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "229": {
+            "Zone Temperature": "Located on the 2nd floor, in the south-east corner. The room is next to the south and east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the south-east corner. The room is next to the south and east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the south-east corner. The room is next to the south and east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "249": {
+            "Zone Temperature": "Located on the 2nd floor, in the south-west area. The room is next to the west window. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the south-west area. The room is next to the west window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the south-west area. The room is next to the west window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "252": {
+            "Zone Temperature": "Located on the 2nd floor, in the south-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the south-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the south-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "254": {
+            "Zone Temperature": "Located on the 2nd floor, in the south-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the south-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the south-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "248": {
+            "Zone Temperature": "Located on the 2nd floor, in the south-west area. The room is next to the south and west window. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the south-west area. The room is next to the south and west window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the south-west area. The room is next to the south and west window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "247": {
+            "Zone Temperature": "Located on the 2nd floor, in the south-west area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the south-west area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the south-west area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "245": {
+            "Zone Temperature": "Located on the 2nd floor, in the south-west area. The room is next to the south window. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the south-west area. The room is next to the south window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the south-west area. The room is next to the south window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "240": {
+            "Zone Temperature": "Located on the 2nd floor, in the south-central area. The room is next to the south window. The temperature of the room.",
+            "Real Power Mean": "Located on the 2nd floor, in the south-central area. The room is next to the south window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 2nd floor, in the south-central area. The room is next to the south window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "304": {
+            "Zone Temperature": "Located on the 3rd floor, in the north-west corner. The room is next to the north and west window. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the north-west corner. The room is next to the north and west window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the north-west corner. The room is next to the north and west window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "302": {
+            "Zone Temperature": "Located on the 3rd floor, in the north-west corner. The room is next to the west window. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the north-west corner. The room is next to the west window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the north-west corner. The room is next to the west window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "308": {
+            "Zone Temperature": "Located on the 3rd floor, in the north-central area. The room is next to the north window. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the north-central area. The room is next to the north window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the north-central area. The room is next to the north window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "387": {
+            "Zone Temperature": "Located on the 3rd floor, in the north-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the north-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the north-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "386": {
+            "Zone Temperature": "Located on the 3rd floor, in the north-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the north-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the north-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "314": {
+            "Zone Temperature": "Located on the 3rd floor, in the north-east area. The room is next to the north window. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the north-east area. The room is next to the north window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the north-east area. The room is next to the north window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "375": {
+            "Zone Temperature": "Located on the 3rd floor, in the north-east area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the north-east area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the north-east area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "317": {
+            "Zone Temperature": "Located on the 3rd floor, in the north-east area. The room is next to the east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the north-east area. The room is next to the east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the north-east area. The room is next to the east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "380": {
+            "Zone Temperature": "Located on the 3rd floor, in the central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "371": {
+            "Zone Temperature": "Located on the 3rd floor, in the east-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the east-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the east-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "368": {
+            "Zone Temperature": "Located on the 3rd floor, in the central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "362": {
+            "Zone Temperature": "Located on the 3rd floor, in the east-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the east-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the east-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "363": {
+            "Zone Temperature": "Located on the 3rd floor, in the east-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the east-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the east-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "361": {
+            "Zone Temperature": "Located on the 3rd floor, in the east-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the east-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the east-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "323": {
+            "Zone Temperature": "Located on the 3rd floor, on the east side. The room is next to the east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, on the east side. The room is next to the east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, on the east side. The room is next to the east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "350": {
+            "Zone Temperature": "Located on the 3rd floor, on the west side. The room is next to the west window. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, on the west side. The room is next to the west window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, on the west side. The room is next to the west window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "348": {
+            "Zone Temperature": "Located on the 3rd floor, on the west side. The room is next to the south and west window. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, on the west side. The room is next to the south and west window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, on the west side. The room is next to the south and west window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "345": {
+            "Zone Temperature": "Located on the 3rd floor, in the south-west area. The room is next to the south window. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the south-west area. The room is next to the south window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the south-west area. The room is next to the south window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "340": {
+            "Zone Temperature": "Located on the 3rd floor, in the south-west area. The room is next to the south window. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the south-west area. The room is next to the south window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the south-west area. The room is next to the south window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "336": {
+            "Zone Temperature": "Located on the 3rd floor, in the south-east area. The room is next to the south window. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the south-east area. The room is next to the south window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the south-east area. The room is next to the south window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "330": {
+            "Zone Temperature": "Located on the 3rd floor, in the south-east area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the south-east area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the south-east area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "328": {
+            "Zone Temperature": "Located on the 3rd floor, in the south-east area. The room is next to the east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the south-east area. The room is next to the east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the south-east area. The room is next to the east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "329": {
+            "Zone Temperature": "Located on the 3rd floor, in the south-east area. The room is next to the south and east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, in the south-east area. The room is next to the south and east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, in the south-east area. The room is next to the south and east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "403": {
+            "Zone Temperature": "Located on the 4th floor, in the north-west area. The room is next to the north and west window. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the north-west area. The room is next to the north and west window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the north-west area. The room is next to the north and west window. Measures the supply air flow rate in cubic feet per minute."
+        },
+            "405": {
+            "Zone Temperature": "Located on the 4th floor, in the north-west area. The room is next to the north window. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the north-west area. The room is next to the north window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the north-west area. The room is next to the north window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "402": {
+            "Zone Temperature": "Located on the 4th floor, in the north-west area. The room is next to the east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the north-west area. he room is next to the east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the north-west area. he room is next to the east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "409": {
+            "Zone Temperature": "Located on the 4th floor, in the north-central area. The room is next to the north window. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the north-central area. The room is next to the north window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the north-central area. The room is next to the north window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "484": {
+            "Zone Temperature": "Located on the 4th floor, in the north-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the north-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the north-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "413": {
+            "Zone Temperature": "Located on the 4th floor, in the north-east area. The room is next to the north window. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the north-east area. The room is next to the north window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the north-east area. The room is next to the north window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "415": {
+            "Zone Temperature": "Located on the 4th floor, in the north-east area. The room is next to the north window. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the north-east area. The room is next to the north window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the north-east area. The room is next to the north window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "417": {
+            "Zone Temperature": "Located on the 4th floor, in the north-east corner area. The room is next to the east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the north-east corner area. The room is next to the east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the north-east corner area. The room is next to the east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "470": {
+            "Zone Temperature": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "469": {
+            "Zone Temperature": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "420": {
+            "Zone Temperature": "Located on the 4th floor, on the east side. The room is next to the east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, on the east side. The room is next to the east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, on the east side. The room is next to the east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "423": {
+            "Zone Temperature": "Located on the 4th floor, on the east side. The room is next to the east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, on the east side. The room is next to the east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, on the east side. The room is next to the east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "462": {
+            "Zone Temperature": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "463": {
+            "Zone Temperature": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "461": {
+            "Zone Temperature": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the east-central area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "432": {
+            "Zone Temperature": "Located on the 4th floor, in the south-east area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the south-east area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the south-east area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "436": {
+            "Zone Temperature": "Located on the 4th floor, in the south-east area. The room is next to the south window. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the south-east area. The room is next to the south window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the south-east area. The room is next to the south window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "428": {
+            "Zone Temperature": "Located on the 4th floor, in the south-east corner. The room is next to the east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the south-east corner. The room is next to the east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the south-east corner. The room is next to the east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "429": {
+            "Zone Temperature": "Located on the 4th floor, in the south-east corner. The room is next to the south and east window. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the south-east corner. The room is next to the south and east window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the south-east corner. The room is next to the south and east window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "450": {
+            "Zone Temperature": "Located on the 4th floor, in the south-west area. The room is next to the west window. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the south-west area. The room is next to the west window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the south-west area. The room is next to the west window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "448": {
+            "Zone Temperature": "Located on the 4th floor, in the south-west area. The room is next to the south and west window. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the south-west area. The room is next to the south and west window. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the south-west area. The room is next to the south and west window. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "445": {
+            "Zone Temperature": "Located on the 4th floor, in the south-west area. The room is at the internal of the building. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, in the south-west area. The room is at the internal of the building. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, in the south-west area. The room is at the internal of the building. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "353": {
+            "Zone Temperature": "Located on the 3rd floor, the area is unknown. The temperature of the room.",
+            "Real Power Mean": "Located on the 3rd floor, the area is unknown. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 3rd floor, the area is unknown. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "437": {
+            "Zone Temperature": "Located on the 4th floor, the area is unknown. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, the area is unknown. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, the area is unknown. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "453": {
+            "Zone Temperature": "Located on the 4th floor, the area is unknown. The temperature of the room.",
+            "Real Energy Into the Load Interval": "Located on the 4th floor, the area is unknown. Energy cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, the area is unknown. Measures the supply air flow rate in cubic feet per minute."
+        },
+        "490": {
+            "Zone Temperature": "Located on the 4th floor, the area is unknown. The temperature of the room.",
+            "Real Power Mean": "Located on the 4th floor, the area is unknown. Power cost of the room.",
+            "Actual Supply Flow": "Located on the 4th floor, the area is unknown. Measures the supply air flow rate in cubic feet per minute."
+        }
+    }
+}
