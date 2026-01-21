@@ -15,12 +15,12 @@ from utils.missing_value_handler import handle_missing_values
 from embedder import FidelTSEmbeddingLoader, FidelTSPathResolver
 from typing import Optional, Dict, Any
 from utils.column_normalization import (
+    is_jena_dataset_path,
     normalize_jena_column_name,
-    build_normalized_embedding_map,
 )
 from utils.timefeatures import time_features
 from rich.console import Console
-from data_provider.profiling import DataloaderProfiler, timed_operation
+from data_provider.profiling import timed_operation
 from data_provider.dataset_direct_access import DirectAccessMixin
 
 warnings.filterwarnings('ignore')
@@ -748,6 +748,43 @@ class Heterogeneous_Dataset(Dataset):
         df.sort_index(inplace=True)
         return df
 
+    def _normalize_jena_alignment(
+        self,
+        channel_info: Dict[str, Any],
+        parquet_columns: list,
+        entity_id: str,
+    ) -> tuple[Dict[str, Any], list]:
+        """
+        Normalize Jena column names and channel_info keys for stable alignment.
+
+        This is Jena-specific and strips unit suffixes (everything from '(' onward)
+        for both parquet columns and embedding keys. It also detects duplicates
+        introduced by normalization to prevent silent misalignment.
+
+        Args:
+            channel_info: Mapping from raw column names to embeddings
+            parquet_columns: Column names from the parquet schema
+            entity_id: Entity identifier for error messages
+
+        Returns:
+            Tuple of (normalized_channel_info, normalized_parquet_columns)
+        """
+        # Normalize parquet columns by removing unit suffixes.
+        normalized_parquet = [normalize_jena_column_name(col) for col in parquet_columns]
+        # Normalize embedding keys and detect collisions.
+        normalized_channel_info: Dict[str, Any] = {}
+        duplicate_names = set()
+        for key, value in channel_info.items():
+            normalized_key = normalize_jena_column_name(key)
+            if normalized_key in normalized_channel_info:
+                duplicate_names.add(normalized_key)
+            normalized_channel_info[normalized_key] = value
+        if duplicate_names:
+            raise ValueError(
+                f"Duplicate normalized column names for entity '{entity_id}': {sorted(duplicate_names)}."
+            )
+        return normalized_channel_info, normalized_parquet
+
     def init_hetero_data(self, id, target_columns=None):
         """
         Factory method that creates a callable hetero_data_getter function for a specific entity ID.
@@ -823,44 +860,43 @@ class Heterogeneous_Dataset(Dataset):
             if target_columns is not None and len(target_columns) > 1:
                 # Multi-variable dataset: use parquet columns as ground truth
                 parquet_columns = target_columns
-                normalized_parquet = [normalize_jena_column_name(col) for col in parquet_columns]
-                normalized_embedding_map, duplicate_normalized = build_normalized_embedding_map(
-                    channel_info.keys()
-                )
+                is_jena = is_jena_dataset_path(self.root_path)
+                if is_jena:
+                    channel_info, parquet_columns_to_match = self._normalize_jena_alignment(
+                        channel_info=channel_info,
+                        parquet_columns=parquet_columns,
+                        entity_id=id,
+                    )
+                else:
+                    parquet_columns_to_match = parquet_columns
 
                 # Check if all parquet columns have embeddings
-                if duplicate_normalized:
-                    raise ValueError(
-                        f"Duplicate embeddings after normalization for entity '{id}': {duplicate_normalized}."
-                    )
-
-                missing_embeddings = set(normalized_parquet) - set(normalized_embedding_map)
-                extra_embeddings = set(normalized_embedding_map) - set(normalized_parquet)
+                missing_embeddings = set(parquet_columns_to_match) - set(channel_info.keys())
+                extra_embeddings = set(channel_info.keys()) - set(parquet_columns_to_match)
 
                 if missing_embeddings:
-                    missing_original = [
-                        parquet_columns[i]
-                        for i, name in enumerate(normalized_parquet)
-                        if name in missing_embeddings
-                    ]
+                    missing_original = sorted(missing_embeddings)
                     raise ValueError(
                         f"Parquet columns missing embeddings for entity '{id}': {missing_original}. "
                         f"Embeddings available: {set(channel_info.keys())}"
                     )
 
                 if extra_embeddings:
-                    extra_original = {normalized_embedding_map[name] for name in extra_embeddings}
-                    print(f'[ warning ] Extra embeddings found for entity \'{id}\' (not in parquet): {extra_original}')
+                    print(f'[ warning ] Extra embeddings found for entity \'{id}\' (not in parquet): {extra_embeddings}')
 
                 # Use parquet column order for stacking
-                var_names = [normalized_embedding_map[name] for name in normalized_parquet]
+                var_names = parquet_columns_to_match
 
                 # Check if metadata order matches parquet order
                 variable_order_meta = self.static_data.get('_variable_order', {})
                 if id in variable_order_meta:
                     meta_order = variable_order_meta[id]
-                    normalized_meta = [normalize_jena_column_name(name) for name in meta_order]
-                    if normalized_meta != normalized_parquet:
+                    meta_order_to_match = (
+                        [normalize_jena_column_name(name) for name in meta_order]
+                        if is_jena
+                        else meta_order
+                    )
+                    if meta_order_to_match != parquet_columns_to_match:
                         print(f'[ warning ] static_info.json variable order for \'{id}\' does not match '
                               f'parquet columns. Reordering embeddings to match parquet.\n'
                               f'  static_info.json order: {meta_order[:3]}...\n'

@@ -325,7 +325,10 @@ class Data_Provider(object):
             or None if file doesn't exist or can't be read.
         """
         import pandas as pd
-        from utils.column_normalization import normalize_jena_column_name
+        from utils.column_normalization import (
+            is_jena_dataset_path,
+            normalize_jena_column_name,
+        )
 
         data_path = self.formatter.format(i=entity_id)
         full_path = os.path.join(self.dataset_config.root_path, data_path)
@@ -339,8 +342,9 @@ class Data_Provider(object):
             timestamp_col = self.dataset_config.timestamp_col
             columns = [col for col in all_columns if col != timestamp_col]
 
-            # Normalize Jena columns to canonical Unicode form.
-            columns = [normalize_jena_column_name(col) for col in columns]
+            # Normalize Jena columns to base variable names only.
+            if is_jena_dataset_path(self.dataset_config.root_path):
+                columns = [normalize_jena_column_name(col) for col in columns]
 
             return columns
         except Exception as e:
