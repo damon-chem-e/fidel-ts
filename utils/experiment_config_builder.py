@@ -345,6 +345,11 @@ def build_experiment_args(
     # === Environment variables ===
     args.hf_mirror = experiment_config.get('hf_mirror', False)
     args.hf_offline = experiment_config.get('hf_offline', False)
+
+    # === WandB config ===
+    # Pass through wandb settings so training can access batch logging intervals.
+    wandb_config = experiment_config.get('wandb', {})
+    args.wandb = dotdict(wandb_config) if isinstance(wandb_config, dict) else wandb_config
     
     return args
 
