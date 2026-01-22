@@ -392,6 +392,8 @@ class Experiment(Exp_Basic):
             TextColumn("•"),
             TextColumn("loss: {task.fields[loss]:.7f}"),
             TextColumn("•"),
+            TextColumn("val: {task.fields[val_loss_str]}"),
+            TextColumn("•"),
             TextColumn("speed: {task.fields[speed]:.4f}s/iter"),
             TextColumn("•"),
             TextColumn("ETA: {task.fields[eta_formatted]}"),
@@ -404,6 +406,7 @@ class Experiment(Exp_Basic):
             f"Epoch {epoch + 1}/{self.args.train_epochs}",
             total=len(train_loader),
             loss=0.0,
+            val_loss_str="n/a",
             speed=0.0,
             eta=0.0,
             eta_formatted="0.0s"
@@ -493,7 +496,8 @@ class Experiment(Exp_Basic):
         return loss_value, current_batch_size, sample_ids, output, gt, grad_norm
 
     def _update_training_progress(self, progress, task, time_now, iter_count, 
-                                   epoch, train_steps, current_iter, loss_value):
+                                   epoch, train_steps, current_iter, loss_value,
+                                   last_val_loss=None):
         """
         Update progress bar with current training metrics.
         
@@ -522,10 +526,12 @@ class Experiment(Exp_Basic):
         eta_formatted = self._format_eta(left_time)
         
         # Update progress bar with current metrics
+        val_loss_str = f"{last_val_loss:.7f}" if last_val_loss is not None else "n/a"
         progress.update(
             task,
             advance=1,
             loss=loss_value,
+            val_loss_str=val_loss_str,
             speed=speed,
             eta=left_time,
             eta_formatted=eta_formatted
@@ -621,9 +627,7 @@ class Experiment(Exp_Basic):
                             last_val_loss = vali_loss
                             # Set model back to training mode after validation
                             self.model.train()
-                            # Debug: log to console that validation ran
-                            if logger:
-                                logger.info(f"Batch {i}: batch_val_loss = {vali_loss:.7f}")
+                            # Avoid per-batch console logging; rely on progress bar and WandB.
                         
                         # Always log batch_val_loss if validation is enabled (for consistent WandB plotting)
                         # Use last known value, or 1.0 as placeholder until first validation runs
@@ -639,7 +643,8 @@ class Experiment(Exp_Basic):
 
                 # Update progress bar
                 time_now, iter_count = self._update_training_progress(
-                    progress, task, time_now, iter_count, epoch, train_steps, i, loss_value
+                    progress, task, time_now, iter_count, epoch, train_steps, i, loss_value,
+                    last_val_loss=last_val_loss
                 )
         
         # Calculate and log epoch statistics
