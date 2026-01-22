@@ -1,0 +1,58 @@
+# Experiment Suite: lynx_film_raw TTC Medical Sweep
+# Description: Hyperparameter sweep for TTC Medical dataset with architecture and training parameters
+# Usage: Used with wandb sweep for architecture (e_layers, d_model, n_heads) and training (LR, batch_size) parameters
+# NOTE: Defaults align with time_mmd_ttc TTC Medical config; sweep overrides via wandb.
+
+suite:
+  name: "lynx_film_raw_ttc_medical_sweep"
+  description: "Hyperparameter sweep: lynx_film_raw on TTC Medical (architecture + training params)"
+  tags: ["lynx_film_raw", "multimodal", "pytorch", "sweep", "film", "ttc_medical"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/lynx_film_raw_ttc_medical_sweep"
+    
+  # Experiments in this suite
+  experiments:
+    # TTC Medical - hyperparameter sweep with architecture parameters
+    - name: "lynx_film_raw_ttc_medical_sweep"
+      description: "lynx_film_raw on TTC Medical (SWEEP - architecture + training params)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # BERT embedding dimension (projects 768 -> text_dim=256)
+          # e_layers, d_model, n_heads will be overridden by sweep
+          # Default values (middle of sweep ranges):
+          e_layers: 2
+          d_model: 512
+          n_heads: 8
+        data:
+          name: "ttc_medical"
+          config_path: "data_configs/ttc/medical/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+          filter_insufficient_entities: true  # Filter out entities without enough data for 7/7 input/output with 70/10/20 split
+          missing_value_strategy: forward_fill_indicators  # Forward fill missing values and create indicator variables
+        training:
+          input_len: 7        # Context length from Table 4
+          output_len: 7       # Prediction length from Table 4
+          batch_size: 32      # Will be overridden by sweep (default in middle of range)
+          learning_rate: 0.00022  # Will be overridden by sweep (default from TTC Medical baseline)
+          patience: 2
+          epochs: 3
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true        # Remove lookahead bias, making val_loss reliable
+          torch_compile: false  # Keep consistent with TTC Medical baseline
+          compile_mode: "reduce-overhead"
+        wandb:
+          tags: ["lynx_film_raw", "ttc_medical", "sweep"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw_ttc_medical_sweep"

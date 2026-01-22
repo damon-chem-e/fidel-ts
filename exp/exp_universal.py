@@ -565,6 +565,11 @@ class Experiment(Exp_Basic):
         validate_every_n_batches = None
         if hasattr(self.args, 'wandb') and hasattr(self.args.wandb, 'validate_every_n_batches'):
             validate_every_n_batches = getattr(self.args.wandb, 'validate_every_n_batches', None)
+
+        # Optional: limit validation to a small number of batches for low overhead
+        validate_num_val_batches = None
+        if hasattr(self.args, 'wandb') and hasattr(self.args.wandb, 'validate_num_val_batches'):
+            validate_num_val_batches = getattr(self.args.wandb, 'validate_num_val_batches', None)
         
         # Track last validation loss to log on every batch step (for consistent WandB plotting)
         # Initialize to None - will use 1.0 as placeholder until first validation runs
@@ -609,7 +614,10 @@ class Experiment(Exp_Basic):
                             i % validate_every_n_batches == 0):
                             # Run validation and update last known validation loss
                             # Use 'batch_val_loss' to avoid collision with epoch-level 'val_loss'
-                            vali_loss = self.vali(vali_loader, criterion)
+                            if validate_num_val_batches is not None:
+                                vali_loss = self._vali_partial(vali_loader, criterion, validate_num_val_batches)
+                            else:
+                                vali_loss = self.vali(vali_loader, criterion)
                             last_val_loss = vali_loss
                             # Set model back to training mode after validation
                             self.model.train()
@@ -640,6 +648,71 @@ class Experiment(Exp_Basic):
         logger.info(f"Epoch: {epoch + 1} cost time: {epoch_time_elapsed:.2f}s")
         
         return train_loss, epoch_time_elapsed, total_samples
+
+    def _track_val_batch_metrics(self, iter_data, output, gt, criterion, sample_ids):
+        """
+        Track per-sample validation metrics for a single batch when enabled.
+        """
+        # Step 1: compute per-sample losses for logging.
+        per_sample_loss = compute_per_sample_loss(output, gt, criterion)
+        per_sample_per_channel_loss = compute_per_sample_per_channel_loss(output, gt, criterion)
+        # Step 2: extract timestamps and channel names.
+        timestamps = iter_data[3]
+        channel_names = self._get_channel_names(per_sample_per_channel_loss.shape[1])
+        # Step 3: record batch metrics for the validation split.
+        self.metrics_tracker.add_batch(
+            epoch=self.current_epoch, split='val', entity_id=None, sample_ids=sample_ids,
+            timestamps=timestamps[:, 0] if timestamps is not None else None,
+            losses=per_sample_loss, channel_ids=channel_names,
+            per_channel_losses=per_sample_per_channel_loss
+        )
+
+    def _vali_partial(self, loader, criterion, num_batches):
+        """
+        Validate on the next N batches from the loader to reduce overhead.
+        """
+        # Step 1: validate inputs and handle empty loaders safely.
+        if num_batches is None or num_batches <= 0:
+            raise ValueError(f"num_batches must be >= 1, got {num_batches}")
+        if len(loader) == 0:
+            return 0.0
+        # Step 2: initialize accumulators and set eval mode.
+        running_loss, total_samples = 0.0, 0
+        self.model.eval()
+        # Step 3: respect per-sample tracking settings when enabled.
+        track_per_sample = getattr(self.args, 'track_per_sample', False)
+        # Step 4: maintain a persistent iterator to advance sequentially.
+        if (not hasattr(self, "_vali_partial_iter") or
+                not hasattr(self, "_vali_partial_loader") or
+                self._vali_partial_loader is not loader):
+            self._vali_partial_iter = iter(loader)
+            self._vali_partial_loader = loader
+        # Step 5: iterate over the next N validation batches without gradients.
+        batches_done, reset_count = 0, 0
+        with torch.inference_mode():
+            with torch.no_grad():
+                while batches_done < num_batches:
+                    try:
+                        iter_data = next(self._vali_partial_iter)
+                    except StopIteration:
+                        if reset_count >= 1:
+                            break
+                        self._vali_partial_iter = iter(loader)
+                        self._vali_partial_loader = loader
+                        reset_count += 1
+                        continue
+                    output, gt, sample_ids = self._forward_step(iter_data)
+                    current_batch_size = gt.size(0)
+                    loss = criterion(output, gt)
+                    running_loss += loss.item() * current_batch_size
+                    total_samples += current_batch_size
+                    if track_per_sample and self.metrics_tracker:
+                        self._track_val_batch_metrics(iter_data, output, gt, criterion, sample_ids)
+                    batches_done += 1
+        # Step 6: compute mean loss, restore train mode, and return.
+        val_sample_loss = running_loss / total_samples if total_samples > 0 else 0.0
+        self.model.train()
+        return val_sample_loss
 
     def _evaluate_epoch(self, epoch, train_loss, total_samples, vali_loader, 
                        test_loader, criterion, early_stopping, path, 

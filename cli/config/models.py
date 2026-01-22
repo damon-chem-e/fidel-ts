@@ -217,6 +217,11 @@ class WandBConfig(BaseModel):
         ge=1,
         description="Run validation every N batches during batch logging (None to disable). Must be a multiple of batch_log_interval."
     )
+    validate_num_val_batches: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Number of validation batches to run per batch-level validation (None = full validation)."
+    )
     
     @model_validator(mode='after')
     def validate_batch_intervals(self):

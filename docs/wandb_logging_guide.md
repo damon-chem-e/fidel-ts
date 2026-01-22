@@ -28,6 +28,7 @@ All features are **fully backward compatible** - existing configs will continue 
 **Important**: 
 - **Training loss** is logged per batch (every `batch_log_interval` batches).
 - **Validation loss** can optionally be logged per batch (every `validate_every_n_batches` batches) if configured. This is logged as `batch_val_loss` to distinguish it from epoch-level `val_loss`. This provides more frequent validation monitoring during training.
+- **Low-overhead batch validation**: set `validate_num_val_batches` to a small value (e.g., `1`) to evaluate only a few validation batches each time.
 - Validation loss is **always** computed and logged at the end of each epoch regardless of batch-level validation settings.
 - Test loss is computed and logged **per epoch only** (running test per batch would be too expensive).
 
@@ -70,6 +71,7 @@ wandb:
   # Batch-level logging
   batch_log_interval: 10  # Log every 10 batches (default: 10)
   validate_every_n_batches: null  # Optional: run validation every N batches (must be multiple of batch_log_interval)
+  validate_num_val_batches: null  # Optional: number of val batches per batch validation (None = full validation)
 ```
 
 ### Offline Mode (Recommended for High-Frequency Logging)
@@ -122,6 +124,7 @@ wandb:
   
   # Optional: Batch-level validation
   validate_every_n_batches: null  # Run validation every N batches (must be multiple of batch_log_interval)
+  validate_num_val_batches: null  # Run only N validation batches per batch validation (None = full validation)
   # Examples:
   #   null = disabled (validation only at epoch end, default)
   #   50   = validate every 50 batches (if batch_log_interval=10, validates 5 times per epoch)
@@ -221,6 +224,7 @@ wandb:
   enabled: true
   batch_log_interval: 10  # Log training metrics every 10 batches
   validate_every_n_batches: 50  # Run validation every 50 batches (must be multiple of 10)
+  validate_num_val_batches: 1  # Evaluate 1 validation batch each time (low overhead)
 ```
 
 **Result**:

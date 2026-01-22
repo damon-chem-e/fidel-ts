@@ -56,7 +56,8 @@ suite:
           system_log_interval_s: 30.0
           system_sample_interval_s: 0.5
           batch_log_interval: 10
-          validate_every_n_batches: 50
+          validate_every_n_batches: 10
+          validate_num_val_batches: 1
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_raw/neat_sweep_23"
