@@ -212,6 +212,22 @@ class WandBConfig(BaseModel):
         ge=1,
         description="Log batch loss and gradient norm every N batches (1=all, 10=every 10th)"
     )
+    validate_every_n_batches: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Run validation every N batches during batch logging (None to disable). Must be a multiple of batch_log_interval."
+    )
+    
+    @model_validator(mode='after')
+    def validate_batch_intervals(self):
+        """Ensure validate_every_n_batches is a multiple of batch_log_interval if provided."""
+        if self.validate_every_n_batches is not None:
+            if self.validate_every_n_batches % self.batch_log_interval != 0:
+                raise ValueError(
+                    f"validate_every_n_batches ({self.validate_every_n_batches}) must be a "
+                    f"multiple of batch_log_interval ({self.batch_log_interval})"
+                )
+        return self
 
 
 class LLMEmbeddingConfig(BaseModel):

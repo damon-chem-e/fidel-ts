@@ -19,12 +19,17 @@ All features are **fully backward compatible** - existing configs will continue 
 |--------|-----------|-----------|-------------|
 | `batch_loss` | Every N batches (default: 10) | WandB | Training loss per batch |
 | `batch_grad_norm` | Every N batches (default: 10) | WandB | Gradient norm (detects gradient explosion) |
+| `val_loss` | Every M batches (optional) | WandB | Validation loss at batch level (if `validate_every_n_batches` is set) |
 | `train_loss` | Per epoch | WandB | Average training loss for epoch |
-| `val_loss` | Per epoch | WandB | Validation loss (computed after each epoch) |
+| `val_loss` | Per epoch | WandB | Validation loss (computed after each epoch, always) |
 | `test_loss` | Per epoch (if enabled) | WandB | Test loss (only if `evaluate_test_during_training=True`) |
 | `learning_rate` | Per epoch | WandB | Current learning rate |
 
-**Important**: Only **training loss** is logged per batch. Validation and test losses are computed and logged **per epoch only** (running validation/test per batch would be too expensive).
+**Important**: 
+- **Training loss** is logged per batch (every `batch_log_interval` batches).
+- **Validation loss** can optionally be logged per batch (every `validate_every_n_batches` batches) if configured. This provides more frequent validation monitoring during training.
+- Validation loss is **always** computed and logged at the end of each epoch regardless of batch-level validation settings.
+- Test loss is computed and logged **per epoch only** (running test per batch would be too expensive).
 
 ### System Metrics
 
@@ -64,6 +69,7 @@ wandb:
 
   # Batch-level logging
   batch_log_interval: 10  # Log every 10 batches (default: 10)
+  validate_every_n_batches: null  # Optional: run validation every N batches (must be multiple of batch_log_interval)
 ```
 
 ### Offline Mode (Recommended for High-Frequency Logging)
@@ -113,6 +119,14 @@ wandb:
   #   1  = log every batch (high frequency, use offline mode!)
   #   10 = log every 10 batches (default, good balance)
   #   50 = log every 50 batches (for very long epochs)
+  
+  # Optional: Batch-level validation
+  validate_every_n_batches: null  # Run validation every N batches (must be multiple of batch_log_interval)
+  # Examples:
+  #   null = disabled (validation only at epoch end, default)
+  #   50   = validate every 50 batches (if batch_log_interval=10, validates 5 times per epoch)
+  #   100  = validate every 100 batches (if batch_log_interval=10, validates 10 times per epoch)
+  # Note: validate_every_n_batches MUST be a multiple of batch_log_interval
 ```
 
 ## Use Cases
@@ -197,6 +211,32 @@ wandb:
 - `10.0 - 100.0`: Large but potentially okay
 - `> 100.0`: Likely gradient explosion
 
+### Use Case 5: Frequent Validation Monitoring
+
+**Scenario**: Long epochs, need to monitor validation performance during training to detect overfitting early.
+
+```yaml
+wandb:
+  project: "fidel-ts"
+  enabled: true
+  batch_log_interval: 10  # Log training metrics every 10 batches
+  validate_every_n_batches: 50  # Run validation every 50 batches (must be multiple of 10)
+```
+
+**Result**:
+- Training loss every 10 batches
+- Validation loss every 50 batches (5 times per epoch if 500 batches/epoch)
+- Can detect overfitting mid-epoch
+- More frequent validation monitoring without epoch-end only checks
+
+**Example**: If you have 1000 batches per epoch:
+- With `batch_log_interval: 10` and `validate_every_n_batches: 50`:
+  - Training metrics logged 100 times per epoch
+  - Validation metrics logged 20 times per epoch
+  - Much more granular than epoch-end only validation
+
+**Performance Note**: Validation is more expensive than training loss logging. Use reasonable intervals (e.g., 50-100 batches) to balance monitoring frequency with training speed.
+
 ## Lightning vs PyTorch Training
 
 Both PyTorch and PyTorch Lightning training frameworks support the same logging capabilities:
@@ -204,6 +244,7 @@ Both PyTorch and PyTorch Lightning training frameworks support the same logging 
 ### PyTorch (exp/exp_universal.py)
 - Batch-level logging implemented via modified `_train_single_epoch()`
 - Logs `batch_loss` and `batch_grad_norm` every N batches
+- Optional batch-level validation: logs `val_loss` every M batches (if `validate_every_n_batches` is configured)
 
 ### PyTorch Lightning (exp/exp_lightning.py)
 - Batch-level logging already built-in via `on_step=True`
@@ -239,6 +280,8 @@ After compilation:
 | System monitoring | < 0.1% | Background threads, non-blocking |
 | Batch logging (interval=10) | < 0.1% | ~10ms per log call |
 | Batch logging (interval=1) | 0.5-1% | Use offline mode to mitigate |
+| Batch validation (interval=50) | 1-2% | Validation is more expensive, use reasonable intervals |
+| Batch validation (interval=10) | 5-10% | Too frequent, not recommended |
 | Total (default settings) | < 0.2% | Negligible impact |
 
 ### Best Practices
@@ -248,6 +291,8 @@ After compilation:
 3. **Short epochs** (<100 batches): Use `batch_log_interval: 5` for more granularity
 4. **Debugging**: Temporarily set `batch_log_interval: 1` with `mode: "offline"` for maximum detail
 5. **Production runs**: Use default settings (`batch_log_interval: 10`, `mode: "online"`)
+6. **Batch-level validation**: Use intervals of 50-100 batches minimum to balance monitoring with performance
+7. **Validation frequency**: `validate_every_n_batches` must be a multiple of `batch_log_interval` (enforced by config validation)
 
 ## Troubleshooting
 
@@ -297,6 +342,20 @@ pip install psutil>=5.9.0
 <experiment_dir>/logs/gpu_telemetry.csv
 <experiment_dir>/logs/system_telemetry.csv
 ```
+
+### Issue: Validation configuration error
+
+**Error**: `validate_every_n_batches must be a multiple of batch_log_interval`
+
+**Solution**: Ensure `validate_every_n_batches` is a multiple of `batch_log_interval`
+```yaml
+wandb:
+  batch_log_interval: 10
+  validate_every_n_batches: 50  # ✓ Valid: 50 is a multiple of 10
+  # validate_every_n_batches: 47  # ✗ Invalid: 47 is not a multiple of 10
+```
+
+**Why this requirement?**: Validation only runs when batch logging occurs, ensuring efficient execution and consistent step alignment.
 
 ### Issue: Gradient norm shows NaN or Inf
 

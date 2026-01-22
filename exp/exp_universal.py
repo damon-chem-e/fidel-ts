@@ -535,7 +535,7 @@ class Experiment(Exp_Basic):
         return time.time(), 0
 
     def _train_single_epoch(self, epoch, train_loader, model_optim, criterion,
-                           track_per_sample, train_steps):
+                           track_per_sample, train_steps, vali_loader=None):
         """
         Execute a complete training epoch with progress tracking.
 
@@ -546,6 +546,7 @@ class Experiment(Exp_Basic):
             criterion: Loss function
             track_per_sample: Whether to track per-sample metrics
             train_steps: Total number of training steps per epoch
+            vali_loader: Validation data loader (optional, for batch-level validation)
 
         Returns:
             tuple: (train_loss, epoch_time_elapsed, total_samples)
@@ -559,6 +560,12 @@ class Experiment(Exp_Basic):
         batch_log_interval = getattr(
             self.args.wandb, 'batch_log_interval', 10
         ) if hasattr(self.args, 'wandb') else 10
+        
+        # Validation batch interval configuration (must be multiple of batch_log_interval)
+        validate_every_n_batches = None
+        if hasattr(self.args, 'wandb') and hasattr(self.args.wandb, 'validate_every_n_batches'):
+            validate_every_n_batches = getattr(self.args.wandb, 'validate_every_n_batches', None)
+        
         total_batches = len(train_loader)
 
         # Mark epoch start in GPU monitor for epoch-level GPU utilization tracking
@@ -586,10 +593,23 @@ class Experiment(Exp_Basic):
 
                     if should_log:
                         global_step = epoch * total_batches + i
-                        self.exp_manager.log_batch_metrics({
+                        batch_metrics = {
                             'batch_loss': loss_value,
                             'batch_grad_norm': grad_norm
-                        }, batch_step=global_step)
+                        }
+                        
+                        # Optionally run validation at batch level if configured
+                        # Validation only runs when batch logging occurs and batch index matches validation interval
+                        if (validate_every_n_batches is not None and 
+                            vali_loader is not None and 
+                            i % validate_every_n_batches == 0):
+                            # Run validation and log loss at batch level
+                            vali_loss = self.vali(vali_loader, criterion)
+                            batch_metrics['val_loss'] = vali_loss
+                            # Set model back to training mode after validation
+                            self.model.train()
+                        
+                        self.exp_manager.log_batch_metrics(batch_metrics, batch_step=global_step)
 
                 # Update progress bar
                 time_now, iter_count = self._update_training_progress(
@@ -1187,7 +1207,7 @@ class Experiment(Exp_Basic):
             # Train one complete epoch
             train_loss, epoch_time, total_samples = self._train_single_epoch(
                 epoch, train_loader, model_optim, criterion, 
-                track_per_sample, train_steps
+                track_per_sample, train_steps, vali_loader=vali_loader
             )
             
             # Evaluate epoch: validation, testing, logging, early stopping check
