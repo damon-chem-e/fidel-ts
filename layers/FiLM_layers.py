@@ -40,7 +40,7 @@ class FiLMGenerator(nn.Module):
     A dimension mismatch will cause a runtime error!
     """
     
-    def __init__(self, text_dim, output_dim, seq_len=1, hidden_dim=None):
+    def __init__(self, text_dim, output_dim, seq_len=1, hidden_dim=None, dropout=0.0):
         """
         Args:
             text_dim: Dimension of text embeddings (D in [B, C, L, D])
@@ -50,6 +50,7 @@ class FiLMGenerator(nn.Module):
                      - t_about: ceil(pred_len / hetero_stride) 
                      - t_known: ceil(seq_len / hetero_stride)
             hidden_dim: Hidden dimension of MLP (defaults to input_dim)
+            dropout: Dropout probability applied inside the FiLM MLP
         """
         super().__init__()
         # Store seq_len for debugging dimension mismatches
@@ -60,9 +61,11 @@ class FiLMGenerator(nn.Module):
         input_dim = seq_len * text_dim
         hidden_dim = hidden_dim or input_dim
         
+        # Build MLP with optional dropout to regularize FiLM capacity
         self.net = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.GELU(),
+            nn.Dropout(dropout),
             # Output 4 sets of parameters: gamma1, beta1, gamma2, beta2
             nn.Linear(hidden_dim, output_dim * 4) 
         )

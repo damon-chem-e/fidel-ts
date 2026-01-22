@@ -27,6 +27,8 @@ factor: 1         # Attention factor
 cross_layers: 3
 self_layers: 3
 text_dim: 256     # Dimension of text embeddings (input to FiLM)
+film_hidden_dim: null  # Optional FiLM MLP bottleneck (e.g., 128). null uses d_model.
+film_dropout: 0.0      # Dropout inside FiLM MLP for regularization
 
 # Other
 patch_len: 6

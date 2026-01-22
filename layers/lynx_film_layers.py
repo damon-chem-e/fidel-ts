@@ -120,12 +120,18 @@ class iTransformerFilm(nn.Module):
         # Create FiLM generators (one per layer)
         # Input to generator is flattened text_emb: text_seq_len * text_dim
         # Output is 4 * d_model (gamma1, beta1, gamma2, beta2)
+        # Optional configs:
+        # - film_hidden_dim: Bottleneck size for FiLM MLP (forces compression)
+        # - film_dropout: Dropout inside FiLM MLP for regularization
+        film_hidden_dim = getattr(configs, 'film_hidden_dim', None)
+        film_dropout = getattr(configs, 'film_dropout', 0.0)
         film_generators = [
             FiLMGenerator(
                 text_dim=configs.text_dim, 
                 output_dim=configs.d_model, 
                 seq_len=self.text_seq_len,
-                hidden_dim=configs.d_model
+                hidden_dim=film_hidden_dim or configs.d_model,
+                dropout=film_dropout
             )
             for l in range(configs.e_layers)
         ]
