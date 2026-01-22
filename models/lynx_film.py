@@ -174,6 +174,12 @@ class Model(nn.Module):
         unimodal_device = next(self.unimodal_wrapper.model.parameters()).device
         x = x.to(unimodal_device)
         
+        # Keep text inputs on the same device as the model to avoid mm/linear device mismatches
+        if text_input is not None:
+            text_input = text_input.to(unimodal_device)
+        if channel_description is not None:
+            channel_description = channel_description.to(unimodal_device)
+        
         # Step 1: Normalize input using wrapper's normalization scheme
         x_norm, norm_params = self.unimodal_wrapper.normalize_input(x)
         
