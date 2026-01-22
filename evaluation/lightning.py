@@ -14,6 +14,7 @@ from tqdm import tqdm
 from models import model_init
 from data_provider.data_factory import Data_Provider
 from utils.tools import dotdict
+from evaluation.config_builder import build_eval_args_from_experiment_dir
 
 
 def run_test(loader, model, config, device, indexes, channel_wise):
@@ -214,77 +215,17 @@ def evaluate(config):
     
     # Load configuration from checkpoint directory
     print(f"[Info] Loading config from experiment directory: {experiment_dir}")
-    checkpoint_config_dict = load_checkpoint_config(experiment_dir)
-    
-    # Convert to dotdict and handle both new and legacy formats
-    if 'training' in checkpoint_config_dict:
-        # New format: experiment_config.yaml
-        # Load saved model and data configs from experiment directory
-        model_config_path = experiment_dir / "configs" / "model_config.yaml"
-        data_config_path = experiment_dir / "configs" / "data_config.yaml"
-        
-        checkpoint_config = dotdict()
-        checkpoint_config.model = checkpoint_config_dict.get('model', {}).get('name', 'unknown')
-        checkpoint_config.data = checkpoint_config_dict.get('data', {}).get('name', 'unknown')
-        training_config = checkpoint_config_dict.get('training', {})
-        checkpoint_config.input_len = training_config.get('input_len')
-        checkpoint_config.output_len = training_config.get('output_len')
-        checkpoint_config.batch_size = training_config.get('batch_size', 128)
-        
-        # Load model config
-        if model_config_path.exists():
-            with open(model_config_path, 'r', encoding='utf-8') as f:
-                checkpoint_config.model_config = dotdict(yaml.safe_load(f))
-        else:
-            # Fallback: try to load from original path
-            model_cfg_path = checkpoint_config_dict.get('model', {}).get('config_path')
-            if model_cfg_path:
-                with open(model_cfg_path, 'r', encoding='utf-8') as f:
-                    checkpoint_config.model_config = dotdict(yaml.safe_load(f))
-            else:
-                raise FileNotFoundError(f"Model config not found: {model_config_path}")
-        
-        # CRITICAL: Apply model_config_overrides from experiment config
-        # These overrides (e.g., d_model, e_layers, n_heads) were used during training
-        # and must be applied to ensure the model architecture matches the checkpoint
-        model_config_overrides = checkpoint_config_dict.get('model_config_overrides', {})
-        if model_config_overrides:
-            print(f"[Info] Applying model_config_overrides: {model_config_overrides}")
-            for key, value in model_config_overrides.items():
-                checkpoint_config.model_config[key] = value
-            
-            # Special handling for input_text_dim: if input_text_dim is set but text_dim is not
-            # explicitly overridden, set text_dim = input_text_dim to match checkpoint architecture
-            # This handles the case where checkpoint was saved without a projection layer
-            if 'input_text_dim' in model_config_overrides and 'text_dim' not in model_config_overrides:
-                input_text_dim = model_config_overrides['input_text_dim']
-                # Set text_dim to match input_text_dim (assumes no projection layer in checkpoint)
-                checkpoint_config.model_config['text_dim'] = input_text_dim
-                print(f"[Info] Set text_dim = input_text_dim = {input_text_dim} to match checkpoint architecture")
-        
-        # Load data config
-        if data_config_path.exists():
-            with open(data_config_path, 'r', encoding='utf-8') as f:
-                checkpoint_config.data_config = dotdict(yaml.safe_load(f))
-        else:
-            # Fallback: try to load from original path
-            data_cfg_path = checkpoint_config_dict.get('data', {}).get('config_path')
-            if data_cfg_path:
-                with open(data_cfg_path, 'r', encoding='utf-8') as f:
-                    checkpoint_config.data_config = dotdict(yaml.safe_load(f))
-            else:
-                raise FileNotFoundError(f"Data config not found: {data_config_path}")
-        
-        # CRITICAL: Apply data_config overrides from experiment config
-        # These overrides (e.g., timemmd_text_output) were used during training
-        # and must be applied to ensure the data is loaded in the same format
-        data_config_overrides = checkpoint_config_dict.get('data_config', {})
-        if data_config_overrides:
-            print(f"[Info] Applying data_config overrides: {data_config_overrides}")
-            for key, value in data_config_overrides.items():
-                checkpoint_config.data_config[key] = value
+    experiment_config_path = experiment_dir / "configs" / "experiment_config.yaml"
+
+    if experiment_config_path.exists():
+        # New format: rebuild training-equivalent args from saved configs
+        checkpoint_config = build_eval_args_from_experiment_dir(
+            experiment_dir,
+            data_config_override=getattr(config, 'data_config', None)
+        )
     else:
         # Legacy format: args.json (flat structure)
+        checkpoint_config_dict = load_checkpoint_config(experiment_dir)
         # In legacy format, model_config and data_config are already dictionaries
         checkpoint_config = dotdict(checkpoint_config_dict)
         if isinstance(checkpoint_config.model_config, dict):
@@ -303,11 +244,12 @@ def evaluate(config):
         else:
             checkpoint_config.data_config = dotdict({})
     
-    # Use provided data_config override if available
-    if hasattr(config, 'data_config') and config.data_config:
-        checkpoint_config.data_config = dotdict(yaml.safe_load(open(config.data_config, 'r')))
-    elif not hasattr(checkpoint_config, 'data_config'):
-        checkpoint_config.data_config = dotdict({})
+    # Use provided data_config override if available (legacy only)
+    if not experiment_config_path.exists():
+        if hasattr(config, 'data_config') and config.data_config:
+            checkpoint_config.data_config = dotdict(yaml.safe_load(open(config.data_config, 'r')))
+        elif not hasattr(checkpoint_config, 'data_config'):
+            checkpoint_config.data_config = dotdict({})
     
     checkpoint_config.devices = eval_config.device
     checkpoint_config.num_workers = 0

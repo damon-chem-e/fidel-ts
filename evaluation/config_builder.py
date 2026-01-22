@@ -5,11 +5,13 @@ This module provides functions to build evaluation configurations from experimen
 eliminating redundant configuration by inferring all parameters from training configs.
 """
 
+import copy
 import yaml
 from pathlib import Path
 from typing import Optional, Dict, Any
 from utils.tools import dotdict
 from cli.config.models import ExperimentConfig
+from utils.experiment_config_builder import build_experiment_args
 
 
 def load_checkpoint_config(experiment_dir: Path) -> Dict[str, Any]:
@@ -94,6 +96,59 @@ def infer_task_type(config: ExperimentConfig) -> str:
     )
 
 
+def _load_saved_experiment_config(experiment_dir: Path) -> Dict[str, Any]:
+    """
+    Load experiment_config.yaml and point model/data config paths to saved copies.
+
+    This ensures evaluation uses the exact config files saved during training,
+    even if the original config paths have changed.
+    """
+    experiment_config = load_checkpoint_config(experiment_dir)
+
+    # Use saved model/data config paths when available
+    resolved_config = copy.deepcopy(experiment_config)
+    model_section = resolved_config.get('model') or {}
+    data_section = resolved_config.get('data') or {}
+
+    model_config_path = experiment_dir / "configs" / "model_config.yaml"
+    data_config_path = experiment_dir / "configs" / "data_config.yaml"
+
+    if model_config_path.exists():
+        model_section['config_path'] = str(model_config_path)
+    if data_config_path.exists():
+        data_section['config_path'] = str(data_config_path)
+
+    resolved_config['model'] = model_section
+    resolved_config['data'] = data_section
+
+    return resolved_config
+
+
+def build_eval_args_from_experiment_dir(
+    experiment_dir: Path,
+    data_config_override: Optional[str] = None
+) -> dotdict:
+    """
+    Build training-equivalent args from a saved experiment directory.
+
+    This uses the saved experiment_config.yaml plus saved model/data configs
+    to recreate the training runtime configuration (including tensor cache
+    settings, hetero_stride, base_data_path, and llm_embedding).
+    """
+    experiment_config = _load_saved_experiment_config(experiment_dir)
+    args = build_experiment_args(experiment_config, include_gpu=True, include_training=True)
+
+    # Allow evaluation-time data config override (CLI), if provided
+    if data_config_override:
+        with open(data_config_override, 'r', encoding='utf-8') as f:
+            args.data_config = dotdict(yaml.safe_load(f) or {})
+        args.data_config.config_path = data_config_override
+        if not args.data_config.get('name'):
+            args.data_config.name = args.data
+
+    return args
+
+
 def build_evaluation_config_from_experiment_config(
     config: ExperimentConfig,
     resume_experiment_id: str,
@@ -143,8 +198,11 @@ def build_evaluation_config_from_experiment_config(
             + (f"\n  Suite ID: {resume_suite_id}" if resume_suite_id else "")
         )
     
-    # 2. Load checkpoint config (contains actual training parameters used)
-    checkpoint_config = load_checkpoint_config(experiment_dir)
+    # 2. Load saved experiment config (contains actual training parameters used)
+    checkpoint_config = _load_saved_experiment_config(experiment_dir)
+
+    # Build training-equivalent args (for consistent defaults and derived fields)
+    training_args = build_experiment_args(checkpoint_config, include_gpu=True, include_training=True)
     
     # 3. Extract input_len and output_len from checkpoint config
     # New format: experiment_config.yaml with nested training config
@@ -167,9 +225,9 @@ def build_evaluation_config_from_experiment_config(
             )
     
     # 4. Extract other parameters
-    model_name = config.model.name
-    data_name = config.data.name
-    batch_size = batch_size_override if batch_size_override is not None else config.training.batch_size
+    model_name = checkpoint_config.get('model', {}).get('name', training_args.model)
+    data_name = checkpoint_config.get('data', {}).get('name', training_args.data)
+    batch_size = batch_size_override if batch_size_override is not None else training_args.batch_size
     
     # Device handling
     if device_override is not None:
@@ -180,18 +238,27 @@ def build_evaluation_config_from_experiment_config(
         device = "0"  # Default GPU 0
     
     # 5. Infer task type
-    task = infer_task_type(config)
+    try:
+        saved_config = ExperimentConfig.from_yaml(experiment_dir / "configs" / "experiment_config.yaml")
+        task = infer_task_type(saved_config)
+    except Exception:
+        task = infer_task_type(config)
     
     # 6. Handle filtered_samples
-    filtered_samples = config.training.filtered_samples
+    filtered_samples = checkpoint_config.get('training', {}).get('filtered_samples')
     
     # 7. Read evaluation-specific options from config if present
     # These can be specified in the experiment config under 'evaluation' key
-    config_dict = config.model_dump()
+    config_dict = checkpoint_config or {}
     evaluation_options = config_dict.get('evaluation', {})
     # Handle case where evaluation key exists but is None
     if evaluation_options is None:
         evaluation_options = {}
+
+    # Fallback to passed config if saved config has no evaluation options
+    if not evaluation_options:
+        fallback_dict = config.model_dump()
+        evaluation_options = fallback_dict.get('evaluation', {}) or {}
     
     # Merge evaluation overrides from suite config (takes precedence)
     if evaluation_overrides is not None:
