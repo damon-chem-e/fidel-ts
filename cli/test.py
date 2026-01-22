@@ -251,6 +251,7 @@ def standard(
     version: str = typer.Option("best", "--version", "-v", help="Checkpoint version: 'best', 'latest', or specific pattern"),
     device: Optional[str] = typer.Option(None, "--device", "-d", help="GPU device ID (overrides config.device.gpu)"),
     batch_size: Optional[int] = typer.Option(None, "--batch-size", "-b", help="Batch size (overrides config.training.batch_size)"),
+    test_only: bool = typer.Option(True, "--test-only/--all-splits", help="Only evaluate on test set (default: True). Use --all-splits to evaluate on train/val/test."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate config without running evaluation")
 ):
     """
@@ -260,12 +261,18 @@ def standard(
     Uses the same experiment config file as training, requiring resume_experiment_id
     to identify which experiment to evaluate.
     
+    By default, only evaluates on the test set. Use --all-splits to evaluate on
+    train, val, and test sets.
+    
     Examples:
-        # Using config with resume_experiment_id
+        # Using config with resume_experiment_id (evaluates test set only by default)
         python -m cli.test standard configs/experiments/dlinear_solar.yaml
         
         # Override resume ID via CLI
         python -m cli.test standard configs/experiments/dlinear_solar.yaml --resume-id 20240101-abc123
+        
+        # Evaluate on all splits (train, val, test)
+        python -m cli.test standard configs/experiments/dlinear_solar.yaml --all-splits
         
         # Suite experiment
         python -m cli.test standard configs/experiments/dlinear_solar.yaml --resume-id 20240101-abc123 --resume-suite-id my_suite_20240101_120000
@@ -312,7 +319,8 @@ def standard(
             output_dir=output_dir,
             version=version,
             device_override=device,
-            batch_size_override=batch_size
+            batch_size_override=batch_size,
+            evaluation_overrides={'test_only': test_only}
         )
         
         if dry_run:
@@ -328,6 +336,7 @@ def standard(
             typer.echo(f"  Device: {eval_config.device}")
             typer.echo(f"  Checkpoint version: {eval_config.version}")
             typer.echo(f"  Experiment directory: {eval_config.experiment_dir}")
+            typer.echo(f"  Test only: {getattr(eval_config, 'test_only', True)}")
             return
         
         # Import here to avoid circular imports
@@ -342,6 +351,10 @@ def standard(
         typer.echo(f"Starting standard evaluation for experiment: {exp_id}")
         typer.echo(f"  Config: {config_path}")
         typer.echo(f"  Experiment directory: {eval_config.experiment_dir}")
+        if test_only:
+            typer.echo(f"  Evaluating on: test set only")
+        else:
+            typer.echo(f"  Evaluating on: train, val, and test sets")
         evaluate(config_with_eval)
         
     except FileNotFoundError as e:

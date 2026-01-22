@@ -644,8 +644,14 @@ def _run_evaluation_loop(loaders_dict, datasets_dict, model, checkpoint_config, 
         filtered_samples = json.load(open(eval_config.filtered_samples))
         print(f"[Info] Using filtered samples from: {eval_config.filtered_samples}")
     
+    # Determine which splits to evaluate
+    # Default to test_only=True if not specified (backward compatibility)
+    test_only = getattr(eval_config, 'test_only', True)
+    
     # Evaluate each split (train, val, test)
-    for split_name in ['train', 'val', 'test']:
+    splits_to_evaluate = ['test'] if test_only else ['train', 'val', 'test']
+    
+    for split_name in splits_to_evaluate:
         if split_name not in loaders_dict:
             continue
             
@@ -768,10 +774,14 @@ def _print_summary(results, eval_config):
     print(" " * 15 + "Evaluation Summary")
     print("="*50)
     
+    # Determine which splits to show (based on what was evaluated)
+    test_only = getattr(eval_config, 'test_only', True)
+    splits_to_show = ['test'] if test_only else ['train', 'val', 'test']
+    
     # Track if any split has concat dataset with denormalized metrics
     concat_splits_with_denorm = []
     
-    for split_name in ['train', 'val', 'test']:
+    for split_name in splits_to_show:
         if split_name not in results or results[split_name] is None:
             continue
         
@@ -842,39 +852,48 @@ def evaluate(config):
     # Load data - get train, val, and test separately
     data_provider = Data_Provider(checkpoint_config)
     
+    # Determine which splits to load (default to test_only=True if not specified)
+    test_only = getattr(eval_config, 'test_only', True)
+    
     # Get loaders and datasets for each split
     # Note: When tensor cache is enabled, return_type='set' is not supported.
     # We get datasets from loader.dataset instead (handled in evaluate_full_dataset).
     loaders_dict = {}
     datasets_dict = {}
     
-    train_loader = data_provider.get_train("loader")
-    if train_loader is not None:
-        loaders_dict['train'] = train_loader
-        # Try to get dataset from loader if available (for scaler access)
-        # This works for both regular datasets and tensor cache datasets
-        if hasattr(train_loader, 'dataset'):
-            train_dataset = train_loader.dataset
-            # Handle case where dataset is a dictionary (multiple entities)
-            if isinstance(train_dataset, dict):
-                # Use first dataset's scaler (assuming all have same scaler)
-                first_dataset = next(iter(train_dataset.values()))
-                datasets_dict['train'] = first_dataset
-            else:
-                datasets_dict['train'] = train_dataset
+    # Only load train/val if not test_only (skip to save time and memory)
+    if not test_only:
+        print("[Info] Loading train and val datasets (test_only=False)")
+        train_loader = data_provider.get_train("loader")
+        if train_loader is not None:
+            loaders_dict['train'] = train_loader
+            # Try to get dataset from loader if available (for scaler access)
+            # This works for both regular datasets and tensor cache datasets
+            if hasattr(train_loader, 'dataset'):
+                train_dataset = train_loader.dataset
+                # Handle case where dataset is a dictionary (multiple entities)
+                if isinstance(train_dataset, dict):
+                    # Use first dataset's scaler (assuming all have same scaler)
+                    first_dataset = next(iter(train_dataset.values()))
+                    datasets_dict['train'] = first_dataset
+                else:
+                    datasets_dict['train'] = train_dataset
+        
+        val_loader = data_provider.get_val("loader")
+        if val_loader is not None:
+            loaders_dict['val'] = val_loader
+            # Try to get dataset from loader if available (for scaler access)
+            if hasattr(val_loader, 'dataset'):
+                val_dataset = val_loader.dataset
+                if isinstance(val_dataset, dict):
+                    first_dataset = next(iter(val_dataset.values()))
+                    datasets_dict['val'] = first_dataset
+                else:
+                    datasets_dict['val'] = val_dataset
     
-    val_loader = data_provider.get_val("loader")
-    if val_loader is not None:
-        loaders_dict['val'] = val_loader
-        # Try to get dataset from loader if available (for scaler access)
-        if hasattr(val_loader, 'dataset'):
-            val_dataset = val_loader.dataset
-            if isinstance(val_dataset, dict):
-                first_dataset = next(iter(val_dataset.values()))
-                datasets_dict['val'] = first_dataset
-            else:
-                datasets_dict['val'] = val_dataset
-    
+    # Always load test set
+    if test_only:
+        print("[Info] Loading test dataset only (test_only=True)")
     test_loader = data_provider.get_test("loader")
     if test_loader is not None:
         loaders_dict['test'] = test_loader
