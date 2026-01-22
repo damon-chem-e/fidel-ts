@@ -662,6 +662,7 @@ class ExperimentManager:
                 # Batch-level metrics use batch_step as x-axis
                 wandb.define_metric("batch_loss", step_metric="batch_step")
                 wandb.define_metric("batch_grad_norm", step_metric="batch_step")
+                wandb.define_metric("batch_val_loss", step_metric="batch_step")
 
                 # Epoch-level metrics use epoch as x-axis
                 wandb.define_metric("train_loss", step_metric="epoch")

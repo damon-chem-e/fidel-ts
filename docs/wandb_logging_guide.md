@@ -19,7 +19,7 @@ All features are **fully backward compatible** - existing configs will continue 
 |--------|-----------|-----------|-------------|
 | `batch_loss` | Every N batches (default: 10) | WandB | Training loss per batch |
 | `batch_grad_norm` | Every N batches (default: 10) | WandB | Gradient norm (detects gradient explosion) |
-| `val_loss` | Every M batches (optional) | WandB | Validation loss at batch level (if `validate_every_n_batches` is set) |
+| `batch_val_loss` | Every M batches (optional) | WandB | Validation loss at batch level (if `validate_every_n_batches` is set) |
 | `train_loss` | Per epoch | WandB | Average training loss for epoch |
 | `val_loss` | Per epoch | WandB | Validation loss (computed after each epoch, always) |
 | `test_loss` | Per epoch (if enabled) | WandB | Test loss (only if `evaluate_test_during_training=True`) |
@@ -27,7 +27,7 @@ All features are **fully backward compatible** - existing configs will continue 
 
 **Important**: 
 - **Training loss** is logged per batch (every `batch_log_interval` batches).
-- **Validation loss** can optionally be logged per batch (every `validate_every_n_batches` batches) if configured. This provides more frequent validation monitoring during training.
+- **Validation loss** can optionally be logged per batch (every `validate_every_n_batches` batches) if configured. This is logged as `batch_val_loss` to distinguish it from epoch-level `val_loss`. This provides more frequent validation monitoring during training.
 - Validation loss is **always** computed and logged at the end of each epoch regardless of batch-level validation settings.
 - Test loss is computed and logged **per epoch only** (running test per batch would be too expensive).
 
@@ -231,8 +231,9 @@ wandb:
 
 **Example**: If you have 1000 batches per epoch:
 - With `batch_log_interval: 10` and `validate_every_n_batches: 50`:
-  - Training metrics logged 100 times per epoch
-  - Validation metrics logged 20 times per epoch
+  - Training metrics logged 100 times per epoch (`batch_loss`, `batch_grad_norm`)
+  - Validation metrics logged 20 times per epoch (`batch_val_loss`)
+  - Epoch-level `val_loss` still logged at end of each epoch
   - Much more granular than epoch-end only validation
 
 **Performance Note**: Validation is more expensive than training loss logging. Use reasonable intervals (e.g., 50-100 batches) to balance monitoring frequency with training speed.
@@ -244,7 +245,7 @@ Both PyTorch and PyTorch Lightning training frameworks support the same logging 
 ### PyTorch (exp/exp_universal.py)
 - Batch-level logging implemented via modified `_train_single_epoch()`
 - Logs `batch_loss` and `batch_grad_norm` every N batches
-- Optional batch-level validation: logs `val_loss` every M batches (if `validate_every_n_batches` is configured)
+- Optional batch-level validation: logs `batch_val_loss` every M batches (if `validate_every_n_batches` is configured)
 
 ### PyTorch Lightning (exp/exp_lightning.py)
 - Batch-level logging already built-in via `on_step=True`

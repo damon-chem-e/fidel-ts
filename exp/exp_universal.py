@@ -604,8 +604,9 @@ class Experiment(Exp_Basic):
                             vali_loader is not None and 
                             i % validate_every_n_batches == 0):
                             # Run validation and log loss at batch level
+                            # Use 'batch_val_loss' to avoid collision with epoch-level 'val_loss'
                             vali_loss = self.vali(vali_loader, criterion)
-                            batch_metrics['val_loss'] = vali_loss
+                            batch_metrics['batch_val_loss'] = vali_loss
                             # Set model back to training mode after validation
                             self.model.train()
                         
