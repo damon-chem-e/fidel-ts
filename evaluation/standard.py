@@ -151,26 +151,31 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
             sample_ids, batch_x, batch_y, _, _, x_hetero, y_hetero, _, _, _, hetero_channel, _, _ = iter_data
 
             # Convert to tensors if not already (handles numpy arrays and tensors)
+            # Ensure all tensors are on the correct device
             if not isinstance(batch_x, torch.Tensor):
-                batch_x = torch.as_tensor(batch_x, dtype=torch.float32)
-            batch_x = batch_x.to(device)
+                batch_x = torch.tensor(batch_x, dtype=torch.float32, device=device)
+            else:
+                batch_x = batch_x.to(device)
             
             if not isinstance(batch_y, torch.Tensor):
-                batch_y = torch.as_tensor(batch_y, dtype=torch.float32)
-            batch_y = batch_y.to(device)
+                batch_y = torch.tensor(batch_y, dtype=torch.float32, device=device)
+            else:
+                batch_y = batch_y.to(device)
             
             if config.task == 'TSF':
                 prediction = model(x=batch_x)
             elif config.task == 'TGTSF':
                 # Convert y_hetero (news) to tensor
                 if not isinstance(y_hetero, torch.Tensor):
-                    y_hetero = torch.as_tensor(y_hetero, dtype=torch.float32)
-                y_hetero = y_hetero.to(device)
+                    y_hetero = torch.tensor(y_hetero, dtype=torch.float32, device=device)
+                else:
+                    y_hetero = y_hetero.to(device)
                 
                 # Convert hetero_channel to tensor
                 if not isinstance(hetero_channel, torch.Tensor):
-                    hetero_channel = torch.as_tensor(hetero_channel, dtype=torch.float32)
-                hetero_channel = hetero_channel.to(device)
+                    hetero_channel = torch.tensor(hetero_channel, dtype=torch.float32, device=device)
+                else:
+                    hetero_channel = hetero_channel.to(device)
                 
                 # IMPORTANT: Also pass x_hetero (historical_events) for models that use timestamp_semantics
                 # Models like LYNX internally select between news and historical_events based on timestamp_semantics
@@ -178,8 +183,9 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
                 # - timestamp_semantics='t_known': uses historical_events (x_hetero)
                 if x_hetero is not None:
                     if not isinstance(x_hetero, torch.Tensor):
-                        x_hetero = torch.as_tensor(x_hetero, dtype=torch.float32)
-                    x_hetero = x_hetero.to(device)
+                        x_hetero = torch.tensor(x_hetero, dtype=torch.float32, device=device)
+                    else:
+                        x_hetero = x_hetero.to(device)
                     # Pass both news and historical_events - let model decide which to use
                     prediction = model(x=batch_x, news=y_hetero, channel_description=hetero_channel, 
                                      historical_events=x_hetero)
@@ -187,14 +193,18 @@ def evaluate_full_dataset(loader, model, config, device, indexes, channel_wise, 
                     # Standard TGTSF: only pass news
                     prediction = model(x=batch_x, news=y_hetero, channel_description=hetero_channel)
             elif config.task == 'MTSF':
-                if not isinstance(x_hetero, torch.Tensor):
-                    x_hetero = torch.as_tensor(x_hetero, dtype=torch.float32)
-                x_hetero = x_hetero.to(device)
+                if x_hetero is not None:
+                    if not isinstance(x_hetero, torch.Tensor):
+                        x_hetero = torch.tensor(x_hetero, dtype=torch.float32, device=device)
+                    else:
+                        x_hetero = x_hetero.to(device)
                 prediction = model(x=batch_x, historical_events=x_hetero)
             else:
                 # todo
                 pass
             
+            # Ensure prediction is on the correct device
+            prediction = prediction.to(device)
             prediction = prediction[:, -config.output_len:, :]
 
             if channel_wise:
