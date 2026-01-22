@@ -566,6 +566,10 @@ class Experiment(Exp_Basic):
         if hasattr(self.args, 'wandb') and hasattr(self.args.wandb, 'validate_every_n_batches'):
             validate_every_n_batches = getattr(self.args.wandb, 'validate_every_n_batches', None)
         
+        # Track last validation loss to log on every batch step (for consistent WandB plotting)
+        # Initialize to None - will use 1.0 as placeholder until first validation runs
+        last_val_loss = None
+        
         total_batches = len(train_loader)
 
         # Mark epoch start in GPU monitor for epoch-level GPU utilization tracking
@@ -603,12 +607,25 @@ class Experiment(Exp_Basic):
                         if (validate_every_n_batches is not None and 
                             vali_loader is not None and 
                             i % validate_every_n_batches == 0):
-                            # Run validation and log loss at batch level
+                            # Run validation and update last known validation loss
                             # Use 'batch_val_loss' to avoid collision with epoch-level 'val_loss'
                             vali_loss = self.vali(vali_loader, criterion)
-                            batch_metrics['batch_val_loss'] = vali_loss
+                            last_val_loss = vali_loss
                             # Set model back to training mode after validation
                             self.model.train()
+                            # Debug: log to console that validation ran
+                            if logger:
+                                logger.info(f"Batch {i}: batch_val_loss = {vali_loss:.7f}")
+                        
+                        # Always log batch_val_loss if validation is enabled (for consistent WandB plotting)
+                        # Use last known value, or 1.0 as placeholder until first validation runs
+                        if validate_every_n_batches is not None:
+                            if last_val_loss is not None:
+                                batch_metrics['batch_val_loss'] = last_val_loss
+                            else:
+                                # Use 1.0 as placeholder until first validation runs
+                                # This ensures the metric appears in WandB from the start
+                                batch_metrics['batch_val_loss'] = 1.0
                         
                         self.exp_manager.log_batch_metrics(batch_metrics, batch_step=global_step)
 
