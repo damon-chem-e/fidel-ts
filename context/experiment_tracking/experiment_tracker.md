@@ -110,13 +110,15 @@ note (10/18 3:45 am): caiso, nyc, bear room, jena submitted with train truncated
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
 | Canada Photovoltaics | [✓] | `tgtsf_canada_photovoltaics_20260120_080941` | `20260120-080941_916143b7bacd` | - | - | mit_preemptable |
-| Germany Renewable | [>>] | - | - | - | - | mit_preemptable |
+| Germany Renewable | [✓] | - | - | - | - | mit_preemptable |
 | NYC Traffic Speed | [✓] | `tgtsf_nyc_traffic_speed_20260119_192618` | `20260119-192618_2a4450cc3082` | - | - | mit_preemptable | 
-| California ISO | [~] | - | - | - | - | mit_preemptable |
-| Bear Room | [~] | - | - | - | - | mit_preemptable |
-| Jena Atmospheric Physics | [~] | - | - | - | - | mit_preemptable |
+| California ISO | [not doing] | - | - | - | - | mit_preemptable |
+| Bear Room | [not doing] | - | - | - | - | mit_preemptable |
+| Jena Atmospheric Physics | [not doing] | - | - | - | - | mit_preemptable |
 
 note: memory hungry so run on preemptable rather than RTX Ada 4000/5000
+note (1/10 1:40 pm): jena, bear_room, caiso failed. claude churning on the error.
+note (1/21 2:20 pm): needed to fix static embeddings cache for multichannel, and fix tensor cache generation. fixed. now going to re-run tensor cache generation for these, and submit. tensor cache generation is done for caiso, jena, and bear room is on the way.
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -128,14 +130,15 @@ note: memory hungry so run on preemptable rather than RTX Ada 4000/5000
 
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
-| Canada Photovoltaics | [~] | - | - | - | - | mit sloan |
-| Germany Renewable | [~] | - | - | - | - | mit sloan |
-| NYC Traffic Speed | [~] | - | - | - | - | mit sloan |
-| California ISO | [~] | - | - | - | - | mit sloan |
-| Bear Room | [~] | - | - | - | - | mit sloan |
-| Jena Atmospheric Physics | [~] | - | - | - | - | mit sloan |
+| Canada Photovoltaics | [✓] | `tgtsf_canada_photovoltaics_20260120_163403` | `20260120-163403_203dac59181f` | - | - | mit sloan |
+| Germany Renewable | [✓] | `tgtsf_germany_renewable_20260120_165230` | `20260120-165230_0eb188f629f6` | - | - | mit sloan |
+| NYC Traffic Speed | [✓] | `tgtsf_nyc_traffic_speed_20260121_004653` | `20260121-004653_953f3ee12e94` | - | - | mit sloan | (almost finished, just take last checkpoint if it times out, it's on early stopping counter 4/5 as of 2:50 pm on 01/21)
+| California ISO | [not doing] | - | - | - | - | mit_preemptable |
+| Bear Room | [not doing] | - | - | - | - | mit_preemptable |
+| Jena Atmospheric Physics | [not doing] | - | - | - | - | mit_preemptable |
 
 note: run after the full resolution is complete
+note: jena, bear_room, caiso need to wait on the channel embedding fix
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -184,15 +187,17 @@ note (10/19 10 pm): timecma without tensor cache and without torch compile had s
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
 | Canada Photovoltaics | [✓] | - | - | - | - | RunPod (pod:canada) |
-| Germany Renewable | [>>] (timed out x2, submitted resume x2) | - | - | - | - | RunPod (pod:germany) |
-| NYC Traffic Speed | [>>] (timed out, submitted resume) | - | - | - | - | RunPod (pod:nyc_traffic) |
+| Germany Renewable | [>>] (needs restart with fixed resumption) | - | - | - | - | RunPod (pod:germany) |
+| NYC Traffic Speed | [>>] (needs restart with fixed resumption) | - | - | - | - | RunPod (pod:nyc_traffic) |
 | California ISO | [✓] | - | - | - | - | RunPod (pod:caiso) |
-| Bear Room | [>>] (preempted, started over) | - | - | - | - | RunPod (pod:bear_room) |
+| Bear Room | [>>] (almost timed out, will need restart with fixed resumption) | - | - | - | - | RunPod (pod:bear_room) |
 | Jena Atmospheric Physics | [✓] | - | - | - | - | RunPod (pod:jena) |
 
-note: (10/17 noon) running on preemptable; nyc traffic and bear room are waiting on a gpu (4 max on preemptable). pretraining at least was going well. 
-note: (10/17 11 pm) bear room preempted epoch 1 pretrain, so starting over from scratch
-note: (10/18 3 pm) going to rerun nyc traffic and germany on preemptable with requeue for 2 days each to get those done
+note: (1/17 noon) running on preemptable; nyc traffic and bear room are waiting on a gpu (4 max on preemptable). pretraining at least was going well. 
+note: (1/17 11 pm) bear room preempted epoch 1 pretrain, so starting over from scratch
+note: (1/18 3 pm) going to rerun nyc traffic and germany on preemptable with requeue for 2 days each to get those done
+note: (1/20 7:30 pm) leret is starting over from scratch when resuming (custom training code isn't handling resumption). need to fix before resuming again (affected: germany, nyc traffic) 
+note: (1/21 5 pm): I reduced nyc traffic to 4 pretrain 4 fine tune and resumed, hopefully will resume fine. the others seem to have resumed just fine. 
 
 #### MMTSFLib
 | Dataset | Status | LLM Embed | Suite ID | Experiment ID | Eval | Tables | Compute |
@@ -208,9 +213,31 @@ note: (10/18 3 pm) going to rerun nyc traffic and germany on preemptable with re
 note: all of the llm embeddings are runs from late 01/16 or early 01/17.
 **Note:** MMTSFlib requires precomputed LLM embeddings. All experiments are pending setup and execution.
 
+#### ZhangHanBest-PatchTST
+| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|--------|----------|---------|--------|--------|----------|--------|
+| Canada Photovoltaics | [✓] | `zhanghanbest_patchtst_canada_photovoltaics_20260121_170633` | `20260121-170633_eb8625c477fa` | - | - | mit_preemptable |
+| Germany Renewable | [✓] | `zhanghanbest_patchtst_germany_renewable_20260121_172533` | `20260121-172533_1ac479dfe570` | - | - | mit_preemptable |
+| NYC Traffic Speed | [✓] | `zhanghanbest_patchtst_nyc_traffic_speed_20260121_175936` | `20260121-175936_a62678bdd770` | - | - | mit_preemptable |
+| California ISO | [✓] | `zhanghanbest_patchtst_california_iso_20260121_170328` | `20260121-170328_e4370f9d8a74` | - | - | mit_preemptable |
+| Bear Room | [✓] | `zhanghanbest_patchtst_bear_room_20260121_181335` | `20260121-181335_4d843763d274` | - | - | mit_preemptable |
+| Jena Atmospheric Physics | [✓] | `zhanghanbest_patchtst_jena_atmospheric_20260121_172845` | `20260121-172845_d2762305ad34` | - | - | mit_preemptable |
+
+note: (10/21 4 pm: all fidel-ts pending on mit_preemptable)
+
+#### ZhangHanBest-DLinear
+| Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
+|--------|----------|---------|--------|--------|----------|--------|
+| Canada Photovoltaics | [✓] | `zhanghanbest_dlinear_canada_photovoltaics_20260121_154658` | `20260121-154658_a05e9c60afea` | - | - | mit_preemptable | (didn't run test, trying to eval)
+| Germany Renewable | [✓] | `zhanghanbest_dlinear_germany_renewable_20260121_154658` | `20260121-154658_c846861b2c5a` | - | - | mit_preemptable | (didn't run test, trying to eval)
+| NYC Traffic Speed | [✓] | `zhanghanbest_dlinear_nyc_traffic_speed_20260121_163149` | `20260121-163149_4b45b7316055` | - | - | mit_preemptable |
+| California ISO | [✓] | `zhanghanbest_dlinear_california_iso_20260121_185731` | `20260121-185731_f60686f66b3e` | - | - | mit_preemptable |
+| Bear Room | [✓] | `zhanghanbest_dlinear_bear_room_20260121_154657` | `/20260121-154657_1880989c6d74` | - | - | mit_preemptable | (didn't run test, trying to eval)
+| Jena Atmospheric Physics | [✓] | `zhanghanbest_dlinear_jena_atmospheric_20260121_160953` | `20260121-160953_2a166401c85a` | - | - | mit_preemptable | 
+
+note: (10/21 4 pm all fidel-ts pending on mit_preemptable)
+
 #### Other Benchmarks (Pending Experimentation)
-- **ZhangHanBest-PatchTST**: [ ] (needs experimentation setup)
-- **ZhangHanBest-DLinear**: [ ] (needs experimentation setup)
 - **MMTSFLib-FedFormer**: [ ] (needs experimentation setup)
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -220,11 +247,11 @@ note: all of the llm embeddings are runs from late 01/16 or early 01/17.
 #### Initial Runs (Other Datasets)
 | Dataset | Status | Suite ID | Experiment ID | Eval | Tables | Compute |
 |--------|----------|---------|--------|--------|----------|--------|
-| NYC Traffic Speed | [>>] | `lynx_film_raw_nyc_traffic_speed_20260120_144758` | `20260120-144758_715c03fcb6a2` | - | - | RunPod (pod:nyc_traffic) |
+| NYC Traffic Speed | [✓] | `lynx_film_raw_nyc_traffic_speed_20260120_144758` | `20260120-144758_715c03fcb6a2` | - | - | RunPod (pod:nyc_traffic) |
 | Canada Photovoltaics | [✓] | `lynx_film_raw_canada_photovoltaics_20260119_222019` | `20260119-222020_1a45a0aac8c7` | - | - | RunPod (pod:canada) | 
 | Germany Renewable | [✓] | `lynx_film_raw_germany_renewable_20260120_051004` | `20260120-051004_19e0259912bb` | - | - | RunPod (pod:germany) | 
 | California ISO | [✓] | `lynx_film_raw_california_iso_20260119_221759` | `20260119-221759_15466b14951a` | - | - | RunPod (pod:caiso) | 
-| Bear Room | [>>] | `lynx_film_raw_bear_room_20260120_143656` | `20260120-143656_5eb93c6b25f7` | - | - | RunPod (pod:bear_room) | 
+| Bear Room | [✓] | `lynx_film_raw_bear_room_20260120_143656` | `20260120-143656_5eb93c6b25f7` | - | - | RunPod (pod:bear_room) | 
 | Jena Atmospheric Physics | [✓] | `lynx_film_raw_jena_atmospheric_20260119_224922` | `20260119-224922_040d096de7db` | - | - | RunPod (pod:jena) | 
 
 note: these are full hetero resolution 

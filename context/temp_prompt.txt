@@ -433,7 +433,7 @@ note on itransformer: might need some significant improvements on hparams to rea
 
 merged tensor_cache_polars into alwaystest. pushed the new alwaystest into chimera_proj and orcd/scratch. timellm is completed. leret has three still running.
 
-[tensor-cache-llm] claude is churning on this in the new branch and worktree. I think that it's not worth it to generate the llm compatibility for tensor cache. going to just run mmtsflib and timecma without tensor cache (changed configs on alwaystest). if that takes too long we come back to it. actually... if we can keep it fully contained and separate in the tensor_cache_llm branch and never merge that back (only use it for timecma and mmtsflib), then the risk of breaking other things is negligible and we can just try it. it's too slow without tensor cacheing. maybe we let claude churn on it a bit after all...claude is now churning on tests, after which he'll churn on working on test driven development.
+[tensor-cache-llm] claude is churning on this in the new branch and worktree. I think that it's not worth it to generate the llm compatibility for tensor cache. going to just run mmtsflib and timecma without tensor cache (changed configs on alwaystest). if that takes too long we come back to it. actually... if we can keep it fully contained and separate in the tensor_cache_llm branch and never merge that back (only use it for timecma and mmtsflib), then the risk of breaking other things is negligible and we can just try it. it's too slow without tensor cacheing. maybe we let claude churn on it a bit after all...claude is now churning on tests, after which he'll churn on working on test driven development. TDD (test driven development) complete. Need to test on the cluster.
 
 [alwaystest] looks like the merge with tensor_cache_polars rolled back some test after train progress, so trying to fix that in the alwaystest claude, then will test again on interactive gpu, then roll out to the pods. the fix works. rolled out to nyc traffic pod and running itransformer there.
 
@@ -443,7 +443,7 @@ merged tensor_cache_polars into alwaystest. pushed the new alwaystest into chime
 
 [itransformer] my itransformer nyc traffic run got precisely (like exactly) the same test loss as the original fidel ts paper! This is great. We are in business.
 
-[pod:nyc-traffic] itransformer run, lynx_film run, lynx_film_raw is running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache)
+[pod:nyc-traffic:stopped] itransformer run, lynx_film run, lynx_film_raw is run. (had to reduce to 256 batch size, using the itransformer just run, using tensor cache). ported results to chimera_proj.
 
 [pod:canada:terminated] itransformer run, lynx_film and lynx_film_raw run. (had to reduce to 256 batch size, using the itransformer just run, using tensor cache). ported results to chimera_proj
 
@@ -453,17 +453,21 @@ merged tensor_cache_polars into alwaystest. pushed the new alwaystest into chime
 
 [pod:jena:stopped] setting up (uv done, git cloned, porting over jena data complete, tmux complete). itransformer run. lynx_film and lynx_film_raw run. (had to reduce to 256 batch size, using the itransformer just run, using tensor cache). ported results to chimera_proj.
 
-[pod:bear_room] setting up (uv done, git cloned, tmux complete, porting over bear room data complete). itransformer run. lynx_film run. lynx_film_raw running (had to reduce to 256 batch size, using the itransformer just run, using tensor cache). 
+[pod:bear_room:stopped] setting up (uv done, git cloned, tmux complete, porting over bear room data complete). itransformer run. lynx_film run. lynx_film_raw run (had to reduce to 256 batch size, using the itransformer just run, using tensor cache). results ported to chimera_proj. 
 
-[tgtsf] looks like this is quite memory hungry. probably going to run on preemptable rather than on pods and leave pods for the lynx film work. submitted jobs on preemptable for full resolution. once those are done submit for original resolution.
+[tgtsf (static_embedder_fix)] looks like this is quite memory hungry. probably going to run on preemptable rather than on pods and leave pods for the lynx film work. submitted jobs on preemptable for full resolution. once those are done submit for original resolution. nyc traffic, germany, and canada all have one variable... or maybe not. churning with claude to ensure we have the correct fix on this, then need to document which runs need to be re-done, and roll out the origres jobs again that failed.
 
-[timecma] submited jena,caiso,canada,bear_room to sloan gpu. nyc traffic and germany might not get around to.
+[timecma] waiting on tensor_cache_llm testing
 
-[mmtsflib] ... (need to review whether it works then submit on sloan gpu)
+[mmtsflib] waiting on tensor_cache_llm testing
 
-[zhanghanbest] added a hidden layer in residual projection, which matches paper better. testing on jena on orcd/scratch. generated configs for zhanghanbest-patchtst and zhanghanbest-dlinear. testing on jena on orcd/scratch (with tensor cache): zhanghanbest-patchtst runs great. . Also the paper trains the unimodal model and the residual projection separately, suggesting two stages of training. I am currently training jointly. I should add an option to train separately to match the paper better.
+[leret fix] cursor churning on a fix
 
-[enhancements] caiso is horrid for lynx_film and lynx_film_raw. worse on val than test by a mile, and worse on test than val by 10 miles. I think perhaps we need to to multiple different CV splits over the train data (not respecting temporal ordering -- helpful if the distribution shifts) and early stop when any of those or several have val loss going up. I think it massively overtrained (10 epochs). Or, simpler solution: just train one epoch always. another possibility is the gating (lynx film enhanced). if val loss is worse than unimodal, perhaps we could in lynx_film_raw use the val set to inform the gate? like some held out portion and if it's bad or worse than unimodal that signal goes somehow to the gate. I also think that looking at the text data is useful. It could be that when the text data is highly structured film does quite well, but when it is not then film is too direct and fails (overfits)
+[zhanghanbest] added a hidden layer in residual projection, which matches paper better. testing on jena on orcd/scratch. generated configs for zhanghanbest-patchtst and zhanghanbest-dlinear. testing on jena on orcd/scratch (with tensor cache): zhanghanbest-patchtst and zhanghanbest-dlinear run great. 
+
+[static embeddings fix] I will need to rerun jena, caiso, bear_room on lynx_* models with the fix. nyc_traffic, germany, canada are unaffected and don't need to be rerun. The reruns will tell us how important channel descriptions are. models that don't use variable descriptions (everything except tgtsf and lynx_*) don't need to be rerun.
+
+[enhancements] caiso is horrid for lynx_film and lynx_film_raw. worse on val than test by a mile, and worse on test than val by 10 miles. I think perhaps we need to to multiple different CV splits over the train data (not respecting temporal ordering -- helpful if the distribution shifts) and early stop when any of those or several have val loss going up. I think it massively overtrained (10 epochs). Or, simpler solution: just train one epoch always. another possibility is the gating (lynx film enhanced). if val loss is worse than unimodal, perhaps we could in lynx_film_raw use the val set to inform the gate? like some held out portion and if it's bad or worse than unimodal that signal goes somehow to the gate. I also think that looking at the text data is useful. It could be that when the text data is highly structured film does quite well, but when it is not then film is too direct and fails (overfits). oddly, lynx_film_raw did amazing with nyc traffic in initial runs, but in full resolution it did terribly (way overfit). Curious whether this has to do with original resolution vs full resolution. need to dig into the results more on the runs that worked vs the run that drastically overfit to see what went wrong.
 
 [enhancements] lynx_film does horrid on full resolution usually (at least on nyc traffic and bear room). original resolution seemed to be better for nyc traffic, but lynx film raw I think will do better. probably lynx film overfits (which fits what we are seeing) the residual.
 
@@ -487,6 +491,69 @@ get the agent monitor working is a side quest (currently uv run stuff)
 - leret is still running on preemptable
 - tgtsf_origres_* is queued on mit sloan
 - lynx_film_raw finishing up on pods
+
+01/20 2 pm:
+
+- we might need to re-run tgtsf and lynx models (the ones that use the static info, verify that the others ignore it). looks like claude on alwaystest trying to fix tgtsf_fullres caiso,jena,bear_room found an issue with how the static info is placed into the tensor cache. look at whether fixing that issue actually helps though (is a test to see if the channel specific information attending to each channel rather than being global is helpful). that can be another result actually.
+- note that if reviewers aren't happy with the others ignoring static info, we could prepend it to each piece of dynamic information for those models as part of the review
+
+
+---
+
+timeline:
+- I need 1 day to try enhanced on fidel-ts
+- I need to get enhanced up and tested on iterated and refined by early thursday, and running on pods by thursday afternoon
+
+
+---
+
+01/21 afternoon dump:
+
+Tuesday night / Wednesday:
+then submit zhanghanbest jobs (using the new commit with double lr -- tested and it works)
+then resubmit / restart lynx_* jobs with static embeddings fix
+-> the static embeddings fix is working and the tensor caches are generated, but having an embedding per channel is too large -- exceeds l40s memory. I think a better solution would be to append the channel description to the news text, but for now I can just ignore the channel embeddings in my lynx_film models (and I ignore them for tgtsf on time mmd ttc because time mmd ttc don't require them). go back to alwaystest and use the old embeddings with old stride for the loss curves for tgtsf to compare against. memory might have been why they reduced hetero stride. ohhh... i can just compare loss curves for nyc, Germany, and Canada. then I just ignore tgtsf on caiso, bear room, and jena as a benchmark to compare loss curves (the actual performance is taken from their paper). done.
+-> don't resubmit lynx_* jobs with the new static embeddings fix. If anything, while messing around getting my performance up on Thursday, try cutting out their text embedder that uses channel descriptions and just don't use them at all in lynx film raw and lynx film enhanced (lynx film is out the window). just self attend and be done. no need for channel descriptions -- we learn per channel model so we are fine (ensure we do). 
+-> basically don't worry about tgtsf (we have some loss curves to compare against) and don't worry about lynx_* runs anymore til we hammer out performance. 
+-> benchmarks left: resume leret, zhanghanbest (submitted), mmtsflib (tensor cache llm), timecma (tensor cache llm).
+
+then check in on cursor for leret resumption
+then submit leret resumption 
+then test tensor cache llm
+then submit mmtsflib and timecma with tensor cache
+
+-> we try a little bit with timecma and mmtsflib, but if it's too much, we let it go. their llm embeddings are a lot (sample-specific). We could probably get away with just citing zhanghanbest and not using the mmtsflib benchmark, though  using it would be pretty strong. just moving the damn data from one directory to another is insanely time consuming, it must be enormous.
+
+[sleep point]
+
+Thursday:
+analysis of the results so far. go crazy on time mmd and ttc on pods getting good, consistent results. includes looking at why nyc traffic was good before and is bad now.
+get good results on the small fidel ts (jena, caiso, Canada) -> this gives an abstract
+submit jobs on large fidel-ts for the stuff that looks excellent on time mmd
+
+path: 
+- analysis of results so far -> make a plan
+--- make sense of results -- why are some horrid and some pretty good; compare to benchmarks, and compare to previous runs (why different)
+--- I can grab the results myself (useful for thinking, and make sure it's right) but then have ai in browser format into nice tables
+- mit normal gpu up for running time mmd ttc quick and iterating. anything that looks good we spin up pods and run (data already there, just git fetch, pull, then run).
+
+[sleep point]
+
+note on hparam tuning for zhanghanbest: I can hparam tune later after other things are done -- it's not the priority right now (tuning the hparam that determines the mixing rate)
+
+right now (old):
+- finish and test the fix to the tgtsf for multichannel broadcasting -> resubmit jobs on preemptable -> possibly move the origres tgtsf jobs from mit sloan to preemptable
+- fix leret resumption problem then submit resumption jobs (submit nyc with fewer epochs: 5 pretrain, 5 fine tune, but ensure it picks up from where it left off)
+- test zhanghanbest with split lr on cluster -> get zhanghanbest running (pending) on cluster
+- test tensor_cache_llm on cluster -> get the tensor cache jobs going on cluster (cpu ideally)
+- test and submit mmtsflib jobs with tensor cache, then timecma (mmtsflib higher priority)
+- analyze results so far and work on getting high performance on my own models everywhere -- iterate fast and ensure we beat benchmarks
+- submit re-runs of lynx film raw on pods for caiso, jena, and bear_room (and make a clear note in experiment tracking that the previous ones had channel descriptions all concatenated and broadcast across channels, so it wasn't clear which channel was which, but this one is clear which channel is which -- a measure of channel importance is the difference between the runs)
+- submit and run lynx film raw original resolution on pods if full resolution beats tgtsf full res
+- mmvision 
+
+
+get the agent monitor working is a side quest (currently uv run stuff)
 
 ---
 
@@ -648,3 +715,7 @@ du: cannot read directory ‘./mts/data/TTC/Medical’: Permission denied
 1.3T    ./mts
 1.4T    ./intraday
 3.1T    .
+
+---
+
+[future notes] can set patience in terms of batch steps rather than epochs, and be less patient to save compute when I am confident after a couple runs that it doesn't recover after starting to overfit
