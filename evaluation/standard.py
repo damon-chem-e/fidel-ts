@@ -843,15 +843,19 @@ def evaluate(config):
     data_provider = Data_Provider(checkpoint_config)
     
     # Get loaders and datasets for each split
+    # Note: When tensor cache is enabled, return_type='set' is not supported.
+    # We get datasets from loader.dataset instead (handled in evaluate_full_dataset).
     loaders_dict = {}
     datasets_dict = {}
     
     train_loader = data_provider.get_train("loader")
     if train_loader is not None:
         loaders_dict['train'] = train_loader
-        train_dataset = data_provider.get_train("set")
-        if train_dataset is not None:
-            # Handle case where get_train returns a dict of datasets
+        # Try to get dataset from loader if available (for scaler access)
+        # This works for both regular datasets and tensor cache datasets
+        if hasattr(train_loader, 'dataset'):
+            train_dataset = train_loader.dataset
+            # Handle case where dataset is a dictionary (multiple entities)
             if isinstance(train_dataset, dict):
                 # Use first dataset's scaler (assuming all have same scaler)
                 first_dataset = next(iter(train_dataset.values()))
@@ -862,8 +866,9 @@ def evaluate(config):
     val_loader = data_provider.get_val("loader")
     if val_loader is not None:
         loaders_dict['val'] = val_loader
-        val_dataset = data_provider.get_val("set")
-        if val_dataset is not None:
+        # Try to get dataset from loader if available (for scaler access)
+        if hasattr(val_loader, 'dataset'):
+            val_dataset = val_loader.dataset
             if isinstance(val_dataset, dict):
                 first_dataset = next(iter(val_dataset.values()))
                 datasets_dict['val'] = first_dataset
@@ -873,8 +878,9 @@ def evaluate(config):
     test_loader = data_provider.get_test("loader")
     if test_loader is not None:
         loaders_dict['test'] = test_loader
-        test_dataset = data_provider.get_test("set")
-        if test_dataset is not None:
+        # Try to get dataset from loader if available (for scaler access)
+        if hasattr(test_loader, 'dataset'):
+            test_dataset = test_loader.dataset
             if isinstance(test_dataset, dict):
                 first_dataset = next(iter(test_dataset.values()))
                 datasets_dict['test'] = first_dataset
