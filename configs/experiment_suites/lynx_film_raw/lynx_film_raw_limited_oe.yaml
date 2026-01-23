@@ -1,12 +1,12 @@
 # Experiment Suite: lynx_film_raw on Time MMD and TTC datasets
 # Description: Train lynx_film_raw model on all Time MMD (Liu et al., 2024b) and TTC (Kim et al., 2024) datasets
-# Usage: python -m cli.suite run configs/experiment_suites/lynx_film_raw/time_mmd_ttc_limited_o.yaml
+# Usage: python -m cli.suite run configs/experiment_suites/lynx_film_raw/lynx_film_raw_limited_oe.yaml
 # Note: Input/output lens follow Table 4 from the original papers:
 #       - Time MMD datasets use 7:1:2 train/val/test ratio splits
 #       - TTC datasets use 7:1:2 train/val/test ratio splits
 
 suite:
-  name: "lynx_film_raw_time_mmd_ttc_limited_o"
+  name: "lynx_film_raw_time_mmd_ttc_limited_oe"
   description: "Train lynx_film_raw model on all Time MMD and TTC datasets"
   tags: ["lynx_film_raw", "multimodal", "pytorch", "time_mmd", "ttc", "film"]
 
@@ -14,7 +14,7 @@ suite:
   execution:
     parallel: false
     continue_on_error: false
-    log_dir: "./logs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+    log_dir: "./logs/suites/lynx_film_raw/time_mmd_ttc_limited_oe"
     
   # Experiments in this suite
   experiments:
@@ -35,7 +35,6 @@ suite:
           d_model: 1024
           e_layers: 2
           n_heads: 8
-          input_text_dim: 768
           text_encoder_type: "mlp"
           text_encoder_mlp_hidden_dim: 32
           text_encoder_mlp_dropout: 0.1
@@ -48,6 +47,7 @@ suite:
           config_path: "data_configs/time_mmd/Algriculture/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_old_pkl: true
           use_tensor_cache: false
         training:
           input_len: 24       # Context length from Table 4
@@ -65,7 +65,7 @@ suite:
           tags: ["lynx_film_raw", "time_mmd_agriculture"]
         experiment:
           type: "pytorch"
-          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_oe"
     
     # Climate: context=24, prediction=6
     - name: "lynx_film_raw_timemmd_climate"
@@ -80,7 +80,6 @@ suite:
           d_model: 1024
           e_layers: 2
           n_heads: 8
-          input_text_dim: 768
           text_encoder_type: "mlp"
           text_encoder_mlp_hidden_dim: 32
           text_encoder_mlp_dropout: 0.1
@@ -93,6 +92,7 @@ suite:
           config_path: "data_configs/time_mmd/Climate/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_old_pkl: true
           use_tensor_cache: false
         training:
           input_len: 24       # Context length from Table 4
@@ -110,7 +110,7 @@ suite:
           tags: ["lynx_film_raw", "time_mmd_climate"]
         experiment:
           type: "pytorch"
-          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_oe"
     
     # Economy: context=24, prediction=6
     - name: "lynx_film_raw_timemmd_economy"
@@ -125,7 +125,6 @@ suite:
           d_model: 1024
           e_layers: 2
           n_heads: 8
-          input_text_dim: 768
           text_encoder_type: "mlp"
           text_encoder_mlp_hidden_dim: 32
           text_encoder_mlp_dropout: 0.1
@@ -138,6 +137,7 @@ suite:
           config_path: "data_configs/time_mmd/Economy/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_old_pkl: true
           use_tensor_cache: false
         training:
           input_len: 24       # Context length from Table 4
@@ -155,7 +155,7 @@ suite:
           tags: ["lynx_film_raw", "time_mmd_economy"]
         experiment:
           type: "pytorch"
-          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_oe"
     
     # Energy: context=24, prediction=12
     - name: "lynx_film_raw_timemmd_energy"
@@ -170,7 +170,6 @@ suite:
           d_model: 1024
           e_layers: 2
           n_heads: 8
-          input_text_dim: 768
           text_encoder_type: "mlp"
           text_encoder_mlp_hidden_dim: 32
           text_encoder_mlp_dropout: 0.1
@@ -183,6 +182,7 @@ suite:
           config_path: "data_configs/time_mmd/Energy/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_old_pkl: true
           use_tensor_cache: false
         training:
           input_len: 24       # Context length from Table 4
@@ -200,7 +200,7 @@ suite:
           tags: ["lynx_film_raw", "time_mmd_energy"]
         experiment:
           type: "pytorch"
-          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_oe"
     
     # Environment: context=24, prediction=48
     - name: "lynx_film_raw_timemmd_environment"
@@ -215,7 +215,6 @@ suite:
           d_model: 1024
           e_layers: 2
           n_heads: 8
-          input_text_dim: 768
           text_encoder_type: "mlp"
           text_encoder_mlp_hidden_dim: 32
           text_encoder_mlp_dropout: 0.1
@@ -228,6 +227,7 @@ suite:
           config_path: "data_configs/time_mmd/Environment/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_old_pkl: true
           use_tensor_cache: false
         training:
           input_len: 24       # Context length from Table 4
@@ -245,7 +245,7 @@ suite:
           tags: ["lynx_film_raw", "time_mmd_environment"]
         experiment:
           type: "pytorch"
-          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_oe"
     
     # Health (Public_Health): context=24, prediction=12
     - name: "lynx_film_raw_timemmd_health"
@@ -260,7 +260,6 @@ suite:
           d_model: 1024
           e_layers: 2
           n_heads: 8
-          input_text_dim: 768
           text_encoder_type: "mlp"
           text_encoder_mlp_hidden_dim: 32
           text_encoder_mlp_dropout: 0.1
@@ -273,6 +272,7 @@ suite:
           config_path: "data_configs/time_mmd/Public_Health/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_old_pkl: true
           use_tensor_cache: false
         training:
           input_len: 24       # Context length from Table 4
@@ -290,7 +290,7 @@ suite:
           tags: ["lynx_film_raw", "time_mmd_health"]
         experiment:
           type: "pytorch"
-          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_oe"
     
     # Socialgood: context=24, prediction=6
     - name: "lynx_film_raw_timemmd_socialgood"
@@ -305,7 +305,6 @@ suite:
           d_model: 1024
           e_layers: 2
           n_heads: 8
-          input_text_dim: 768
           text_encoder_type: "mlp"
           text_encoder_mlp_hidden_dim: 32
           text_encoder_mlp_dropout: 0.1
@@ -318,6 +317,7 @@ suite:
           config_path: "data_configs/time_mmd/SocialGood/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_old_pkl: true
           use_tensor_cache: false
         training:
           input_len: 24       # Context length from Table 4
@@ -337,7 +337,7 @@ suite:
           tags: ["lynx_film_raw", "time_mmd_socialgood"]
         experiment:
           type: "pytorch"
-          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_oe"
     
     # Traffic: context=24, prediction=6
     - name: "lynx_film_raw_timemmd_traffic"
@@ -352,7 +352,6 @@ suite:
           d_model: 1024
           e_layers: 2
           n_heads: 8
-          input_text_dim: 768
           text_encoder_type: "mlp"
           text_encoder_mlp_hidden_dim: 32
           text_encoder_mlp_dropout: 0.1
@@ -365,6 +364,7 @@ suite:
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_old_pkl: true
           use_tensor_cache: false
         training:
           input_len: 24       # Context length from Table 4
@@ -382,7 +382,7 @@ suite:
           tags: ["lynx_film_raw", "time_mmd_traffic"]
         experiment:
           type: "pytorch"
-          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_oe"
     
     # ===========================================
     # TTC Datasets (Kim et al., 2024)
@@ -401,7 +401,6 @@ suite:
           d_model: 1024
           e_layers: 2
           n_heads: 8
-          input_text_dim: 768
           text_encoder_type: "mlp"
           text_encoder_mlp_hidden_dim: 32
           text_encoder_mlp_dropout: 0.1
@@ -414,6 +413,7 @@ suite:
           config_path: "data_configs/ttc/climate/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_old_pkl: true
           use_tensor_cache: false
         training:
           input_len: 7        # Context length from Table 4
@@ -431,7 +431,7 @@ suite:
           tags: ["lynx_film_raw", "ttc_weather"]
         experiment:
           type: "pytorch"
-          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_oe"
     
     # Medical: context=7, prediction=7
     - name: "lynx_film_raw_ttc_medical"
@@ -446,7 +446,6 @@ suite:
           d_model: 1024
           e_layers: 2
           n_heads: 8
-          input_text_dim: 768
           text_encoder_type: "mlp"
           text_encoder_mlp_hidden_dim: 32
           text_encoder_mlp_dropout: 0.1
@@ -459,6 +458,7 @@ suite:
           config_path: "data_configs/ttc/medical/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_old_pkl: true
           filter_insufficient_entities: true  # Filter out entities without enough data for 7/7 input/output with 70/10/20 split
           missing_value_strategy: forward_fill_indicators  # Forward fill missing values and create indicator variables
         training:
@@ -477,4 +477,4 @@ suite:
           tags: ["lynx_film_raw", "ttc_medical"]
         experiment:
           type: "pytorch"
-          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_oe"
