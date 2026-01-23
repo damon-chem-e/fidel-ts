@@ -88,20 +88,13 @@ class LynxTextEncoder(nn.Module):
         This guards against partial device moves that can occur in compiled
         graphs, which would otherwise cause mixed-device attention ops.
         """
-        # Move positional encoding if it is on a different device
-        if self.W_pos.device != device:
-            self.W_pos.data = self.W_pos.data.to(device)
-        # Move each sub-encoder module to the input device when needed
-        for module in (self.cross_encoder, self.self_encoder, self.mlp_encoder):
-            if module is None:
-                continue
-            # Check all parameters for mismatched devices
-            has_mismatch = any(param.device != device for param in module.parameters())
-            # Check all buffers (if any) for mismatched devices
-            has_mismatch = has_mismatch or any(buf.device != device for buf in module.buffers())
-            # Move the entire module if any part is on the wrong device
-            if has_mismatch:
-                module.to(device)
+        # Check whether any parameter is on a different device
+        has_param_mismatch = any(param.device != device for param in self.parameters())
+        # Check whether any buffer is on a different device
+        has_buffer_mismatch = any(buf.device != device for buf in self.buffers())
+        # Move the full encoder if any mismatch is detected
+        if has_param_mismatch or has_buffer_mismatch:
+            self.to(device)
 
     def _build_cross_encoder(self, cross_layer: int, embedding_dim: int, num_heads: int, dropout: float):
         """
