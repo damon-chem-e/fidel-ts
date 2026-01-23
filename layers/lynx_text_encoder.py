@@ -95,6 +95,17 @@ class LynxTextEncoder(nn.Module):
         # Move the full encoder if any mismatch is detected
         if has_param_mismatch or has_buffer_mismatch:
             self.to(device)
+        # Ensure spectral_norm buffers follow the active device
+        # This avoids CPU-normalized weights when modules were wrapped on CPU.
+        for module in self.modules():
+            # Move weight_u buffer if present
+            weight_u = module._buffers.get("weight_u")
+            if weight_u is not None and weight_u.device != device:
+                module._buffers["weight_u"] = weight_u.to(device)
+            # Move weight_v buffer if present
+            weight_v = module._buffers.get("weight_v")
+            if weight_v is not None and weight_v.device != device:
+                module._buffers["weight_v"] = weight_v.to(device)
 
     def _build_cross_encoder(self, cross_layer: int, embedding_dim: int, num_heads: int, dropout: float):
         """
