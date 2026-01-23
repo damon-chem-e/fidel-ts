@@ -1,0 +1,83 @@
+# WandB Sweep Configuration: Germany Renewable Power Grid Sweep
+# Description: Hyperparameter sweep with architecture parameters (d_model) and training hyperparameters (LR, batch_size)
+# Purpose: Sweep around parameter values: LR=0.00025, batch_size=8, d_model=512, e_layers=2, n_heads=8
+# Usage: wandb sweep configs/sweep_configs/lynx_film_enhanced/lynx_film_enhanced_germany_renewable_sweep.yaml --project fidel-ts
+
+program: scripts/wandb_sweep_wrapper.py
+method: random  # Use random for hyperparameter search
+metric:
+  name: final_val_loss
+  goal: minimize
+
+# Base suite config to sweep over
+_config_path: "configs/experiment_suites/sweeps/lynx_film_enhanced_germany_renewable_sweep.yaml"
+
+# Hyperparameters to sweep
+parameters:
+  # Model Architecture Parameters (via model_config_overrides)
+  # These override values in model_configs/general/lynx_film_enhanced.yaml
+
+  model_config_overrides.e_layers:  # Depth: number of transformer layers
+    values: [2, 3, 4]
+
+  model_config_overrides.d_model:  # Width: model dimension
+    values: [256, 384, 512, 768]
+
+  model_config_overrides.n_heads:  # Number of attention heads
+    values: [4, 8, 12]
+
+  # Gate Parameters
+  model_config_overrides.gate_hidden_dim:
+    values: [16, 32, 64]
+
+  model_config_overrides.gate_init_bias:
+    values: [-0.5, 0.0, 0.5]
+
+  # Text Encoder Options
+  model_config_overrides.text_encoder_type:
+    values: ["cross", "self", "mlp"]
+
+  model_config_overrides.cross_layers:
+    values: [0, 1, 2, 3]
+
+  model_config_overrides.self_layers:
+    values: [1, 2, 3]
+
+  model_config_overrides.text_encoder_mlp_hidden_dim:
+    values: [64, 128, 256, 512]
+
+  model_config_overrides.text_encoder_mlp_dropout:
+    values: [0.0, 0.1, 0.2]
+
+  # FiLM Generator Regularization
+  model_config_overrides.film_hidden_dim:
+    values: [64, 128, 256, 384]
+
+  model_config_overrides.film_dropout:
+    values: [0.0, 0.1, 0.2]
+
+  model_config_overrides.text_film_weight_norm:
+    values: [false]  # Keep disabled to avoid conflicts with spectral norm
+
+  model_config_overrides.text_film_spectral_norm:
+    values: [false, true]
+
+  # Training Hyperparameters
+  training.learning_rate:
+    distribution: log_uniform_values  # Use _values variant for actual value range
+    min: 1e-4
+    max: 5e-4
+
+  training.text_film_learning_rate:
+    distribution: log_uniform_values
+    min: 5e-5
+    max: 2e-4
+
+  training.text_film_weight_decay:
+    distribution: log_uniform_values
+    min: 1e-5
+    max: 5e-3
+
+  training.batch_size:
+    values: [8, 16, 32, 64, 128]
+
