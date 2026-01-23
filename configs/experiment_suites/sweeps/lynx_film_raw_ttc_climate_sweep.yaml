@@ -43,8 +43,8 @@ suite:
           batch_size: 8       # Will be overridden by sweep (default in middle of range)
           learning_rate: 0.00025  # Will be overridden by sweep (default in middle of good range)
           lradj: constant      # Keep learning rate constant (no exponential decay)
-          patience: 3
-          epochs: 10
+          patience: 5
+          epochs: 30
           track_per_sample: false
           evaluate_test_during_training: false
         wandb:

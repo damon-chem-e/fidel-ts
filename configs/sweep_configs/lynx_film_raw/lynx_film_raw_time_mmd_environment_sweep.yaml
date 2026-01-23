@@ -6,7 +6,7 @@
 program: scripts/wandb_sweep_wrapper.py
 method: random  # Use random for hyperparameter search
 metric:
-  name: val_loss
+  name: final_val_loss
   goal: minimize
 
 # Base suite config to sweep over

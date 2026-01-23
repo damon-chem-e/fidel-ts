@@ -2,16 +2,16 @@
 # Description: Architecture and training hyperparameter sweep on TTC Medical dataset
 # Purpose: Sweep e_layers, d_model, n_heads, batch_size, and learning rate on TTC Medical
 # Usage: wandb sweep configs/sweep_configs/lynx_film_raw/lynx_film_raw_ttc_medical_sweep.yaml --project fidel-ts
-# NOTE: Optimizes on val_loss with truncate_train_for_purge to avoid lookahead bias.
+# NOTE: Optimizes on final_val_loss with truncate_train_for_purge to avoid lookahead bias.
 
 program: scripts/wandb_sweep_wrapper.py
 method: random  # Use random for exploration across parameter space
 metric:
-  name: val_loss
+  name: final_val_loss
   goal: minimize
 
 # Base suite config to sweep over
-_config_path: "configs/experiment_suites/lynx_film_raw_ttc_medical_sweep.yaml"
+_config_path: "configs/experiment_suites/sweeps/lynx_film_raw_ttc_medical_sweep.yaml"
 
 # Hyperparameters to sweep
 parameters:
