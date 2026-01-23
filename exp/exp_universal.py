@@ -414,53 +414,160 @@ class Experiment(Exp_Basic):
         
         return progress, task, logger, console
 
+    def _filter_params_with_grad(self, params):
+        """
+        Filter parameters to those that have gradients available.
+        
+        Args:
+            params: Iterable of parameters to filter.
+        
+        Returns:
+            list: Parameters with non-None gradients.
+        """
+        # Step 1: guard against None inputs.
+        if params is None:
+            return []
+        # Step 2: keep only parameters with gradients.
+        return [param for param in params if param is not None and param.grad is not None]
+
+    def _get_named_param_groups(self, model_optim):
+        """
+        Collect named optimizer parameter groups plus a total group.
+        
+        Args:
+            model_optim: Optimizer providing parameter groups.
+        
+        Returns:
+            dict: Mapping of group name -> list of parameters.
+        """
+        # Step 1: initialize storage for named groups.
+        group_params = {}
+        # Step 2: pull named groups from the optimizer, or synthesize names.
+        for index, group in enumerate(getattr(model_optim, 'param_groups', [])):
+            group_name = group.get('name', f'group_{index}')
+            group_params[group_name] = list(group.get('params', []))
+        # Step 3: add a total group for the full model.
+        group_params['total'] = list(self.model.parameters())
+        return group_params
+
+    def _compute_group_norms(self, group_params):
+        """
+        Compute gradient norm for each parameter group without clipping.
+        
+        Args:
+            group_params: Mapping of group name -> list of parameters.
+        
+        Returns:
+            dict: Mapping of group name -> gradient norm (float).
+        """
+        # Step 1: initialize output dictionary.
+        group_norms = {}
+        # Step 2: compute norms for each group using max_norm=inf.
+        for group_name, params in group_params.items():
+            params_with_grad = self._filter_params_with_grad(params)
+            if not params_with_grad:
+                group_norms[group_name] = 0.0
+                continue
+            group_norms[group_name] = torch.nn.utils.clip_grad_norm_(
+                params_with_grad,
+                max_norm=float('inf')
+            ).item()
+        return group_norms
+
+    def _apply_grad_clipping(self, grad_clip_max_norm, text_film_grad_clip_max_norm, group_params):
+        """
+        Apply gradient clipping based on configured thresholds.
+        
+        Args:
+            grad_clip_max_norm: Global clipping threshold (None/<=0 disables).
+            text_film_grad_clip_max_norm: Text-FiLM threshold (None/<=0 disables).
+            group_params: Mapping of group name -> parameters.
+        
+        Returns:
+            str: Clip mode used ("global", "text_film", or "none").
+        """
+        # Step 1: apply global clipping when configured.
+        if grad_clip_max_norm is not None and float(grad_clip_max_norm) > 0:
+            torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(),
+                max_norm=float(grad_clip_max_norm)
+            )
+            return "global"
+        # Step 2: apply text-FiLM-only clipping when configured and present.
+        text_film_params = group_params.get('text_film', [])
+        if text_film_params and text_film_grad_clip_max_norm is not None and float(text_film_grad_clip_max_norm) > 0:
+            torch.nn.utils.clip_grad_norm_(
+                self._filter_params_with_grad(text_film_params),
+                max_norm=float(text_film_grad_clip_max_norm)
+            )
+            return "text_film"
+        # Step 3: no clipping applied.
+        return "none"
+
+    def _merge_raw_clipped_norms(self, raw_norms, clipped_norms):
+        """
+        Merge raw and clipped norms into a single per-group dictionary.
+        
+        Args:
+            raw_norms: Raw (pre-clip) norms by group.
+            clipped_norms: Clipped (post-clip) norms by group.
+        
+        Returns:
+            dict: Mapping of group name -> {"raw": float, "clipped": float}.
+        """
+        # Step 1: initialize merged output.
+        merged = {}
+        # Step 2: unify keys from both dictionaries.
+        all_groups = set(raw_norms.keys()) | set(clipped_norms.keys())
+        # Step 3: build merged entries with defaults.
+        for group_name in all_groups:
+            merged[group_name] = {
+                "raw": float(raw_norms.get(group_name, 0.0)),
+                "clipped": float(clipped_norms.get(group_name, 0.0))
+            }
+        return merged
+
     def _compute_grad_norm(self, model_optim):
         """
-        Compute gradient norms and apply optional clipping by parameter group.
-
+        Compute gradient norms, apply optional clipping, and return group details.
+        
         This supports:
         - Global clipping (all parameters) via model_config.grad_clip_max_norm
         - Text-FiLM-only clipping via model_config.text_film_grad_clip_max_norm
-
+        
         Args:
             model_optim: Optimizer with named parameter groups.
 
         Returns:
-            float: Total gradient norm after any clipping.
+            tuple: (legacy_total_norm, group_norms) where group_norms includes raw/clipped.
         """
-        # Read global clipping threshold (None/<=0 disables global clipping)
+        # Step 1: read clipping thresholds from model config.
         grad_clip_max_norm = getattr(self.args.model_config, 'grad_clip_max_norm', None)
-        # Read text-FiLM-only clipping threshold (None/<=0 disables group clipping)
         text_film_grad_clip_max_norm = getattr(
             self.args.model_config,
             'text_film_grad_clip_max_norm',
             None
         )
-        # Apply global clipping when configured
-        if grad_clip_max_norm is not None and float(grad_clip_max_norm) > 0:
-            # Clip all parameters and return the resulting total norm
-            return torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(),
-                max_norm=float(grad_clip_max_norm)
-            ).item()
-        # Collect text-FiLM parameters from named optimizer groups
-        text_film_params = []
-        # Prefer optimizer param groups since they already define text-FiLM grouping
-        for group in getattr(model_optim, 'param_groups', []):
-            if group.get('name') == 'text_film':
-                text_film_params.extend(group.get('params', []))
-        # Clip only text-FiLM parameters when configured and present
-        if text_film_params and text_film_grad_clip_max_norm is not None and float(text_film_grad_clip_max_norm) > 0:
-            # Apply clipping to text-FiLM parameters only
-            torch.nn.utils.clip_grad_norm_(
-                text_film_params,
-                max_norm=float(text_film_grad_clip_max_norm)
-            )
-        # Compute total gradient norm without further clipping for logging
-        return torch.nn.utils.clip_grad_norm_(
-            self.model.parameters(),
-            max_norm=float('inf')  # Compute norm without clipping
-        ).item()
+        # Step 2: collect parameter groups for norm computation.
+        group_params = self._get_named_param_groups(model_optim)
+        # Step 3: compute raw (pre-clip) norms.
+        raw_norms = self._compute_group_norms(group_params)
+        # Step 4: apply configured clipping and track the mode used.
+        clip_mode = self._apply_grad_clipping(
+            grad_clip_max_norm,
+            text_film_grad_clip_max_norm,
+            group_params
+        )
+        # Step 5: compute clipped (post-clip) norms.
+        clipped_norms = self._compute_group_norms(group_params)
+        # Step 6: merge raw and clipped norms per group.
+        group_norms = self._merge_raw_clipped_norms(raw_norms, clipped_norms)
+        # Step 7: preserve legacy total norm behavior for existing logging.
+        if clip_mode == "global":
+            legacy_total_norm = float(raw_norms.get("total", 0.0))
+        else:
+            legacy_total_norm = float(clipped_norms.get("total", raw_norms.get("total", 0.0)))
+        return legacy_total_norm, group_norms
 
     def _train_single_batch(self, iter, model_optim, criterion, track_per_sample):
         """
@@ -473,7 +580,7 @@ class Experiment(Exp_Basic):
             track_per_sample: Whether to track per-sample metrics
 
         Returns:
-            tuple: (loss_value, batch_size, sample_ids, output, gt, grad_norm)
+            tuple: (loss_value, batch_size, sample_ids, output, gt, grad_norm, grad_norms_by_group)
         """
         # Zero gradients before forward pass
         model_optim.zero_grad()
@@ -488,8 +595,8 @@ class Experiment(Exp_Basic):
         loss.backward()
 
 
-        # Clip gradients based on configured parameter-group thresholds
-        grad_norm = self._compute_grad_norm(model_optim)
+        # Clip gradients and capture raw/clipped norms by group
+        grad_norm, grad_norms_by_group = self._compute_grad_norm(model_optim)
 
         model_optim.step()
         
@@ -529,7 +636,7 @@ class Experiment(Exp_Basic):
                 per_channel_losses=per_sample_per_channel_loss
             )
 
-        return loss_value, current_batch_size, sample_ids, output, gt, grad_norm
+        return loss_value, current_batch_size, sample_ids, output, gt, grad_norm, grad_norms_by_group
 
     def _update_training_progress(self, progress, task, time_now, iter_count, 
                                    epoch, train_steps, current_iter, loss_value,
@@ -602,6 +709,10 @@ class Experiment(Exp_Basic):
         batch_log_interval = getattr(
             self.args.wandb, 'batch_log_interval', 10
         ) if hasattr(self.args, 'wandb') else 10
+        # Group grad norm logging configuration
+        log_grad_norms_by_group = False
+        if hasattr(self.args, 'wandb') and hasattr(self.args.wandb, 'log_grad_norms_by_group'):
+            log_grad_norms_by_group = getattr(self.args.wandb, 'log_grad_norms_by_group', False)
         
         # Validation batch interval configuration (must be multiple of batch_log_interval)
         validate_every_n_batches = None
@@ -633,7 +744,7 @@ class Experiment(Exp_Basic):
                 # Store current batch index for error reporting
                 self._current_batch_idx = i
                 # Train on single batch and accumulate metrics
-                loss_value, batch_size, _, _, _, grad_norm = \
+                loss_value, batch_size, _, _, _, grad_norm, grad_norms_by_group = \
                     self._train_single_batch(iter, model_optim, criterion, track_per_sample)
                 epoch_loss += loss_value * batch_size
                 total_samples += batch_size
@@ -648,6 +759,11 @@ class Experiment(Exp_Basic):
                             'batch_loss': loss_value,
                             'batch_grad_norm': grad_norm
                         }
+                        # Optionally log raw and clipped gradient norms per group
+                        if log_grad_norms_by_group and grad_norms_by_group:
+                            for group_name, norms in grad_norms_by_group.items():
+                                batch_metrics[f"batch_grad_norm_raw/{group_name}"] = norms.get("raw", 0.0)
+                                batch_metrics[f"batch_grad_norm_clipped/{group_name}"] = norms.get("clipped", 0.0)
                         
                         # Optionally run validation at batch level if configured
                         # Validation only runs when batch logging occurs and batch index matches validation interval

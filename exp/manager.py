@@ -663,6 +663,19 @@ class ExperimentManager:
                 wandb.define_metric("batch_loss", step_metric="batch_step")
                 wandb.define_metric("batch_grad_norm", step_metric="batch_step")
                 wandb.define_metric("batch_val_loss", step_metric="batch_step")
+                if getattr(self.config.wandb, "log_grad_norms_by_group", False):
+                    # Ensure group-level grad norms attach to batch_step
+                    wandb.define_metric("batch_grad_norm_raw/*", step_metric="batch_step")
+                    wandb.define_metric("batch_grad_norm_clipped/*", step_metric="batch_step")
+                    for group_name in ["base_model", "text_film", "projector", "total"]:
+                        wandb.define_metric(
+                            f"batch_grad_norm_raw/{group_name}",
+                            step_metric="batch_step"
+                        )
+                        wandb.define_metric(
+                            f"batch_grad_norm_clipped/{group_name}",
+                            step_metric="batch_step"
+                        )
 
                 # Epoch-level metrics use epoch as x-axis
                 wandb.define_metric("train_loss", step_metric="epoch")

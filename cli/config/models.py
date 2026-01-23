@@ -228,6 +228,10 @@ class WandBConfig(BaseModel):
         ge=1,
         description="Log batch loss and gradient norm every N batches (1=all, 10=every 10th)"
     )
+    log_grad_norms_by_group: bool = Field(
+        default=True,
+        description="Log raw and clipped gradient norms per parameter group at batch log intervals"
+    )
     validate_every_n_batches: Optional[int] = Field(
         default=None,
         ge=1,
