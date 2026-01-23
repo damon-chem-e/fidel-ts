@@ -439,6 +439,50 @@ class Model(nn.Module):
             channel_description = channel_description.reshape(B_desc, 1, C_desc, self.text_dim)
         
         return news, channel_description
+
+    def _normalize_channel_description(self, channel_description, num_channels):
+        """
+        Normalize channel_description to shape [B, C, D] with C == num_channels.
+        
+        Supports common input shapes from Fidel-TS and Time-MMD pipelines:
+        - [B, D] -> [B, 1, D]
+        - [B, 1, D] -> [B, C, D] (broadcast if needed)
+        - [B, C, D] -> unchanged (if C matches)
+        - [B, 1, C, D] -> [B, C, D] (squeezed time dim)
+        """
+        # Validate input early to avoid silent shape bugs.
+        if channel_description is None:
+            raise ValueError("channel_description is required for lynx_film_enhanced")
+        
+        # Remove an optional singleton time dimension: [B, 1, C, D] -> [B, C, D].
+        if channel_description.dim() == 4:
+            if channel_description.shape[1] != 1:
+                raise ValueError(
+                    f"Unexpected channel_description shape: {channel_description.shape}"
+                )
+            channel_description = channel_description.squeeze(1)
+        
+        # Convert [B, D] to [B, 1, D] for consistent handling.
+        if channel_description.dim() == 2:
+            channel_description = channel_description.unsqueeze(1)
+        
+        # At this point, we require [B, C, D].
+        if channel_description.dim() != 3:
+            raise ValueError(
+                f"Unexpected channel_description shape: {channel_description.shape}"
+            )
+        
+        # Broadcast a single description across channels if needed.
+        batch_size, channels, embed_dim = channel_description.shape
+        if channels == num_channels:
+            return channel_description
+        if channels == 1:
+            return channel_description.expand(batch_size, num_channels, embed_dim).contiguous()
+        
+        # Mismatch that cannot be broadcast safely.
+        raise ValueError(
+            f"channel_description has {channels} channels, expected {num_channels}"
+        )
     
     def normalize_input(self, x):
         """
@@ -532,8 +576,8 @@ class Model(nn.Module):
         text_input, channel_description = self._project_text_embeddings(text_input, channel_description)
         
         # Step 3: Get Text Embeddings via text encoder
-        if len(channel_description.shape) == 3:
-            channel_description = channel_description.unsqueeze(1)
+        channel_description = self._normalize_channel_description(channel_description, x.shape[2])
+        channel_description = channel_description.unsqueeze(1)
         description = channel_description.repeat(1, text_input.shape[1], 1, 1)
         text_emb = self.text_encoder(text_input, description)
         
