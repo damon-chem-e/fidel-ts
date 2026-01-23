@@ -27,9 +27,10 @@ suite:
           config_path: "model_configs/general/lynx_film_raw.yaml"
         model_config_overrides:
           input_text_dim: 768  # BERT embedding dimension (projects 768 -> text_dim=256)
-          # e_layers, d_model, n_heads will be overridden by sweep
+          # d_model, n_heads will be overridden by sweep
           n_heads: 8
           e_layers: 2
+          text_film_last_n: 1
         data:
           name: "California_ISO"
           config_path: "data_configs/California_ISO/fullCAISO_hetero_TGTSF_H.yaml"

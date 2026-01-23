@@ -27,7 +27,7 @@ suite:
           config_path: "model_configs/general/lynx_film_enhanced.yaml"
         model_config_overrides:
           input_text_dim: 768  # BERT embedding dimension (projects 768 -> text_dim=256)
-          # e_layers, d_model, n_heads will be overridden by sweep
+          # d_model, n_heads will be overridden by sweep
           n_heads: 8
           e_layers: 2
           pathway_type: "shared"
@@ -35,6 +35,7 @@ suite:
           mixing_type: "interpolative"
           gate_hidden_dim: 32
           gate_init_bias: 0.0
+          text_film_last_n: 1
         data:
           name: "time_mmd_energy"
           config_path: "data_configs/time_mmd/Energy/config.yaml"

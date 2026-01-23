@@ -25,8 +25,6 @@ _config_path: "configs/experiment_suites/lynx_film_raw_hparam_sweep.yaml"
 parameters:
   # Model Architecture Parameters (via model_config_overrides)
   # These override values in model_configs/general/lynx_film_raw.yaml
-  model_config_overrides.e_layers:  # Depth: number of transformer layers
-    values: [2, 3, 4, 5]
   
   model_config_overrides.d_model:  # Width: model dimension
     values: [128, 256, 512]

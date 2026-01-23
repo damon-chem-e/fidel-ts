@@ -28,9 +28,10 @@ suite:
         model_config_overrides:
           input_text_dim: 768  # BERT embedding dimension (projects 768 -> text_dim=256)
           enc_in: 4  # Number of features: Respiratory_Rate, Heart_Rate, SaO2, FiO2
-          # e_layers, d_model, n_heads will be overridden by sweep
+          # d_model, n_heads will be overridden by sweep
           n_heads: 8
           e_layers: 2
+          text_film_last_n: 1
         data:
           name: "ttc_medical"
           config_path: "data_configs/ttc/medical/config.yaml"

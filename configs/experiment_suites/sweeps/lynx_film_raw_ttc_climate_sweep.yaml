@@ -27,10 +27,11 @@ suite:
           config_path: "model_configs/general/lynx_film_raw.yaml"
         model_config_overrides:
           input_text_dim: 768  # BERT embedding dimension (projects 768 -> text_dim=256)
-          # e_layers, d_model, n_heads will be overridden by sweep
+          # d_model, n_heads will be overridden by sweep
           n_heads: 8
           e_layers: 2
           enc_in: 4  # Number of features for the dataset
+          text_film_last_n: 1
         data:
           name: "ttc_climate"
           config_path: "data_configs/ttc/climate/config.yaml"
