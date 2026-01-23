@@ -1000,6 +1000,52 @@ class Experiment(Exp_Basic):
             final_val_loss=vali_loss
         )
     
+    def _load_best_checkpoint(self, checkpoint_dir, best_epoch=None, train_loss=None, vali_loss=None):
+        """
+        Load the best checkpoint, update model weights, and return metadata.
+        """
+        # Build the checkpoint path and load the checkpoint object.
+        best_model_path = os.path.join(checkpoint_dir, 'checkpoint.pth')
+        checkpoint = torch.load(best_model_path)
+        # Extract state dict and optional metadata from the checkpoint.
+        has_metadata = isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint
+        if has_metadata:
+            model_state_dict = checkpoint['model_state_dict']
+            best_epoch = checkpoint.get('epoch', best_epoch or self.args.train_epochs)
+            train_loss = checkpoint.get('train_loss', train_loss)
+            vali_loss = checkpoint.get('val_loss', vali_loss)
+        else:
+            model_state_dict = checkpoint
+            if best_epoch is None:
+                best_epoch = self.args.train_epochs
+        # Detect model wrapping and compilation status for key normalization.
+        is_data_parallel = hasattr(self.model, 'module')
+        model_is_compiled = hasattr(self.model, '_orig_mod') or (is_data_parallel and hasattr(self.model.module, '_orig_mod'))
+        checkpoint_has_prefix = isinstance(model_state_dict, dict) and any(
+            key.startswith('_orig_mod.') or key.startswith('module._orig_mod.') for key in model_state_dict.keys()
+        )
+        # Normalize state dict keys to match current model wrapping.
+        if checkpoint_has_prefix and not model_is_compiled:
+            model_state_dict = {
+                key.replace('module._orig_mod.', 'module.' if is_data_parallel else '').replace('_orig_mod.', ''): value
+                for key, value in model_state_dict.items()
+            }
+        elif not checkpoint_has_prefix and model_is_compiled:
+            if is_data_parallel:
+                model_state_dict = {f'module._orig_mod.{key}': value for key, value in model_state_dict.items()}
+            else:
+                model_state_dict = {f'_orig_mod.{key}': value for key, value in model_state_dict.items()}
+        # Load the best weights into the model and return metadata.
+        self.model.load_state_dict(model_state_dict)
+        return {
+            'checkpoint': checkpoint,
+            'best_epoch': best_epoch,
+            'train_loss': train_loss,
+            'vali_loss': vali_loss,
+            'checkpoint_path': best_model_path,
+            'has_metadata': has_metadata
+        }
+
     def _finalize_training(self, path, model_optim, train_loss, vali_loss, test_loss,
                           best_epoch=None, test_metrics=None):
         """
@@ -1018,59 +1064,24 @@ class Experiment(Exp_Basic):
             best_epoch: Best epoch from early stopping (loaded from checkpoint if None)
             test_metrics: Test metrics dict from final evaluation (default: None)
         """
-        # Load best model checkpoint (saved by EarlyStopping)
-        best_model_path = os.path.join(path, 'checkpoint.pth')
-        checkpoint = torch.load(best_model_path)
-
-        # Extract metrics from checkpoint
-        # Checkpoint structure: {model_state_dict, epoch, train_loss, val_loss}
-        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-            # New format: checkpoint is a dict with metadata
-            model_state_dict = checkpoint['model_state_dict']
-            best_epoch = checkpoint.get('epoch', best_epoch or self.args.train_epochs)
-            train_loss = checkpoint.get('train_loss', train_loss)
-            vali_loss = checkpoint.get('val_loss', vali_loss)
-        else:
-            # Old format: checkpoint is bare state_dict (backward compatibility)
-            model_state_dict = checkpoint
-            if best_epoch is None:
-                best_epoch = self.args.train_epochs
-
-        # Handle torch.compile checkpoint loading
-        # Check if model is compiled and adjust checkpoint keys accordingly
-        is_data_parallel = hasattr(self.model, 'module')
-        model_is_compiled = hasattr(self.model, '_orig_mod') or (
-            is_data_parallel and hasattr(self.model.module, '_orig_mod')
+        # Load best checkpoint and update model weights for consistent reporting.
+        checkpoint_info = self._load_best_checkpoint(
+            checkpoint_dir=path,
+            best_epoch=best_epoch,
+            train_loss=train_loss,
+            vali_loss=vali_loss
         )
-        checkpoint_has_prefix = isinstance(model_state_dict, dict) and any(
-            key.startswith('_orig_mod.') or key.startswith('module._orig_mod.') for key in model_state_dict.keys()
-        )
-
-        if checkpoint_has_prefix and not model_is_compiled:
-            # Checkpoint has prefix but model is not compiled - strip prefix
-            if self.exp_manager:
-                self.exp_manager.logger.info("Detected torch.compile checkpoint - stripping '_orig_mod.' prefix from state dict keys")
-            # Strip both possible prefixes
-            model_state_dict = {
-                key.replace('module._orig_mod.', 'module.' if is_data_parallel else '').replace('_orig_mod.', ''): value
-                for key, value in model_state_dict.items()
-            }
-        elif not checkpoint_has_prefix and model_is_compiled:
-            # Checkpoint doesn't have prefix but model is compiled - add appropriate prefix
-            if self.exp_manager:
-                self.exp_manager.logger.info("Model is compiled but checkpoint lacks prefix - adding appropriate prefix to checkpoint keys")
-            if is_data_parallel:
-                # DataParallel + compiled: need 'module._orig_mod.' prefix
-                model_state_dict = {f'module._orig_mod.{key}': value for key, value in model_state_dict.items()}
-            else:
-                # Compiled but not DataParallel: need '_orig_mod.' prefix
-                model_state_dict = {f'_orig_mod.{key}': value for key, value in model_state_dict.items()}
-
-        self.model.load_state_dict(model_state_dict)
+        # Unpack checkpoint metadata for downstream logging and saving.
+        checkpoint = checkpoint_info['checkpoint']
+        best_epoch = checkpoint_info['best_epoch']
+        train_loss = checkpoint_info['train_loss']
+        vali_loss = checkpoint_info['vali_loss']
+        best_model_path = checkpoint_info['checkpoint_path']
+        has_metadata = checkpoint_info['has_metadata']
 
         # Optionally update checkpoint with test metrics if available
         # This makes checkpoint.pth a complete record of all metrics from best epoch
-        if test_metrics is not None and isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        if test_metrics is not None and has_metadata:
             # Update the loaded checkpoint dict with test metrics
             checkpoint['test_mse_normalized'] = test_metrics['overall']['mse_normalized']
             checkpoint['test_mae_normalized'] = test_metrics['overall']['mae_normalized']
@@ -1139,6 +1150,14 @@ class Experiment(Exp_Basic):
             if self.exp_manager:
                 self.exp_manager.logger.info("No test data available - skipping final test evaluation")
             return None
+
+        # Load best checkpoint before evaluation to ensure metrics reflect best epoch.
+        self._load_best_checkpoint(
+            checkpoint_dir=checkpoint_path,
+            best_epoch=best_epoch,
+            train_loss=None,
+            vali_loss=None
+        )
 
         self.model.eval()
 
