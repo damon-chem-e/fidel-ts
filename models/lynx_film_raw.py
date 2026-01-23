@@ -125,10 +125,35 @@ class Model(nn.Module):
         model_configs.use_norm = False 
         self.model = iTransformerFilm(model_configs)
         
-        # Apply optional normalization to text/FiLM parameters
-        self._apply_text_film_norms(configs)
+        # Cache text/FiLM normalization settings for post-device application
+        self._store_text_film_norms_config(configs)
 
-    def _apply_text_film_norms(self, configs):
+    def _store_text_film_norms_config(self, configs) -> None:
+        """
+        Store normalization settings for later application on the correct device.
+        """
+        # Read normalization flags from config
+        self._text_film_use_weight_norm = getattr(configs, 'text_film_weight_norm', False)
+        self._text_film_use_spectral_norm = getattr(configs, 'text_film_spectral_norm', False)
+        # Track whether norms have been applied
+        self._text_film_norms_applied = False
+
+    def apply_text_film_norms_on_device(self) -> None:
+        """
+        Apply optional weight/spectral normalization after model is on device.
+        """
+        # Skip if already applied
+        if self._text_film_norms_applied:
+            return
+        # Apply norms based on stored flags
+        self._apply_text_film_norms(
+            use_weight_norm=self._text_film_use_weight_norm,
+            use_spectral_norm=self._text_film_use_spectral_norm
+        )
+        # Mark as applied
+        self._text_film_norms_applied = True
+
+    def _apply_text_film_norms(self, use_weight_norm: bool, use_spectral_norm: bool) -> None:
         """
         Apply optional weight or spectral normalization to text/FiLM submodules.
         
@@ -137,9 +162,6 @@ class Model(nn.Module):
         - text_encoder
         - FiLM generators inside iTransformerFilm
         """
-        # Read normalization flags from config
-        use_weight_norm = getattr(configs, 'text_film_weight_norm', False)
-        use_spectral_norm = getattr(configs, 'text_film_spectral_norm', False)
         # Skip if no normalization is requested
         if not (use_weight_norm or use_spectral_norm):
             return

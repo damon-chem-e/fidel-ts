@@ -67,6 +67,9 @@ class Exp_Basic(object):
         args.num_indicator_columns = num_indicator_columns
         
         self.model = self._build_model().to(self.device)
+        # Apply text/FiLM normalization after the model is on the target device
+        if hasattr(self.model, "apply_text_film_norms_on_device"):
+            self.model.apply_text_film_norms_on_device()
         
         # Apply torch.compile if enabled (PyTorch 2.0+)
         # Check for torch_compile flag in args (backward compatible - defaults to False)
