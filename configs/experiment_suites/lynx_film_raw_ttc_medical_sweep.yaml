@@ -32,6 +32,17 @@ suite:
           e_layers: 2
           d_model: 512
           n_heads: 8
+          # Text encoder configuration (defaults; sweep can override)
+          text_encoder_type: "cross"
+          cross_layers: 3
+          self_layers: 1
+          text_encoder_mlp_hidden_dim: null
+          text_encoder_mlp_dropout: 0.0
+          # FiLM generator regularization
+          film_hidden_dim: null
+          film_dropout: 0.0
+          text_film_weight_norm: false
+          text_film_spectral_norm: false
         data:
           name: "ttc_medical"
           config_path: "data_configs/ttc/medical/config.yaml"
@@ -44,6 +55,8 @@ suite:
           output_len: 7       # Prediction length from Table 4
           batch_size: 32      # Will be overridden by sweep (default in middle of range)
           learning_rate: 0.00022  # Will be overridden by sweep (default from TTC Medical baseline)
+          text_film_learning_rate: null  # Optional LR for text/FiLM params (sweep can override)
+          text_film_weight_decay: null   # Optional weight decay for text/FiLM params
           patience: 2
           epochs: 3
           track_per_sample: false

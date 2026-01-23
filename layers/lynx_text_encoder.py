@@ -75,6 +75,24 @@ class LynxTextEncoder(nn.Module):
             raise ValueError(f"Invalid encoder_type: {encoder_type!r}. Must be 'cross', 'self', or 'mlp'.")
         return encoder_type
 
+    def _ensure_device_alignment(self, device: torch.device) -> None:
+        """
+        Ensure encoder parameters and buffers live on the same device as inputs.
+        """
+        # Move positional encoding if it is on a different device
+        if self.W_pos.device != device:
+            self.W_pos.data = self.W_pos.data.to(device)
+        # Move each sub-encoder module to the input device when needed
+        for module in (self.cross_encoder, self.self_encoder, self.mlp_encoder):
+            if module is None:
+                continue
+            # Check the module's first parameter device (if any)
+            param = next(module.parameters(), None)
+            if param is None:
+                continue
+            if param.device != device:
+                module.to(device)
+
     def _build_cross_encoder(self, cross_layer: int, embedding_dim: int, num_heads: int, dropout: float):
         """
         Build the cross-attention encoder if requested.
@@ -267,6 +285,8 @@ class LynxTextEncoder(nn.Module):
         """
         Encode text embeddings according to the configured encoder type.
         """
+        # Ensure all encoder parameters are on the same device as inputs
+        self._ensure_device_alignment(news_emb.device)
         # Route to the appropriate encoder branch
         if self.encoder_type == "self":
             return self._encode_with_self(news_emb, description_emb)
