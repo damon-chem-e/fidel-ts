@@ -1,7 +1,7 @@
 # WandB Sweep Configuration: lynx_film_raw Test Sweep
 # Description: Test sweep with architecture parameters (e_layers, d_model, n_heads) and training hyperparameters (LR, batch_size)
 # Purpose: Test wandb sweep integration with architecture + training parameters on smaller dataset
-# Usage: wandb sweep configs/sweep_configs/lynx_film_raw_test_sweep.yaml --project fidel-ts
+# Usage: wandb sweep configs/sweep_configs/lynx_film_raw/lynx_film_raw_test_sweep.yaml --project fidel-ts
 # NOTE: Optimizes on test_loss (not val_loss) to avoid lookahead bias in validation loss.
 # See docs/train_val_test_purge_period_issue.md for details.
 

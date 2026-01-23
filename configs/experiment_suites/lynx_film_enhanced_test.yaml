@@ -11,6 +11,8 @@
 #   3. Config B1: shared + channel + interpolative (per-variable gates)
 #   4. Config C1: shared + conditional + interpolative (sample-adaptive)
 #   5. Config C2: shared + conditional + additive (residual mixing)
+#   6. Config D1: parallel + global + interpolative (pretrained unimodal)
+#   7. Config F1: parallel + conditional + interpolative (max expressiveness)
 #
 # Dataset: Time MMD Traffic (small, fast training)
 # Epochs: 1 (test run only)
@@ -212,6 +214,98 @@ suite:
           truncate_train_for_purge: true
         wandb:
           tags: ["lynx_film_enhanced_ablation", "config_C2", "shared", "conditional", "additive", "time_mmd_traffic"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_enhanced_test"
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # CONFIG D1: parallel + global + interpolative (pretrained unimodal)
+    # ─────────────────────────────────────────────────────────────────────────
+    - name: "config_D1_parallel_global_interpolative"
+      description: "Config D1: parallel pathway, global gate, interpolative mixing"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_enhanced"
+          config_path: "model_configs/general/lynx_film_enhanced.yaml"
+        model_config_overrides:
+          # Core architecture (match baseline)
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          # Enhanced options
+          pathway_type: "parallel"
+          gate_type: "global"
+          mixing_type: "interpolative"
+          gate_hidden_dim: 32
+          gate_init_bias: 0.0
+          unimodal_checkpoint: "/nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_pretraining_test_20251205_163130/20251205-163130_5ef325ab0162/checkpoints/best_checkpoint.pth"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
+          input_len: 24
+          output_len: 6
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 1               # Single epoch for quick test
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+        wandb:
+          tags: ["lynx_film_enhanced_ablation", "config_D1", "parallel", "global", "interpolative", "time_mmd_traffic"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_enhanced_test"
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # CONFIG F1: parallel + conditional + interpolative (max expressiveness)
+    # ─────────────────────────────────────────────────────────────────────────
+    - name: "config_F1_parallel_conditional_interpolative"
+      description: "Config F1: parallel pathway, conditional gate, interpolative mixing"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_enhanced"
+          config_path: "model_configs/general/lynx_film_enhanced.yaml"
+        model_config_overrides:
+          # Core architecture (match baseline)
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          # Enhanced options
+          pathway_type: "parallel"
+          gate_type: "conditional"
+          mixing_type: "interpolative"
+          gate_hidden_dim: 32
+          gate_init_bias: 0.0
+          unimodal_checkpoint: "/nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_pretraining_test_20251205_163130/20251205-163130_5ef325ab0162/checkpoints/best_checkpoint.pth"
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+        training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
+          input_len: 24
+          output_len: 6
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 2
+          epochs: 1               # Single epoch for quick test
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true
+        wandb:
+          tags: ["lynx_film_enhanced_ablation", "config_F1", "parallel", "conditional", "interpolative", "time_mmd_traffic"]
         experiment:
           type: "pytorch"
           output_dir: "outputs/suites/lynx_film_enhanced_test"

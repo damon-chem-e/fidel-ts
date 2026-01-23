@@ -6,14 +6,8 @@ from typing import Optional
 
 import numpy as np
 import torch
-import torch._dynamo
 from torch import nn
 from einops import rearrange
-
-
-# Decorator to disable torch.compile/dynamo tracing for a function.
-# Using torch._dynamo.disable() for broader PyTorch version compatibility.
-_disable_dynamo = torch._dynamo.disable()
 
 
 def _positional_encoding(q_len: int, d_model: int) -> nn.Parameter:
@@ -215,13 +209,9 @@ class LynxTextEncoder(nn.Module):
         # Restore original shape
         return rearrange(x, '(b c) l d -> b l c d', b=B, c=C)
 
-    @_disable_dynamo
     def _encode_with_self(self, news_emb: torch.Tensor, description_emb: torch.Tensor) -> torch.Tensor:
         """
         Encode text using self-attention over news embeddings only.
-        
-        Note: @_disable_dynamo prevents torch.compile from tracing this method,
-        avoiding FakeTensor device propagation errors in nn.MultiheadAttention.
         """
         # Extract dimensions for reshaping
         B, L, C, D = description_emb.shape
@@ -238,13 +228,9 @@ class LynxTextEncoder(nn.Module):
         # Apply positional encoding and return
         return self._apply_positional_encoding(text_emb, B, L, C)
 
-    @_disable_dynamo
     def _encode_with_mlp(self, news_emb: torch.Tensor, description_emb: torch.Tensor) -> torch.Tensor:
         """
         Encode text using a shallow MLP over pooled news embeddings.
-        
-        Note: @_disable_dynamo prevents torch.compile from tracing this method,
-        avoiding FakeTensor device propagation errors with complex tensor reshaping.
         """
         # Extract dimensions for reshaping
         B, L, C, D = description_emb.shape
@@ -261,13 +247,9 @@ class LynxTextEncoder(nn.Module):
         # Apply positional encoding and return
         return self._apply_positional_encoding(text_emb, B, L, C)
 
-    @_disable_dynamo
     def _encode_with_cross(self, news_emb: torch.Tensor, description_emb: torch.Tensor) -> torch.Tensor:
         """
         Encode text using cross-attention from channel descriptions to news.
-        
-        Note: @_disable_dynamo prevents torch.compile from tracing this method,
-        avoiding FakeTensor device propagation errors in nn.MultiheadAttention.
         """
         # Extract dimensions for reshaping
         B, L, C, D = description_emb.shape
@@ -307,14 +289,9 @@ class LynxTextEncoder(nn.Module):
         memory_mask.masked_fill_(expanded, float('-inf'))
         return memory_mask
 
-    @_disable_dynamo
     def forward(self, news_emb: torch.Tensor, description_emb: torch.Tensor) -> torch.Tensor:
         """
         Encode text embeddings according to the configured encoder type.
-        
-        Note: @_disable_dynamo prevents torch.compile/dynamo from tracing
-        this entire module. This is required because spectral_norm wrapping
-        causes FakeTensor device propagation errors in nn.MultiheadAttention.
         """
         # Ensure all encoder parameters are on the same device as inputs
         self._ensure_device_alignment(news_emb.device)

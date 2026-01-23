@@ -1,0 +1,63 @@
+# Experiment Suite: lynx_film_enhanced Time-MMD Traffic Sweep
+# Description: Hyperparameter sweep for lynx_film_enhanced on Time-MMD Traffic dataset
+# Usage: Used with wandb sweep for architecture (d_model) and training (LR, batch_size) parameters
+# NOTE: Shared + conditional + interpolative configuration with LR=0.00025, batch_size=8, d_model=512
+
+suite:
+  name: "lynx_film_enhanced_time_mmd_traffic_sweep"
+  description: "Hyperparameter sweep: lynx_film_enhanced on Time-MMD Traffic (shared + conditional + interpolative)"
+  tags: ['lynx_film_enhanced', 'multimodal', 'pytorch', 'time_mmd_sweep', 'film', 'time_mmd_traffic']
+
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/lynx_film_enhanced_time_mmd_traffic_sweep"
+
+  # Experiments in this suite
+  experiments:
+    # Time-MMD Traffic - hyperparameter sweep with architecture parameters
+    - name: "lynx_film_enhanced_time_mmd_traffic_sweep"
+      description: "lynx_film_enhanced on Time-MMD Traffic (HYPERPARAMETER SWEEP - shared conditional interpolative)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_enhanced"
+          config_path: "model_configs/general/lynx_film_enhanced.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # BERT embedding dimension (projects 768 -> text_dim=256)
+          # e_layers, d_model, n_heads will be overridden by sweep
+          n_heads: 8
+          e_layers: 2
+          pathway_type: "shared"
+          gate_type: "conditional"
+          mixing_type: "interpolative"
+          gate_hidden_dim: 32
+          gate_init_bias: 0.0
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding  # Use embeddings for Time-MMD text
+        training:
+          input_len: 24        # Context length
+          output_len: 6       # Prediction length
+          batch_size: 8       # Will be overridden by sweep (default in middle of range)
+          learning_rate: 0.00025  # Will be overridden by sweep (default in middle of good range)
+          lradj: constant      # Keep learning rate constant (no exponential decay)
+          patience: 3
+          epochs: 10
+          track_per_sample: false
+          evaluate_test_during_training: true
+        wandb:
+          tags: ["lynx_film_enhanced", "time_mmd_traffic", "sweep"]
+          system_monitoring: true
+          system_log_interval_s: 30.0
+          system_sample_interval_s: 0.5
+          batch_log_interval: 10
+          validate_every_n_batches: 10
+          validate_num_val_batches: 1
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_enhanced_time_mmd_traffic_sweep"

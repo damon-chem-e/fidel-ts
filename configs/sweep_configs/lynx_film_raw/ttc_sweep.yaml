@@ -1,7 +1,7 @@
 # WandB Sweep Configuration: TTC Medical Sweep
 # Description: Hyperparameter sweep with architecture parameters (e_layers, d_model, n_heads) and training hyperparameters (LR, batch_size)
 # Purpose: Sweep around parameter values: LR=0.00025, batch_size=8, d_model=512, e_layers=2, n_heads=8
-# Usage: wandb sweep configs/sweep_configs/ttc_sweep.yaml --project fidel-ts
+# Usage: wandb sweep configs/sweep_configs/lynx_film_raw/ttc_sweep.yaml --project fidel-ts
 
 program: scripts/wandb_sweep_wrapper.py
 method: random  # Use random for hyperparameter search
