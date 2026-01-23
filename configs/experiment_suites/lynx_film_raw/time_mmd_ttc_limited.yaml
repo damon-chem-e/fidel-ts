@@ -48,6 +48,7 @@ suite:
           config_path: "data_configs/time_mmd/Algriculture/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_tensor_cache: false
         training:
           text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 24       # Context length from Table 4
@@ -59,7 +60,7 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_agriculture"]
@@ -93,6 +94,7 @@ suite:
           config_path: "data_configs/time_mmd/Climate/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_tensor_cache: false
         training:
           text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 24       # Context length from Table 4
@@ -104,7 +106,7 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_climate"]
@@ -138,6 +140,7 @@ suite:
           config_path: "data_configs/time_mmd/Economy/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_tensor_cache: false
         training:
           text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 24       # Context length from Table 4
@@ -149,7 +152,7 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_economy"]
@@ -183,6 +186,7 @@ suite:
           config_path: "data_configs/time_mmd/Energy/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_tensor_cache: false
         training:
           input_len: 24       # Context length from Table 4
           output_len: 12      # Prediction length from Table 4
@@ -193,7 +197,7 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_energy"]
@@ -227,6 +231,7 @@ suite:
           config_path: "data_configs/time_mmd/Environment/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_tensor_cache: false
         training:
           input_len: 24       # Context length from Table 4
           output_len: 48      # Prediction length from Table 4
@@ -237,7 +242,7 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_environment"]
@@ -271,6 +276,7 @@ suite:
           config_path: "data_configs/time_mmd/Public_Health/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_tensor_cache: false
         training:
           input_len: 24       # Context length from Table 4
           output_len: 12      # Prediction length from Table 4
@@ -281,7 +287,7 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_health"]
@@ -315,6 +321,7 @@ suite:
           config_path: "data_configs/time_mmd/SocialGood/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_tensor_cache: false
         training:
           text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 24       # Context length from Table 4
@@ -326,7 +333,7 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         evaluation:
           filter_nan_samples: true  # Filter out samples with NaN losses (used by cli.test suite)
@@ -362,6 +369,7 @@ suite:
           config_path: "data_configs/time_mmd/Traffic/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_tensor_cache: false
         training:
           text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 24       # Context length from Table 4
@@ -373,7 +381,7 @@ suite:
           track_per_sample: false
           evaluate_test_during_training: true
           truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
-          torch_compile: true  # Enable torch.compile for faster training
+          torch_compile: false  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
         wandb:
           tags: ["lynx_film_raw", "time_mmd_traffic"]
@@ -411,6 +419,7 @@ suite:
           config_path: "data_configs/ttc/climate/config.yaml"
         data_config:
           timemmd_text_output: embedding
+          use_tensor_cache: false
         training:
           input_len: 7        # Context length from Table 4
           output_len: 7       # Prediction length from Table 4
