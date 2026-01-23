@@ -41,6 +41,9 @@ suite:
         data_config:
           timemmd_text_output: embedding  # Use embeddings for Time-MMD text
         training:
+          use_tensor_cache: false  # Disable tensor cache for Time-MMD/TTC
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
           input_len: 24        # Context length
           output_len: 12       # Prediction length
           batch_size: 8       # Will be overridden by sweep (default in middle of range)

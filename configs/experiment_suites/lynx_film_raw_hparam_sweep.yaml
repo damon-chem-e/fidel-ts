@@ -31,6 +31,8 @@ suite:
           name: "NYC_traffic_speed"
           config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
         training:
+          use_tensor_cache: true  # Enable tensor cache
+          lradj: constant  # Keep learning rate constant (no exponential decay)
           text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 360
           output_len: 24

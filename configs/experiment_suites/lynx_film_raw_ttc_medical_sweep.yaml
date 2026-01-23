@@ -51,6 +51,9 @@ suite:
           filter_insufficient_entities: true  # Filter out entities without enough data for 7/7 input/output with 70/10/20 split
           missing_value_strategy: forward_fill_indicators  # Forward fill missing values and create indicator variables
         training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
+          use_tensor_cache: true  # Enable tensor cache
+          lradj: constant  # Keep learning rate constant (no exponential decay)
           input_len: 7        # Context length from Table 4
           output_len: 7       # Prediction length from Table 4
           batch_size: 32      # Will be overridden by sweep (default in middle of range)

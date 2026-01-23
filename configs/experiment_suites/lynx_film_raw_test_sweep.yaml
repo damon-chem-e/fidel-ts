@@ -35,6 +35,8 @@ suite:
         data_config:
           timemmd_text_output: embedding
         training:
+          use_tensor_cache: true  # Enable tensor cache
+          lradj: constant  # Keep learning rate constant (no exponential decay)
           text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 96  # Smaller for faster testing
           output_len: 24  # Smaller for faster testing

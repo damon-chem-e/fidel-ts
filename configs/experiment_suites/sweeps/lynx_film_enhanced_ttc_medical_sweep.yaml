@@ -43,6 +43,9 @@ suite:
           filter_insufficient_entities: true  # Filter out entities without enough data for 7/7 input/output with 70/10/20 split
           missing_value_strategy: forward_fill_indicators  # Forward fill missing values and create indicator variables
         training:
+          use_tensor_cache: false  # Disable tensor cache for Time-MMD/TTC
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
           input_len: 7        # Context length
           output_len: 7       # Prediction length
           batch_size: 8       # Will be overridden by sweep (default in middle of range)

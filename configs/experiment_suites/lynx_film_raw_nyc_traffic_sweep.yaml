@@ -38,6 +38,8 @@ suite:
         data_config:
           # NYC traffic speed specific configs (if needed)
         training:
+          use_tensor_cache: true  # Enable tensor cache
+          lradj: constant  # Keep learning rate constant (no exponential decay)
           text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 360      # 15 days at hourly intervals (half month) - matches nyc_traffic_speed.yaml
           output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720}) - matches nyc_traffic_speed.yaml

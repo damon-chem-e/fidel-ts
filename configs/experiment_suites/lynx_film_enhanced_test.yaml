@@ -230,10 +230,11 @@ suite:
           name: "lynx_film_enhanced"
           config_path: "model_configs/general/lynx_film_enhanced.yaml"
         model_config_overrides:
-          # Core architecture (match baseline)
-          d_model: 1024
-          e_layers: 2
+          d_model: 128
+          d_ff: 128
           n_heads: 8
+          e_layers: 2
+          activation: gelu
           input_text_dim: 768
           # Enhanced options
           pathway_type: "parallel"
@@ -241,6 +242,7 @@ suite:
           mixing_type: "interpolative"
           gate_hidden_dim: 32
           gate_init_bias: 0.0
+          pretrained_model_path: "/nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_pretraining_test_20251205_163130/20251205-163130_5ef325ab0162/checkpoints/best_checkpoint.pth"
           unimodal_checkpoint: "/nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_pretraining_test_20251205_163130/20251205-163130_5ef325ab0162/checkpoints/best_checkpoint.pth"
         data:
           name: "time_mmd_traffic"
@@ -276,10 +278,11 @@ suite:
           name: "lynx_film_enhanced"
           config_path: "model_configs/general/lynx_film_enhanced.yaml"
         model_config_overrides:
-          # Core architecture (match baseline)
-          d_model: 1024
-          e_layers: 2
+          d_model: 128
+          d_ff: 128
           n_heads: 8
+          e_layers: 2
+          activation: gelu
           input_text_dim: 768
           # Enhanced options
           pathway_type: "parallel"
@@ -287,6 +290,7 @@ suite:
           mixing_type: "interpolative"
           gate_hidden_dim: 32
           gate_init_bias: 0.0
+          pretrained_model_path: "/nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_pretraining_test_20251205_163130/20251205-163130_5ef325ab0162/checkpoints/best_checkpoint.pth"
           unimodal_checkpoint: "/nfs/sloanlab007/projects/chimera_proj/fidel-ts/output/itransformer_pretraining_test_20251205_163130/20251205-163130_5ef325ab0162/checkpoints/best_checkpoint.pth"
         data:
           name: "time_mmd_traffic"
