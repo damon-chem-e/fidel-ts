@@ -139,10 +139,12 @@ class iTransformerFilm(nn.Module):
             for l in range(configs.e_layers)
         ]
         
+        film_last_n = getattr(configs, 'text_film_last_n', None)
         self.encoder = EncoderFilm(
             attn_layers=attn_layers,
             film_generators=film_generators,
-            norm_layer=torch.nn.LayerNorm(configs.d_model)
+            norm_layer=torch.nn.LayerNorm(configs.d_model),
+            film_last_n=film_last_n
         )
         
         self.projector = nn.Linear(configs.d_model, configs.pred_len, bias=True)

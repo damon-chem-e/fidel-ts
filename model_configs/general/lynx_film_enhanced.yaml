@@ -100,6 +100,7 @@ film_dropout: 0.0           # Dropout inside FiLM MLP for regularization
 text_film_weight_norm: false      # Apply weight norm to text/FiLM Linear layers
 text_film_spectral_norm: false    # Apply spectral norm to text/FiLM Linear layers
 text_film_per_channel: true       # If false, share FiLM params across channels (averages text over C)
+text_film_last_n: null            # If set, apply FiLM only to the last N layers
 
 # Normalization
 revin: True                # Use RevIN normalization (recommended)

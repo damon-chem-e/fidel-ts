@@ -97,6 +97,7 @@ class Model(nn.Module):
         
         # FiLM configuration
         self.text_film_per_channel = getattr(configs, 'text_film_per_channel', True)
+        self.text_film_last_n = getattr(configs, 'text_film_last_n', None)
         
         # Parallel pathway configuration
         self.unimodal_checkpoint = getattr(configs, 'unimodal_checkpoint', None)
@@ -259,7 +260,8 @@ class Model(nn.Module):
             
             self.encoder = EnhancedEncoderFilm(
                 layers=layers,
-                norm_layer=nn.LayerNorm(self.d_model)
+                norm_layer=nn.LayerNorm(self.d_model),
+                film_last_n=self.text_film_last_n
             )
         
         elif self.pathway_type == "parallel":
@@ -286,7 +288,8 @@ class Model(nn.Module):
             
             self.encoder = EnhancedEncoderFilm(
                 layers=layers,
-                norm_layer=nn.LayerNorm(self.d_model)
+                norm_layer=nn.LayerNorm(self.d_model),
+                film_last_n=self.text_film_last_n
             )
         
         # ═══════════════════════════════════════════════════════════════

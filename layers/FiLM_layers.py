@@ -170,12 +170,29 @@ class EncoderLayerFilm(nn.Module):
         return x, attn
 
 class EncoderFilm(nn.Module):
-    def __init__(self, attn_layers, film_generators, conv_layers=None, norm_layer=None):
+    def __init__(self, attn_layers, film_generators, conv_layers=None, norm_layer=None, film_last_n=None):
         super(EncoderFilm, self).__init__()
         self.attn_layers = nn.ModuleList(attn_layers)
         self.film_generators = nn.ModuleList(film_generators) # One generator per layer
         self.conv_layers = nn.ModuleList(conv_layers) if conv_layers is not None else None
         self.norm = norm_layer
+        self.film_last_n = film_last_n
+
+    def _should_apply_film(self, layer_idx: int) -> bool:
+        """
+        Decide whether to apply FiLM on the given layer index.
+
+        Args:
+            layer_idx: Index of the current encoder layer.
+
+        Returns:
+            bool: True if FiLM should be applied on this layer.
+        """
+        if self.film_last_n is None:
+            return True
+        if self.film_last_n <= 0:
+            return False
+        return layer_idx >= len(self.attn_layers) - int(self.film_last_n)
 
     def forward(self, x, text_emb, attn_mask=None, tau=None, delta=None):
         # x: [B, N, E]
@@ -186,22 +203,32 @@ class EncoderFilm(nn.Module):
             # Conv layers logic (usually not used in iTransformer, but keeping for compatibility)
             for i, (attn_layer, conv_layer) in enumerate(zip(self.attn_layers, self.conv_layers)):
                 delta = delta if i == 0 else None
-                
-                # Generate FiLM params for this layer
-                gamma1, beta1, gamma2, beta2 = self.film_generators[i](text_emb)
+                if self._should_apply_film(i):
+                    # Generate FiLM params for this layer
+                    gamma1, beta1, gamma2, beta2 = self.film_generators[i](text_emb)
+                else:
+                    # No FiLM modulation on this layer
+                    gamma1 = beta1 = gamma2 = beta2 = x.new_zeros(x.shape)
                 
                 x, attn = attn_layer(x, gamma1, beta1, gamma2, beta2, attn_mask=attn_mask, tau=tau, delta=delta)
                 x = conv_layer(x)
                 attns.append(attn)
             
             # Last layer
-            gamma1, beta1, gamma2, beta2 = self.film_generators[-1](text_emb)
+            if self._should_apply_film(len(self.attn_layers) - 1):
+                gamma1, beta1, gamma2, beta2 = self.film_generators[-1](text_emb)
+            else:
+                gamma1 = beta1 = gamma2 = beta2 = x.new_zeros(x.shape)
             x, attn = self.attn_layers[-1](x, gamma1, beta1, gamma2, beta2, tau=tau, delta=None)
             attns.append(attn)
         else:
             for i, attn_layer in enumerate(self.attn_layers):
-                # Generate FiLM params for this layer
-                gamma1, beta1, gamma2, beta2 = self.film_generators[i](text_emb)
+                if self._should_apply_film(i):
+                    # Generate FiLM params for this layer
+                    gamma1, beta1, gamma2, beta2 = self.film_generators[i](text_emb)
+                else:
+                    # No FiLM modulation on this layer
+                    gamma1 = beta1 = gamma2 = beta2 = x.new_zeros(x.shape)
                 
                 x, attn = attn_layer(x, gamma1, beta1, gamma2, beta2, attn_mask=attn_mask, tau=tau, delta=delta)
                 attns.append(attn)

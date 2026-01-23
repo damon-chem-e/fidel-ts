@@ -404,7 +404,8 @@ class EnhancedEncoderLayerShared(nn.Module):
         x: torch.Tensor, 
         text_emb: torch.Tensor, 
         x_raw: torch.Tensor = None,
-        attn_mask: torch.Tensor = None
+        attn_mask: torch.Tensor = None,
+        apply_film: bool = True
     ) -> tuple:
         """
         Forward pass through the encoder layer.
@@ -428,9 +429,12 @@ class EnhancedEncoderLayerShared(nn.Module):
         h_norm = self.norm1(h)
         
         # ═══════════════════════════════════════════════════════════════
-        # GENERATE FiLM PARAMETERS
+        # GENERATE FiLM PARAMETERS (or disable when requested)
         # ═══════════════════════════════════════════════════════════════
-        gamma1, beta1, gamma2, beta2 = self.film_gen(text_emb)
+        if apply_film:
+            gamma1, beta1, gamma2, beta2 = self.film_gen(text_emb)
+        else:
+            gamma1 = beta1 = gamma2 = beta2 = x.new_zeros(x.shape)
         
         # ═══════════════════════════════════════════════════════════════
         # PATHWAY SPLIT 1 (POST-ATTENTION)
@@ -441,8 +445,16 @@ class EnhancedEncoderLayerShared(nn.Module):
         # Text pathway: FiLM modulation (1 + gamma for multiplicative around identity)
         z_text_1 = (1 + gamma1) * h_norm + beta1
         
-        # Compute gate value
-        alpha = self.gate(x_raw, text_emb)
+        # Compute gate value (or force base-only mixing when FiLM is disabled)
+        if apply_film:
+            alpha = self.gate(x_raw, text_emb)
+        else:
+            if self.gate.gate_type == "global":
+                alpha = x.new_tensor(0.0)
+            elif self.gate.gate_type == "channel":
+                alpha = x.new_zeros(x.shape[1])
+            else:
+                alpha = x.new_zeros(x.shape[0], x.shape[1])
         
         # Mix pathways
         z_mix_1 = self.mixer(z_base_1, z_text_1, alpha)
@@ -567,7 +579,8 @@ class EnhancedEncoderLayerParallel(nn.Module):
         x: torch.Tensor, 
         text_emb: torch.Tensor, 
         x_raw: torch.Tensor = None,
-        attn_mask: torch.Tensor = None
+        attn_mask: torch.Tensor = None,
+        apply_film: bool = True
     ) -> tuple:
         """
         Forward pass through the parallel encoder layer.
@@ -592,8 +605,11 @@ class EnhancedEncoderLayerParallel(nn.Module):
         # ═══════════════════════════════════════════════════════════════
         # LEARNED TEXT PATHWAY
         # ═══════════════════════════════════════════════════════════════
-        # Generate FiLM parameters
-        gamma1, beta1, gamma2, beta2 = self.film_gen(text_emb)
+        # Generate FiLM parameters (or disable when requested)
+        if apply_film:
+            gamma1, beta1, gamma2, beta2 = self.film_gen(text_emb)
+        else:
+            gamma1 = beta1 = gamma2 = beta2 = x.new_zeros(x.shape)
         
         # Attention block
         attn_out, _ = self.text_attention(x, x, x, attn_mask=attn_mask)
@@ -614,7 +630,15 @@ class EnhancedEncoderLayerParallel(nn.Module):
         # ═══════════════════════════════════════════════════════════════
         # MIXING
         # ═══════════════════════════════════════════════════════════════
-        alpha = self.gate(x_raw, text_emb)
+        if apply_film:
+            alpha = self.gate(x_raw, text_emb)
+        else:
+            if self.gate.gate_type == "global":
+                alpha = x.new_tensor(0.0)
+            elif self.gate.gate_type == "channel":
+                alpha = x.new_zeros(x.shape[1])
+            else:
+                alpha = x.new_zeros(x.shape[0], x.shape[1])
         z = self.mixer(z_uni, z_text, alpha)
         
         return z, alpha
@@ -632,10 +656,27 @@ class EnhancedEncoderFilm(nn.Module):
         norm_layer: Optional final normalization layer
     """
     
-    def __init__(self, layers: list, norm_layer=None):
+    def __init__(self, layers: list, norm_layer=None, film_last_n=None):
         super().__init__()
         self.layers = nn.ModuleList(layers)
         self.norm = norm_layer
+        self.film_last_n = film_last_n
+
+    def _should_apply_film(self, layer_idx: int) -> bool:
+        """
+        Decide whether to apply FiLM on the given layer index.
+
+        Args:
+            layer_idx: Index of the current encoder layer.
+
+        Returns:
+            bool: True if FiLM should be applied on this layer.
+        """
+        if self.film_last_n is None:
+            return True
+        if self.film_last_n <= 0:
+            return False
+        return layer_idx >= len(self.layers) - int(self.film_last_n)
     
     def forward(
         self, 
@@ -658,8 +699,15 @@ class EnhancedEncoderFilm(nn.Module):
         """
         alphas = []
         
-        for layer in self.layers:
-            x, alpha = layer(x, text_emb, x_raw=x_raw, attn_mask=attn_mask)
+        for idx, layer in enumerate(self.layers):
+            apply_film = self._should_apply_film(idx)
+            x, alpha = layer(
+                x,
+                text_emb,
+                x_raw=x_raw,
+                attn_mask=attn_mask,
+                apply_film=apply_film
+            )
             alphas.append(alpha)
         
         if self.norm is not None:
