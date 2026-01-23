@@ -414,6 +414,54 @@ class Experiment(Exp_Basic):
         
         return progress, task, logger, console
 
+    def _compute_grad_norm(self, model_optim):
+        """
+        Compute gradient norms and apply optional clipping by parameter group.
+
+        This supports:
+        - Global clipping (all parameters) via model_config.grad_clip_max_norm
+        - Text-FiLM-only clipping via model_config.text_film_grad_clip_max_norm
+
+        Args:
+            model_optim: Optimizer with named parameter groups.
+
+        Returns:
+            float: Total gradient norm after any clipping.
+        """
+        # Read global clipping threshold (None/<=0 disables global clipping)
+        grad_clip_max_norm = getattr(self.args.model_config, 'grad_clip_max_norm', None)
+        # Read text-FiLM-only clipping threshold (None/<=0 disables group clipping)
+        text_film_grad_clip_max_norm = getattr(
+            self.args.model_config,
+            'text_film_grad_clip_max_norm',
+            None
+        )
+        # Apply global clipping when configured
+        if grad_clip_max_norm is not None and float(grad_clip_max_norm) > 0:
+            # Clip all parameters and return the resulting total norm
+            return torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(),
+                max_norm=float(grad_clip_max_norm)
+            ).item()
+        # Collect text-FiLM parameters from named optimizer groups
+        text_film_params = []
+        # Prefer optimizer param groups since they already define text-FiLM grouping
+        for group in getattr(model_optim, 'param_groups', []):
+            if group.get('name') == 'text_film':
+                text_film_params.extend(group.get('params', []))
+        # Clip only text-FiLM parameters when configured and present
+        if text_film_params and text_film_grad_clip_max_norm is not None and float(text_film_grad_clip_max_norm) > 0:
+            # Apply clipping to text-FiLM parameters only
+            torch.nn.utils.clip_grad_norm_(
+                text_film_params,
+                max_norm=float(text_film_grad_clip_max_norm)
+            )
+        # Compute total gradient norm without further clipping for logging
+        return torch.nn.utils.clip_grad_norm_(
+            self.model.parameters(),
+            max_norm=float('inf')  # Compute norm without clipping
+        ).item()
+
     def _train_single_batch(self, iter, model_optim, criterion, track_per_sample):
         """
         Execute a single training batch: forward pass, loss, backward, update.
@@ -440,20 +488,8 @@ class Experiment(Exp_Basic):
         loss.backward()
 
 
-        # Apply gradient clipping for TimeLLM to prevent gradient explosion
-        if self.args.model == 'TimeLLM':
-            # Read grad_clip_max_norm from model config, default to 1.0
-            grad_clip_max_norm = getattr(self.args.model_config, 'grad_clip_max_norm', 1.0)
-            grad_norm = torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), 
-                max_norm=grad_clip_max_norm
-            ).item()
-        # Other models: just calculate gradient norm before optimizer step (no clipping)
-        else:
-            grad_norm = torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(),
-                max_norm=float('inf')  # Don't actually clip, just compute norm
-            ).item()
+        # Clip gradients based on configured parameter-group thresholds
+        grad_norm = self._compute_grad_norm(model_optim)
 
         model_optim.step()
         

@@ -28,32 +28,32 @@ parameters:
 
   # Text Encoder Options
   model_config_overrides.text_encoder_type:
-    values: ["cross", "self", "mlp"]
+    values: ["mlp"]
 
-  model_config_overrides.cross_layers:
-    values: [0, 1, 2, 3]
 
-  model_config_overrides.self_layers:
-    values: [1, 2, 3]
 
   model_config_overrides.text_encoder_mlp_hidden_dim:
-    values: [64, 128, 256, 512]
+    values: [32, 64, 128]
 
   model_config_overrides.text_encoder_mlp_dropout:
     values: [0.0, 0.1, 0.2]
 
   # FiLM Generator Regularization
   model_config_overrides.film_hidden_dim:
-    values: [64, 128, 256, 384]
+    values: [32, 64, 128]
 
   model_config_overrides.film_dropout:
     values: [0.0, 0.1, 0.2]
+
+  model_config_overrides.text_film_per_channel:
+    values: [false]
 
   model_config_overrides.text_film_weight_norm:
     values: [false]  # Keep disabled to avoid conflicts with spectral norm
 
   model_config_overrides.text_film_spectral_norm:
     values: [false, true]
+
   
   # Training Hyperparameters
   training.learning_rate:

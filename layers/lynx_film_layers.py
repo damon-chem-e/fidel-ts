@@ -126,13 +126,15 @@ class iTransformerFilm(nn.Module):
         # - film_dropout: Dropout inside FiLM MLP for regularization
         film_hidden_dim = getattr(configs, 'film_hidden_dim', None)
         film_dropout = getattr(configs, 'film_dropout', 0.0)
+        film_per_channel = getattr(configs, 'text_film_per_channel', True)
         film_generators = [
             FiLMGenerator(
                 text_dim=configs.text_dim, 
                 output_dim=configs.d_model, 
                 seq_len=self.text_seq_len,
                 hidden_dim=film_hidden_dim or configs.d_model,
-                dropout=film_dropout
+                dropout=film_dropout,
+                per_channel=film_per_channel
             )
             for l in range(configs.e_layers)
         ]

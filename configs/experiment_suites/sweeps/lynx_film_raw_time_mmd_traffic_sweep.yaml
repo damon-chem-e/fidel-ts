@@ -47,7 +47,7 @@ suite:
           patience: 5
           epochs: 30
           track_per_sample: false
-          evaluate_test_during_training: false
+          evaluate_test_during_training: true
         wandb:
           tags: ["lynx_film_raw", "time_mmd_traffic", "sweep"]
           system_monitoring: true

@@ -26,6 +26,16 @@ class FiLMGenerator(nn.Module):
     - ALL text timesteps contribute to a SINGLE (gamma, beta) per channel
     - There is NO timestamp-specific modulation
     - All predictions receive the SAME modulation derived from aggregate text
+
+    Per-Channel vs Shared FiLM
+    ==========================
+    By default, FiLM parameters are learned per channel (C dimension). When
+    per_channel=False, the text embeddings are averaged across channels
+    before the MLP, and the resulting FiLM parameters are broadcast to all
+    channels. This:
+    - Removes channel-specific FiLM capacity
+    - Keeps per-layer and per-feature (d_model) modulation intact
+    - Reduces expressivity and overfitting risk by enforcing shared text effects
     
     The intuition is that the text provides GLOBAL context (e.g., "storm approaching")
     that uniformly affects how the model processes the time series.
@@ -40,7 +50,15 @@ class FiLMGenerator(nn.Module):
     A dimension mismatch will cause a runtime error!
     """
     
-    def __init__(self, text_dim, output_dim, seq_len=1, hidden_dim=None, dropout=0.0):
+    def __init__(
+        self,
+        text_dim,
+        output_dim,
+        seq_len=1,
+        hidden_dim=None,
+        dropout=0.0,
+        per_channel=True
+    ):
         """
         Args:
             text_dim: Dimension of text embeddings (D in [B, C, L, D])
@@ -51,11 +69,14 @@ class FiLMGenerator(nn.Module):
                      - t_known: ceil(seq_len / hetero_stride)
             hidden_dim: Hidden dimension of MLP (defaults to input_dim)
             dropout: Dropout probability applied inside the FiLM MLP
+            per_channel: If True, learn FiLM parameters per channel. If False,
+                         share FiLM parameters across channels.
         """
         super().__init__()
         # Store seq_len for debugging dimension mismatches
         self.expected_seq_len = seq_len
         self.text_dim = text_dim
+        self.per_channel = per_channel
         
         # Flatten input: [B, C, L, text_dim] -> [B, C, L * text_dim]
         input_dim = seq_len * text_dim
@@ -88,10 +109,20 @@ class FiLMGenerator(nn.Module):
         # Flatten text sequence: [B, C, L, D] -> [B, C, L*D]
         if x.dim() == 4:
             B, C, L, D = x.shape
-            x = x.reshape(B, C, L * D)
+            if not self.per_channel:
+                x = x.mean(dim=1, keepdim=True)
+            x = x.reshape(x.shape[0], x.shape[1], L * D)
+        elif x.dim() == 3:
+            B, C, _ = x.shape
+            if not self.per_channel:
+                x = x.mean(dim=1, keepdim=True)
+        else:
+            raise ValueError(f"FiLMGenerator expects 3D or 4D input, got {x.dim()}D.")
             
         # Generate modulation parameters: [B, C, L*D] -> [B, C, output_dim * 4]
         params = self.net(x)
+        if not self.per_channel and C > 1:
+            params = params.expand(B, C, -1)
         
         # Split into 4 tensors, each [B, C, output_dim]
         gamma1, beta1, gamma2, beta2 = torch.chunk(params, 4, dim=-1)

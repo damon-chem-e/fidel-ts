@@ -95,6 +95,9 @@ class Model(nn.Module):
         self.gate_hidden_dim = getattr(configs, 'gate_hidden_dim', 32)
         self.gate_init_bias = getattr(configs, 'gate_init_bias', 0.0)
         
+        # FiLM configuration
+        self.text_film_per_channel = getattr(configs, 'text_film_per_channel', True)
+        
         # Parallel pathway configuration
         self.unimodal_checkpoint = getattr(configs, 'unimodal_checkpoint', None)
         if self.pathway_type == 'parallel' and self.unimodal_checkpoint is None:
@@ -249,7 +252,8 @@ class Model(nn.Module):
                     gate_module=self.gate,
                     mixer=self.mixer,
                     dropout=self.dropout,
-                    activation=self.activation
+                    activation=self.activation,
+                    text_film_per_channel=self.text_film_per_channel
                 )
                 layers.append(layer)
             
@@ -275,7 +279,8 @@ class Model(nn.Module):
                     mixer=self.mixer,
                     n_heads=self.n_heads,
                     dropout=self.dropout,
-                    activation=self.activation
+                    activation=self.activation,
+                    text_film_per_channel=self.text_film_per_channel
                 )
                 layers.append(layer)
             

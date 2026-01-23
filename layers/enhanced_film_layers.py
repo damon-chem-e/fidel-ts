@@ -350,7 +350,8 @@ class EnhancedEncoderLayerShared(nn.Module):
         gate_module: GateModule,
         mixer: PathwayMixer,
         dropout: float = 0.1,
-        activation: str = "relu"
+        activation: str = "relu",
+        text_film_per_channel: bool = True
     ):
         super().__init__()
         
@@ -387,7 +388,8 @@ class EnhancedEncoderLayerShared(nn.Module):
             text_dim=text_dim, 
             output_dim=d_model, 
             seq_len=text_seq_len,
-            hidden_dim=d_model
+            hidden_dim=d_model,
+            per_channel=text_film_per_channel
         )
         
         # Gate and mixer (shared references - not owned by this layer)
@@ -505,7 +507,8 @@ class EnhancedEncoderLayerParallel(nn.Module):
         mixer: PathwayMixer,
         n_heads: int = 4,
         dropout: float = 0.1,
-        activation: str = "relu"
+        activation: str = "relu",
+        text_film_per_channel: bool = True
     ):
         super().__init__()
         
@@ -548,7 +551,8 @@ class EnhancedEncoderLayerParallel(nn.Module):
             text_dim=text_dim,
             output_dim=d_model,
             seq_len=text_seq_len,
-            hidden_dim=d_model
+            hidden_dim=d_model,
+            per_channel=text_film_per_channel
         )
         
         # Gate and mixer

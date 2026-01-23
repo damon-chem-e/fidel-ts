@@ -28,6 +28,7 @@ film_hidden_dim: null  # Optional FiLM MLP bottleneck (e.g., 128). null uses d_m
 film_dropout: 0.0      # Dropout inside FiLM MLP for regularization
 text_film_weight_norm: false      # Apply weight norm to text/FiLM Linear layers
 text_film_spectral_norm: false    # Apply spectral norm to text/FiLM Linear layers
+text_film_per_channel: true       # If false, share FiLM params across channels (averages text over C)
 
 # Normalization
 # Choose one normalization scheme:
@@ -43,3 +44,6 @@ stride: 3
 hetero_align_stride: True
 task: TGTSF
 
+# Training stability
+# Gradient clipping max norm (null disables clipping)
+grad_clip_max_norm: null
