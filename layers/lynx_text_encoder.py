@@ -78,6 +78,9 @@ class LynxTextEncoder(nn.Module):
     def _ensure_device_alignment(self, device: torch.device) -> None:
         """
         Ensure encoder parameters and buffers live on the same device as inputs.
+        
+        This guards against partial device moves that can occur in compiled
+        graphs, which would otherwise cause mixed-device attention ops.
         """
         # Move positional encoding if it is on a different device
         if self.W_pos.device != device:
@@ -86,11 +89,12 @@ class LynxTextEncoder(nn.Module):
         for module in (self.cross_encoder, self.self_encoder, self.mlp_encoder):
             if module is None:
                 continue
-            # Check the module's first parameter device (if any)
-            param = next(module.parameters(), None)
-            if param is None:
-                continue
-            if param.device != device:
+            # Check all parameters for mismatched devices
+            has_mismatch = any(param.device != device for param in module.parameters())
+            # Check all buffers (if any) for mismatched devices
+            has_mismatch = has_mismatch or any(buf.device != device for buf in module.buffers())
+            # Move the entire module if any part is on the wrong device
+            if has_mismatch:
                 module.to(device)
 
     def _build_cross_encoder(self, cross_layer: int, embedding_dim: int, num_heads: int, dropout: float):
