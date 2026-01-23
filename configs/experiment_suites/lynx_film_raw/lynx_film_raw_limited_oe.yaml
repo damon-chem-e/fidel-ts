@@ -1,0 +1,480 @@
+# Experiment Suite: lynx_film_raw on Time MMD and TTC datasets
+# Description: Train lynx_film_raw model on all Time MMD (Liu et al., 2024b) and TTC (Kim et al., 2024) datasets
+# Usage: python -m cli.suite run configs/experiment_suites/lynx_film_raw/time_mmd_ttc_limited_o.yaml
+# Note: Input/output lens follow Table 4 from the original papers:
+#       - Time MMD datasets use 7:1:2 train/val/test ratio splits
+#       - TTC datasets use 7:1:2 train/val/test ratio splits
+
+suite:
+  name: "lynx_film_raw_time_mmd_ttc_limited_o"
+  description: "Train lynx_film_raw model on all Time MMD and TTC datasets"
+  tags: ["lynx_film_raw", "multimodal", "pytorch", "time_mmd", "ttc", "film"]
+
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: false
+    log_dir: "./logs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+    
+  # Experiments in this suite
+  experiments:
+    # ===========================================
+    # Time MMD Datasets (Liu et al., 2024b)
+    # ===========================================
+    
+    # Agriculture: context=24, prediction=6
+    - name: "lynx_film_raw_timemmd_agriculture"
+      description: "lynx_film_raw on Time MMD Agriculture dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          text_encoder_type: "mlp"
+          text_encoder_mlp_hidden_dim: 32
+          text_encoder_mlp_dropout: 0.1
+          film_hidden_dim: 32
+          film_dropout: 0.1
+          text_film_per_channel: false
+          text_film_grad_clip_max_norm: 0.3
+        data:
+          name: "time_mmd_agriculture"
+          config_path: "data_configs/time_mmd/Algriculture/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+          use_tensor_cache: false
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 4
+          epochs: 15
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: false  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_agriculture"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+    
+    # Climate: context=24, prediction=6
+    - name: "lynx_film_raw_timemmd_climate"
+      description: "lynx_film_raw on Time MMD Climate dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          text_encoder_type: "mlp"
+          text_encoder_mlp_hidden_dim: 32
+          text_encoder_mlp_dropout: 0.1
+          film_hidden_dim: 32
+          film_dropout: 0.1
+          text_film_per_channel: false
+          text_film_grad_clip_max_norm: 0.3
+        data:
+          name: "time_mmd_climate"
+          config_path: "data_configs/time_mmd/Climate/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+          use_tensor_cache: false
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 4
+          epochs: 15
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: false  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_climate"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+    
+    # Economy: context=24, prediction=6
+    - name: "lynx_film_raw_timemmd_economy"
+      description: "lynx_film_raw on Time MMD Economy dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          text_encoder_type: "mlp"
+          text_encoder_mlp_hidden_dim: 32
+          text_encoder_mlp_dropout: 0.1
+          film_hidden_dim: 32
+          film_dropout: 0.1
+          text_film_per_channel: false
+          text_film_grad_clip_max_norm: 0.3
+        data:
+          name: "time_mmd_economy"
+          config_path: "data_configs/time_mmd/Economy/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+          use_tensor_cache: false
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 4
+          epochs: 15
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: false  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_economy"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+    
+    # Energy: context=24, prediction=12
+    - name: "lynx_film_raw_timemmd_energy"
+      description: "lynx_film_raw on Time MMD Energy dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          text_encoder_type: "mlp"
+          text_encoder_mlp_hidden_dim: 32
+          text_encoder_mlp_dropout: 0.1
+          film_hidden_dim: 32
+          film_dropout: 0.1
+          text_film_per_channel: false
+          text_film_grad_clip_max_norm: 0.3
+        data:
+          name: "time_mmd_energy"
+          config_path: "data_configs/time_mmd/Energy/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+          use_tensor_cache: false
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 12      # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 4
+          epochs: 15
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: false  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_energy"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+    
+    # Environment: context=24, prediction=48
+    - name: "lynx_film_raw_timemmd_environment"
+      description: "lynx_film_raw on Time MMD Environment dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          text_encoder_type: "mlp"
+          text_encoder_mlp_hidden_dim: 32
+          text_encoder_mlp_dropout: 0.1
+          film_hidden_dim: 32
+          film_dropout: 0.1
+          text_film_per_channel: false
+          text_film_grad_clip_max_norm: 0.3
+        data:
+          name: "time_mmd_environment"
+          config_path: "data_configs/time_mmd/Environment/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+          use_tensor_cache: false
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 48      # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 4
+          epochs: 15
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: false  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_environment"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+    
+    # Health (Public_Health): context=24, prediction=12
+    - name: "lynx_film_raw_timemmd_health"
+      description: "lynx_film_raw on Time MMD Health dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          text_encoder_type: "mlp"
+          text_encoder_mlp_hidden_dim: 32
+          text_encoder_mlp_dropout: 0.1
+          film_hidden_dim: 32
+          film_dropout: 0.1
+          text_film_per_channel: false
+          text_film_grad_clip_max_norm: 0.3
+        data:
+          name: "time_mmd_health"
+          config_path: "data_configs/time_mmd/Public_Health/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+          use_tensor_cache: false
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 12      # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 4
+          epochs: 15
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: false  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_health"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+    
+    # Socialgood: context=24, prediction=6
+    - name: "lynx_film_raw_timemmd_socialgood"
+      description: "lynx_film_raw on Time MMD SocialGood dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          text_encoder_type: "mlp"
+          text_encoder_mlp_hidden_dim: 32
+          text_encoder_mlp_dropout: 0.1
+          film_hidden_dim: 32
+          film_dropout: 0.1
+          text_film_per_channel: false
+          text_film_grad_clip_max_norm: 0.3
+        data:
+          name: "time_mmd_socialgood"
+          config_path: "data_configs/time_mmd/SocialGood/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+          use_tensor_cache: false
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 4
+          epochs: 15
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: false  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        evaluation:
+          filter_nan_samples: true  # Filter out samples with NaN losses (used by cli.test suite)
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_socialgood"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+    
+    # Traffic: context=24, prediction=6
+    - name: "lynx_film_raw_timemmd_traffic"
+      description: "lynx_film_raw on Time MMD Traffic dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          text_encoder_type: "mlp"
+          text_encoder_mlp_hidden_dim: 32
+          text_encoder_mlp_dropout: 0.1
+          film_hidden_dim: 32
+          film_dropout: 0.1
+          text_film_per_channel: false
+          text_film_grad_clip_max_norm: 0.3
+        data:
+          name: "time_mmd_traffic"
+          config_path: "data_configs/time_mmd/Traffic/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+          use_tensor_cache: false
+        training:
+          input_len: 24       # Context length from Table 4
+          output_len: 6       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 4
+          epochs: 15
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: false  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film_raw", "time_mmd_traffic"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+    
+    # ===========================================
+    # TTC Datasets (Kim et al., 2024)
+    # ===========================================
+    
+    # Weather: context=7, prediction=7
+    - name: "lynx_film_raw_ttc_weather"
+      description: "lynx_film_raw on TTC Weather dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          text_encoder_type: "mlp"
+          text_encoder_mlp_hidden_dim: 32
+          text_encoder_mlp_dropout: 0.1
+          film_hidden_dim: 32
+          film_dropout: 0.1
+          text_film_per_channel: false
+          text_film_grad_clip_max_norm: 0.3
+        data:
+          name: "ttc_weather"
+          config_path: "data_configs/ttc/climate/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+          use_tensor_cache: false
+        training:
+          input_len: 7        # Context length from Table 4
+          output_len: 7       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 4
+          epochs: 15
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: false  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film_raw", "ttc_weather"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
+    
+    # Medical: context=7, prediction=7
+    - name: "lynx_film_raw_ttc_medical"
+      description: "lynx_film_raw on TTC Medical dataset"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          d_model: 1024
+          e_layers: 2
+          n_heads: 8
+          input_text_dim: 768
+          text_encoder_type: "mlp"
+          text_encoder_mlp_hidden_dim: 32
+          text_encoder_mlp_dropout: 0.1
+          film_hidden_dim: 32
+          film_dropout: 0.1
+          text_film_per_channel: false
+          text_film_grad_clip_max_norm: 0.3
+        data:
+          name: "ttc_medical"
+          config_path: "data_configs/ttc/medical/config.yaml"
+        data_config:
+          timemmd_text_output: embedding
+          filter_insufficient_entities: true  # Filter out entities without enough data for 7/7 input/output with 70/10/20 split
+          missing_value_strategy: forward_fill_indicators  # Forward fill missing values and create indicator variables
+        training:
+          input_len: 7        # Context length from Table 4
+          output_len: 7       # Prediction length from Table 4
+          batch_size: 12
+          learning_rate: 0.00022
+          patience: 4
+          epochs: 15
+          track_per_sample: false
+          evaluate_test_during_training: true
+          truncate_train_for_purge: true  # Remove lookahead bias, making val_loss reliable
+          torch_compile: false  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film_raw", "ttc_medical"]
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw/time_mmd_ttc_limited_o"
