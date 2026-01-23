@@ -41,7 +41,7 @@ Reference:
 from torch import nn
 import torch
 import numpy as np
-from layers.TGTSF_torch import text_encoder
+from layers.lynx_text_encoder import LynxTextEncoder
 from layers.enhanced_film_layers import (
     GateModule,
     PathwayMixer,
@@ -190,14 +190,17 @@ class Model(nn.Module):
         # ═══════════════════════════════════════════════════════════════
         # TEXT ENCODER (from TGTSF)
         # ═══════════════════════════════════════════════════════════════
-        self.text_encoder = text_encoder(
+        self.text_encoder = LynxTextEncoder(
             cross_layer=configs.cross_layers,
             self_layer=configs.self_layers,
             embedding_dim=configs.text_dim,
             num_heads=configs.n_heads,
             dropout=configs.dropout,
             pred_len=configs.pred_len,
-            stride=configs.stride
+            stride=configs.stride,
+            encoder_type=getattr(configs, 'text_encoder_type', 'cross'),
+            mlp_hidden_dim=getattr(configs, 'text_encoder_mlp_hidden_dim', None),
+            mlp_dropout=getattr(configs, 'text_encoder_mlp_dropout', 0.0)
         )
         
         # ═══════════════════════════════════════════════════════════════

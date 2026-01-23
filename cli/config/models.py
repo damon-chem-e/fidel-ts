@@ -55,6 +55,22 @@ class TrainingConfig(BaseModel):
             "Per Zhang et al. (2025), projector should train at 100x higher LR than TS model."
         )
     )
+    text_film_learning_rate: Optional[float] = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Learning rate for text/FiLM parameters (text_encoder, text_projection, FiLM generators). "
+            "If None, uses the same learning_rate as other parameters."
+        )
+    )
+    text_film_weight_decay: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Weight decay for text/FiLM parameters (text_encoder, text_projection, FiLM generators). "
+            "If None, no weight decay is applied to these parameters."
+        )
+    )
     patience: int = Field(default=3, ge=1, description="Early stopping patience")
     loss: str = Field(default="mse", description="Loss function (mse, l1)")
     lradj: str = Field(default="type3", description="Learning rate adjustment strategy")

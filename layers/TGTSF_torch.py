@@ -175,7 +175,7 @@ class text_encoder(nn.Module):
         # reshape the description_emb
         description_emb = description_emb.contiguous().view(B*L, description_emb.shape[2], D)  # [b*l, c, d]
 
-        text_emb=description_emb
+        text_emb = description_emb
 
         # ----------------------------------------------------------------------
         # Kernel-Compatible Attention Masking

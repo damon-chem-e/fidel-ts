@@ -37,8 +37,9 @@ import torch
 import copy
 import os
 import numpy as np
-from layers.TGTSF_torch import text_encoder
+from layers.lynx_text_encoder import LynxTextEncoder
 from layers.lynx_film_layers import iTransformerFilm
+from utils.model_regularization import apply_norms_to_linear_layers
 
 class Model(nn.Module):
     """
@@ -105,14 +106,17 @@ class Model(nn.Module):
 
         # 1. Text Encoder (from TGTSF)
         # Used to get text embeddings for FiLM
-        self.text_encoder = text_encoder(
-            cross_layer=configs.cross_layers, 
-            self_layer=configs.self_layers, 
-            embedding_dim=configs.text_dim, 
-            num_heads=configs.n_heads, 
-            dropout=configs.dropout, 
-            pred_len=configs.pred_len, 
-            stride=configs.stride
+        self.text_encoder = LynxTextEncoder(
+            cross_layer=configs.cross_layers,
+            self_layer=configs.self_layers,
+            embedding_dim=configs.text_dim,
+            num_heads=configs.n_heads,
+            dropout=configs.dropout,
+            pred_len=configs.pred_len,
+            stride=configs.stride,
+            encoder_type=getattr(configs, 'text_encoder_type', 'cross'),
+            mlp_hidden_dim=getattr(configs, 'text_encoder_mlp_hidden_dim', None),
+            mlp_dropout=getattr(configs, 'text_encoder_mlp_dropout', 0.0)
         )
         # 2. Main Model (iTransformerFilm)
         # Disable internal normalization because we handle normalization externally
@@ -120,6 +124,46 @@ class Model(nn.Module):
         model_configs = copy.deepcopy(configs)
         model_configs.use_norm = False 
         self.model = iTransformerFilm(model_configs)
+        
+        # Apply optional normalization to text/FiLM parameters
+        self._apply_text_film_norms(configs)
+
+    def _apply_text_film_norms(self, configs):
+        """
+        Apply optional weight or spectral normalization to text/FiLM submodules.
+        
+        This targets:
+        - text_projection (if present)
+        - text_encoder
+        - FiLM generators inside iTransformerFilm
+        """
+        # Read normalization flags from config
+        use_weight_norm = getattr(configs, 'text_film_weight_norm', False)
+        use_spectral_norm = getattr(configs, 'text_film_spectral_norm', False)
+        # Skip if no normalization is requested
+        if not (use_weight_norm or use_spectral_norm):
+            return
+        # Disallow incompatible simultaneous norms
+        if use_weight_norm and use_spectral_norm:
+            raise ValueError("Only one of text_film_weight_norm or text_film_spectral_norm can be True.")
+        # Apply normalization to text projection if it exists
+        if self.text_projection is not None:
+            apply_norms_to_linear_layers(
+                self.text_projection,
+                use_weight_norm=use_weight_norm,
+                use_spectral_norm=use_spectral_norm
+            )
+        # Apply normalization to text encoder
+        apply_norms_to_linear_layers(
+            self.text_encoder,
+            use_weight_norm=use_weight_norm,
+            use_spectral_norm=use_spectral_norm
+        )
+        # Apply normalization to FiLM generators
+        self.model.apply_film_param_norms(
+            use_weight_norm=use_weight_norm,
+            use_spectral_norm=use_spectral_norm
+        )
     
     def _project_text_embeddings(self, news, channel_description):
         """

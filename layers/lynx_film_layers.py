@@ -6,6 +6,7 @@ from layers.SelfAttention_Family import FullAttention, AttentionLayer
 from layers.Embed import DataEmbedding_inverted
 from layers.FiLM_layers import EncoderFilm, EncoderLayerFilm, FiLMGenerator
 import numpy as np
+from utils.model_regularization import apply_norms_to_linear_layers
 
 class iTransformerFilm(nn.Module):
     """
@@ -181,3 +182,22 @@ class iTransformerFilm(nn.Module):
     def forward(self, x, text_emb, **kwargs):
         dec_out = self.forecast(x, text_emb)
         return dec_out[:, -self.pred_len:, :]  # [B, L, D]
+
+    def apply_film_param_norms(self, use_weight_norm=False, use_spectral_norm=False):
+        """
+        Apply optional normalization to FiLM generator MLPs.
+        
+        Args:
+            use_weight_norm: Enable weight normalization on FiLM MLP Linear layers.
+            use_spectral_norm: Enable spectral normalization on FiLM MLP Linear layers.
+        """
+        # Skip if no normalization is requested
+        if not (use_weight_norm or use_spectral_norm):
+            return
+        # Apply normalization to each FiLM generator
+        for generator in self.encoder.film_generators:
+            apply_norms_to_linear_layers(
+                generator,
+                use_weight_norm=use_weight_norm,
+                use_spectral_norm=use_spectral_norm
+            )

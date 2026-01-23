@@ -1,0 +1,68 @@
+# Experiment Suite: lynx_film_raw NYC Traffic - Neat Sweep 23 (FiLM bottleneck)
+# Description: neat_sweep_23 with FiLM bottleneck + dropout and shallower text encoder
+# Usage: python -m cli.suite run configs/experiment_suites/lynx_film_raw/neat_sweep_23_mod.yaml
+# Note: NYC_traffic_speed uses hourly sampling (downsampled to -h)
+#       Input: 360 samples = 15 days (half month), Output: 168 samples = 1 week (second smallest)
+#       Split points: {Jan. 1, 2021, Jan. 1, 2022}
+#       Based on neat-sweep-23 hyperparameters: e_layers=2, d_model=384, n_heads=4, batch_size=32, lr=0.000402
+
+suite:
+  name: "lynx_film_raw_nyc_traffic_neat_sweep_23_mod"
+  description: "neat_sweep_23 with FiLM bottleneck/dropout and reduced text encoder depth"
+  tags: ["lynx_film_raw", "multimodal", "pytorch", "fidel-ts", "nyc_traffic_speed", "film"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/lynx_film_raw/neat_sweep_23_mod"
+    
+  # Experiments in this suite
+  experiments:
+    - name: "lynx_film_raw_nyc_traffic_neat_sweep_23_mod"
+      description: "lynx_film_raw on NYC_traffic_speed with FiLM bottleneck + shallow text encoder"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # BERT embedding dimension (projects 768 -> text_dim=256)
+          e_layers: 2          # From neat-sweep-23
+          d_model: 384         # From neat-sweep-23
+          n_heads: 4           # From neat-sweep-23
+          text_encoder_type: "self"  # Self-attention over news only (no cross-attention)
+          cross_layers: 0      # Disable cross-attention with channel descriptions
+          self_layers: 1       # Single self-attention layer on news embeddings
+          film_hidden_dim: 128 # FiLM bottleneck for regularization (keeps d_model=384)
+          film_dropout: 0.1    # Dropout inside FiLM MLP
+        data:
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
+        training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
+          input_len: 360      # 15 days at hourly intervals (half month)
+          output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720})
+          batch_size: 64      # increased from neat-sweep-23's 32 (honest sweep does ok and uses 64)
+          learning_rate: 0.0004  # From neat-sweep-23
+          patience: 2         
+          epochs: 30          # From neat-sweep-23
+          track_per_sample: false
+          evaluate_test_during_training: true   # From neat-sweep-23
+          truncate_train_for_purge: true        # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # reduce overhead and improve performance
+          use_tensor_cache: true  # Enable tensor cache (from recent-run)
+        wandb:
+          tags: ["lynx_film_raw", "nyc_traffic_speed"]  # No "sweep" tag
+          # System monitoring settings from recent-run
+          system_monitoring: true
+          system_log_interval_s: 30.0
+          system_sample_interval_s: 0.5
+          batch_log_interval: 10
+          validate_every_n_batches: 10
+          validate_num_val_batches: 1
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw/neat_sweep_23_mod"

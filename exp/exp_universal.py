@@ -1482,8 +1482,13 @@ class Experiment(Exp_Basic):
     
     def test(self, loaders, criterion, valinum='full'):
         """
-        Validate the model on the validation dataset.
+        Evaluate the model on the test dataset(s).
+
+        Supports a dict of per-entity loaders or a single DataLoader when
+        tensor cache is enabled.
         """
+        # Normalize loaders to a dict for consistent iteration.
+        loaders = self._normalize_test_loaders(loaders)
         overall_running_loss = 0.0
         overall_total_samples = 0
         self.model.eval()
@@ -1559,3 +1564,19 @@ class Experiment(Exp_Basic):
         
         self.model.train()
         return total_epoch_loss
+
+    def _normalize_test_loaders(self, loaders):
+        """
+        Normalize test loaders into a dict keyed by entity name.
+
+        This handles both multi-entity dicts and single DataLoader cases
+        (e.g., when tensor cache returns a single loader).
+        """
+        # Step 1: Handle missing loaders explicitly.
+        if loaders is None:
+            return {}
+        # Step 2: If dict-like, keep the existing mapping.
+        if hasattr(loaders, "items"):
+            return loaders
+        # Step 3: Wrap a single loader with a stable key.
+        return {"test": loaders}

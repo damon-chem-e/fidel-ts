@@ -21,9 +21,10 @@ The model uses `timestamp_semantics` to determine which text input to use:
 
 from torch import nn
 import copy
-from layers.TGTSF_torch import text_encoder
+from layers.lynx_text_encoder import LynxTextEncoder
 from models.unimodal_wrapper import UnimodalModelWrapper
 from layers.lynx_film_layers import iTransformerFilm
+from utils.model_regularization import apply_norms_to_linear_layers
 
 class Model(nn.Module):
     """
@@ -57,9 +58,9 @@ class Model(nn.Module):
             )
         print(f'[ info ] LYNX-FiLM: timestamp_semantics = {self.timestamp_semantics}')
         if self.timestamp_semantics == 't_about':
-            print(f'         -> Using news (y_hetero) - forecasts ABOUT prediction window')
+            print('         -> Using news (y_hetero) - forecasts ABOUT prediction window')
         else:
-            print(f'         -> Using historical_events (x_hetero) - avoiding lookahead bias')
+            print('         -> Using historical_events (x_hetero) - avoiding lookahead bias')
         
         # Text dimension handling:
         # - input_text_dim: Dimension of input text embeddings (e.g., 768 for BERT)
@@ -85,14 +86,17 @@ class Model(nn.Module):
         
         # 2. Text Encoder (from TGTSF)
         # Used to get text embeddings for FiLM
-        self.text_encoder = text_encoder(
-            cross_layer=configs.cross_layers, 
-            self_layer=configs.self_layers, 
-            embedding_dim=configs.text_dim, 
-            num_heads=configs.n_heads, 
-            dropout=configs.dropout, 
-            pred_len=configs.pred_len, 
-            stride=configs.stride
+        self.text_encoder = LynxTextEncoder(
+            cross_layer=configs.cross_layers,
+            self_layer=configs.self_layers,
+            embedding_dim=configs.text_dim,
+            num_heads=configs.n_heads,
+            dropout=configs.dropout,
+            pred_len=configs.pred_len,
+            stride=configs.stride,
+            encoder_type=getattr(configs, 'text_encoder_type', 'cross'),
+            mlp_hidden_dim=getattr(configs, 'text_encoder_mlp_hidden_dim', None),
+            mlp_dropout=getattr(configs, 'text_encoder_mlp_dropout', 0.0)
         )
         
         # 3. Residual Model (iTransformerFilm)
@@ -100,6 +104,46 @@ class Model(nn.Module):
         residual_configs = copy.deepcopy(configs)
         residual_configs.use_norm = False 
         self.residual_model = iTransformerFilm(residual_configs)
+        
+        # Apply optional normalization to text/FiLM parameters
+        self._apply_text_film_norms(configs)
+
+    def _apply_text_film_norms(self, configs):
+        """
+        Apply optional weight or spectral normalization to text/FiLM submodules.
+        
+        This targets:
+        - text_projection (if present)
+        - text_encoder
+        - FiLM generators inside iTransformerFilm (residual model)
+        """
+        # Read normalization flags from config
+        use_weight_norm = getattr(configs, 'text_film_weight_norm', False)
+        use_spectral_norm = getattr(configs, 'text_film_spectral_norm', False)
+        # Skip if no normalization is requested
+        if not (use_weight_norm or use_spectral_norm):
+            return
+        # Disallow incompatible simultaneous norms
+        if use_weight_norm and use_spectral_norm:
+            raise ValueError("Only one of text_film_weight_norm or text_film_spectral_norm can be True.")
+        # Apply normalization to text projection if it exists
+        if self.text_projection is not None:
+            apply_norms_to_linear_layers(
+                self.text_projection,
+                use_weight_norm=use_weight_norm,
+                use_spectral_norm=use_spectral_norm
+            )
+        # Apply normalization to text encoder
+        apply_norms_to_linear_layers(
+            self.text_encoder,
+            use_weight_norm=use_weight_norm,
+            use_spectral_norm=use_spectral_norm
+        )
+        # Apply normalization to FiLM generators
+        self.residual_model.apply_film_param_norms(
+            use_weight_norm=use_weight_norm,
+            use_spectral_norm=use_spectral_norm
+        )
     
     def _project_text_embeddings(self, news, channel_description):
         """

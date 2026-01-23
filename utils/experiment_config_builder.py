@@ -319,6 +319,9 @@ def build_experiment_args(
         # Differential learning rate for projection layers (e.g., ZhangHanBest residual_proj)
         # If None, uses the same learning_rate for all parameters (backward compatible)
         args.projector_learning_rate = training.get('projector_learning_rate', None)
+        # Optional overrides for text/FiLM parameters
+        args.text_film_learning_rate = training.get('text_film_learning_rate', None)
+        args.text_film_weight_decay = training.get('text_film_weight_decay', None)
         args.loss = training.get('loss', 'mse')
         args.lradj = training.get('lradj', 'type3')  # Pydantic default is 'type3'
         args.track_per_sample = training.get('track_per_sample', False)

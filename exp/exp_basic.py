@@ -146,6 +146,8 @@ class Exp_Basic(object):
         """
         base_lr = self.args.learning_rate
         projector_lr = getattr(self.args, 'projector_learning_rate', None)
+        text_film_lr = getattr(self.args, 'text_film_learning_rate', None)
+        text_film_weight_decay = getattr(self.args, 'text_film_weight_decay', None)
         
         # Get the underlying model (handle torch.compile wrapper and DataParallel)
         model = self.model
@@ -154,83 +156,91 @@ class Exp_Basic(object):
         if hasattr(model, 'module'):
             model = model.module
         
-        # Check if differential learning rates should be used
-        # Only apply if projector_learning_rate is explicitly set and model has projection layers
-        if projector_lr is not None and hasattr(model, 'residual_proj'):
-            # Build parameter groups with different learning rates
-            param_groups = self._build_differential_param_groups(base_lr, projector_lr)
+        # Determine whether special parameter groups are needed
+        use_projector_group = projector_lr is not None and hasattr(model, 'residual_proj')
+        use_text_film_group = text_film_lr is not None or text_film_weight_decay is not None
+        
+        # Build parameter groups when special settings are enabled
+        if use_projector_group or use_text_film_group:
+            param_groups = self._build_param_groups(
+                model=model,
+                base_lr=base_lr,
+                projector_lr=projector_lr,
+                text_film_lr=text_film_lr,
+                text_film_weight_decay=text_film_weight_decay
+            )
             optimizer = optim.Adam(param_groups)
-            
-            if self.exp_manager:
-                self.exp_manager.logger.info(
-                    f"Using differential learning rates: base_lr={base_lr}, projector_lr={projector_lr}"
-                )
         else:
             # Default: single learning rate for all parameters (backward compatible)
             optimizer = optim.Adam(self.model.parameters(), lr=base_lr)
         
         return optimizer
-    
-    def _build_differential_param_groups(self, base_lr: float, projector_lr: float):
+
+    def _build_param_groups(
+        self,
+        model,
+        base_lr: float,
+        projector_lr: float,
+        text_film_lr: float,
+        text_film_weight_decay: float
+    ):
         """
-        Build parameter groups with different learning rates for differential training.
-        
-        Separates model parameters into:
-        1. Projector parameters (residual_proj, prediction_head, ts_proj) - use projector_lr
-        2. Base model parameters (ts_encoder, etc.) - use base_lr
+        Build parameter groups with optional text/FiLM and projector overrides.
         
         Args:
-            base_lr: Learning rate for base model (time series encoder)
-            projector_lr: Learning rate for projection layers
+            model: Unwrapped model instance.
+            base_lr: Default learning rate for base parameters.
+            projector_lr: Optional learning rate for projector layers.
+            text_film_lr: Optional learning rate for text/FiLM parameters.
+            text_film_weight_decay: Optional weight decay for text/FiLM parameters.
             
         Returns:
-            List of parameter group dicts for optimizer
+            List of parameter group dicts.
         """
-        # Identify projection-related modules (train at higher LR)
-        projector_module_names = {'residual_proj', 'prediction_head', 'ts_proj'}
+        # Define module name markers for parameter grouping
+        text_film_markers = ("text_encoder", "text_projection", "film_generators")
+        projector_markers = ("residual_proj", "prediction_head", "ts_proj")
         
-        # Collect parameters by group
+        # Collect parameters into distinct groups
+        text_film_params = []
         projector_params = []
         base_params = []
-        
-        # Get the underlying model (handle torch.compile wrapper and DataParallel)
-        model = self.model
-        if hasattr(model, '_orig_mod'):
-            model = model._orig_mod
-        if hasattr(model, 'module'):
-            model = model.module
         
         for name, param in model.named_parameters():
             if not param.requires_grad:
                 continue
-            
-            # Check if this parameter belongs to a projector module
-            is_projector = any(mod_name in name for mod_name in projector_module_names)
-            
-            if is_projector:
+            if any(marker in name for marker in text_film_markers):
+                text_film_params.append(param)
+                continue
+            if projector_lr is not None and any(marker in name for marker in projector_markers):
                 projector_params.append(param)
-            else:
-                base_params.append(param)
+                continue
+            base_params.append(param)
         
-        # Build parameter groups
+        # Build parameter group configs
         param_groups = []
-        
         if base_params:
             param_groups.append({
                 'params': base_params,
                 'lr': base_lr,
                 'name': 'base_model'
             })
-        
+        if text_film_params:
+            param_groups.append({
+                'params': text_film_params,
+                'lr': text_film_lr if text_film_lr is not None else base_lr,
+                'weight_decay': text_film_weight_decay if text_film_weight_decay is not None else 0.0,
+                'name': 'text_film'
+            })
         if projector_params:
             param_groups.append({
                 'params': projector_params,
-                'lr': projector_lr,
+                'lr': projector_lr if projector_lr is not None else base_lr,
                 'name': 'projector'
             })
         
         return param_groups
-
+    
     def _select_criterion(self):
         """
         Creates and returns the loss function for model training.
