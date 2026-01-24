@@ -13,6 +13,9 @@ import time
 import warnings
 
 import json
+from pathlib import Path
+
+import numpy as np
 
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
 
@@ -415,6 +418,10 @@ class Experiment(Exp_Basic):
         with progress:
             for i, iter in enumerate(train_loader):
                 iter_count += 1
+                # BEGIN TENSOR CACHE TESTING
+                # Step 1: Persist the raw batch data for tensor cache equivalence checks.
+                self._save_tensor_cache_testing_batch(iter, batch_index=i, epoch=epoch, split="train")
+                # END TENSOR CACHE TESTING
                 # Train on single batch and accumulate metrics
                 loss_value, batch_size, _, _, _ = \
                     self._train_single_batch(iter, model_optim, criterion, track_per_sample)
@@ -431,6 +438,95 @@ class Experiment(Exp_Basic):
         logger.info(f"Epoch: {epoch + 1} cost time: {epoch_time_elapsed:.2f}s")
         
         return train_loss, epoch_time_elapsed, total_samples
+
+    # BEGIN TENSOR CACHE TESTING
+    def _save_tensor_cache_testing_batch(self, batch, batch_index: int, epoch: int, split: str) -> None:
+        """
+        Save a training batch to disk for tensor cache output comparisons.
+        
+        Args:
+            batch: Raw batch tuple from the dataloader (sample_id, seq_x, seq_y, etc.).
+            batch_index: Zero-based batch index within the epoch.
+            epoch: Zero-based epoch index for directory grouping.
+            split: Data split name (expected 'train' for this hook).
+        """
+        # Step 1: Exit early if experiment tracking is unavailable.
+        if self.exp_manager is None:
+            return
+        # Step 2: Resolve the output directory for tensor cache testing artifacts.
+        output_dir = self._get_tensor_cache_testing_dir(split=split, epoch=epoch)
+        # Step 3: Convert the batch into a serializable dictionary.
+        payload = self._serialize_tensor_cache_batch(batch)
+        # Step 4: Persist the batch to a deterministic filename.
+        output_path = output_dir / f"batch_{batch_index:05d}.npz"
+        np.savez_compressed(output_path, **payload)
+
+    def _get_tensor_cache_testing_dir(self, split: str, epoch: int) -> Path:
+        """
+        Build and create the tensor cache testing directory for a given epoch.
+        
+        Args:
+            split: Data split name (train/val/test).
+            epoch: Zero-based epoch index for grouping outputs.
+        
+        Returns:
+            Path to the created tensor cache testing directory.
+        """
+        # Step 1: Resolve the experiment directory from the manager.
+        experiment_dir = self.exp_manager.get_experiment_dir()
+        # Step 2: Build the tensor cache testing directory path.
+        output_dir = experiment_dir / "tensor_cache_testing" / split / f"epoch_{epoch + 1}"
+        # Step 3: Ensure the directory exists.
+        output_dir.mkdir(parents=True, exist_ok=True)
+        # Step 4: Return the directory for file writes.
+        return output_dir
+
+    def _serialize_tensor_cache_batch(self, batch) -> dict:
+        """
+        Serialize a dataloader batch into numpy arrays for disk storage.
+        
+        Args:
+            batch: Raw batch tuple from the dataloader.
+        
+        Returns:
+            Dictionary mapping field names to numpy arrays or object arrays.
+        """
+        # Step 1: Define the canonical field ordering for saved batches.
+        field_names = [
+            "sample_id",
+            "seq_x",
+            "seq_y",
+            "x_time",
+            "y_time",
+            "x_hetero",
+            "y_hetero",
+            "hetero_x_time",
+            "hetero_y_time",
+            "hetero_general",
+            "hetero_channel",
+        ]
+        # Step 2: Ensure the batch is indexable as a sequence.
+        items = list(batch)
+        # Step 3: Map each item to its storage key.
+        payload = {}
+        for index, item in enumerate(items):
+            # Step 4: Determine the field name or fallback key.
+            field_name = field_names[index] if index < len(field_names) else f"field_{index}"
+            # Step 5: Convert tensors to numpy arrays on CPU.
+            if torch.is_tensor(item):
+                payload[field_name] = item.detach().cpu().numpy()
+            # Step 6: Convert numpy arrays without copying where possible.
+            elif isinstance(item, np.ndarray):
+                payload[field_name] = item
+            # Step 7: Convert lists/tuples (e.g., sample IDs) to object arrays.
+            elif isinstance(item, (list, tuple)):
+                payload[field_name] = np.asarray(item, dtype=object)
+            # Step 8: Store scalars or None as object arrays for round-trip fidelity.
+            else:
+                payload[field_name] = np.asarray(item, dtype=object)
+        # Step 9: Return the serialized payload.
+        return payload
+    # END TENSOR CACHE TESTING
 
     def _evaluate_epoch(self, epoch, train_loss, total_samples, vali_loader, 
                        test_loader, criterion, early_stopping, path, 
