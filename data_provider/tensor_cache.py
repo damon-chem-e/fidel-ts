@@ -640,8 +640,12 @@ class SharedTableCollector:
     - If downtime in training: store N=2 (embeddings + downtime), matching original
     - Rationale: If no downtime in training, model won't learn to use it anyway
     """
-    # Mapping from (entity_id, timestamp) to index in shared tables
+    # Mapping from (entity_id, timestamp) to index in shared tables (for time series)
     timestamp_to_idx: Dict[Tuple[str, int], int] = field(default_factory=dict)
+    
+    # Mapping from timestamp to index in embeddings array (for embeddings - shared across entities)
+    # This allows embeddings to be deduplicated by timestamp only, not by (entity_id, timestamp)
+    embedding_timestamp_to_idx: Dict[int, int] = field(default_factory=dict)
     
     # Mapping from entity_id to index in entity tables  
     entity_to_idx: Dict[str, int] = field(default_factory=dict)
@@ -744,6 +748,11 @@ def _register_timestamp_data(
     """
     Register data for an entity-timestamp pair if not already seen.
     
+    DEDUPLICATION STRATEGY:
+    - Time series: Deduplicated by (entity_id, timestamp) - each entity has its own values
+    - Embeddings: Deduplicated by timestamp only - shared across entities (for Fidel-TS)
+    - This reduces memory usage since embeddings are the same across entities for a given timestamp
+    
     WHY DEDUPLICATION HAPPENS HERE:
     - Check if timestamp already in mapping (O(1) dict lookup)
     - If new: assign next index, append data to lists
@@ -753,6 +762,7 @@ def _register_timestamp_data(
     - If collector.num_news_items == 1: store embedding as (D,) - just the embedding
     - If collector.num_news_items == 2: store embedding as (2, D) - embedding + downtime
     - This is determined by _detect_downtime_in_training() before collection starts
+    - Embeddings are deduplicated by timestamp only (not entity+timestamp) to save memory
     
     Args:
         collector: SharedTableCollector to update
@@ -763,89 +773,101 @@ def _register_timestamp_data(
         entity_id: Entity identifier for disambiguation
     """
     ts_key = (entity_id, int(timestamp))
+    ts_int = int(timestamp)
     
-    # Skip if already registered
+    # Handle time series deduplication (by entity_id + timestamp)
+    # Skip if this entity-timestamp pair already registered
     if ts_key in collector.timestamp_to_idx:
-        return
-    
-    # Assign next available index
-    idx = len(collector.timestamps)
-    collector.timestamp_to_idx[ts_key] = idx
-    collector.timestamps.append(int(timestamp))
-    
-    # Store time series value (with fallback to zeros)
-    if ts_value is not None:
-        collector.timeseries.append(np.asarray(ts_value).flatten())
+        # Time series already registered, but we still need to handle embedding
+        # Get the existing index for time series
+        idx = collector.timestamp_to_idx[ts_key]
     else:
-        n_features = collector.shapes.n_features or 1
-        collector.timeseries.append(np.zeros(n_features, dtype=np.float32))
-    
-    # Store embedding based on num_news_items setting
-    # N=1: store as (D,) - just the text embedding
-    # N=2: store as (2, D) - text embedding + downtime indicator
-    if embedding is not None:
-        emb_arr = np.asarray(embedding)
+        # Assign next available index for time series
+        idx = len(collector.timestamps)
+        collector.timestamp_to_idx[ts_key] = idx
+        collector.timestamps.append(ts_int)
         
-        if collector.num_news_items == 1:
-            # N=1: Store only the text embedding, flattened to (D,)
-            # CRITICAL: Use .copy() to break references to parent arrays (prevents memory leaks)
-            # Array slicing creates views that keep references to the original large arrays
-            if emb_arr.ndim == 1:
-                emb_to_store = emb_arr.copy()  # Copy to break reference
-            elif emb_arr.ndim == 2:
-                emb_to_store = emb_arr[0].copy()  # Copy slice to break reference to parent
-            else:
-                emb_to_store = emb_arr.flatten()  # flatten() already creates a copy
-            collector.embeddings.append(emb_to_store)
-            
-            # Update embed_dim if not yet set
-            if collector.shapes.embed_dim is None:
-                collector.shapes.embed_dim = len(emb_to_store)
+        # Store time series value (with fallback to zeros)
+        if ts_value is not None:
+            collector.timeseries.append(np.asarray(ts_value).flatten())
         else:
-            # N=2: Store full embedding + downtime indicator as (2, D)
-            # If embedding is 1D, we need to handle this edge case
-            # If 2D with shape (N, D), store the full array
-            if emb_arr.ndim == 1:
-                # Edge case: 1D embedding provided but N=2 requested
-                # Create (2, D) with zeros for downtime
-                embed_dim = len(emb_arr)
-                emb_to_store = np.zeros((2, embed_dim), dtype=np.float32)
-                emb_to_store[0] = emb_arr.copy()  # Copy to break reference
-            elif emb_arr.ndim == 2 and emb_arr.shape[0] >= 2:
-                # Normal case: (N, D) array, take first 2 items
-                # CRITICAL: Use .copy() to break references to parent arrays
-                emb_to_store = emb_arr[:2].copy()  # (2, D) - copy to break reference
-            elif emb_arr.ndim == 2 and emb_arr.shape[0] == 1:
-                # Edge case: Only 1 item, pad with zeros for downtime
-                embed_dim = emb_arr.shape[1]
-                emb_to_store = np.zeros((2, embed_dim), dtype=np.float32)
-                emb_to_store[0] = emb_arr[0]
-            else:
-                # Fallback: flatten and reshape
-                emb_flat = emb_arr.flatten()
-                embed_dim = len(emb_flat)
-                emb_to_store = np.zeros((2, embed_dim), dtype=np.float32)
-                emb_to_store[0] = emb_flat
-            
-            collector.embeddings.append(emb_to_store)
-            
-            # Update embed_dim if not yet set (based on actual embedding dim, not total)
-            if collector.shapes.embed_dim is None:
-                collector.shapes.embed_dim = emb_to_store.shape[1]
-    else:
-        # Fallback to zeros with appropriate shape
-        embed_dim = collector.shapes.embed_dim or 768
-        if collector.num_news_items == 1:
-            collector.embeddings.append(np.zeros(embed_dim, dtype=np.float32))
+            n_features = collector.shapes.n_features or 1
+            collector.timeseries.append(np.zeros(n_features, dtype=np.float32))
+        
+        # Store hetero time features (with fallback to zeros)
+        if hetero_time_feat is not None:
+            collector.hetero_time.append(np.asarray(hetero_time_feat).flatten())
         else:
-            collector.embeddings.append(np.zeros((2, embed_dim), dtype=np.float32))
+            n_htf = collector.shapes.n_hetero_time_features or 1
+            collector.hetero_time.append(np.zeros(n_htf, dtype=np.float32))
     
-    # Store hetero time features (with fallback to zeros)
-    if hetero_time_feat is not None:
-        collector.hetero_time.append(np.asarray(hetero_time_feat).flatten())
-    else:
-        n_htf = collector.shapes.n_hetero_time_features or 1
-        collector.hetero_time.append(np.zeros(n_htf, dtype=np.float32))
+    # Handle embedding deduplication (by timestamp only - shared across entities)
+    # Check if embedding for this timestamp already exists
+    if ts_int not in collector.embedding_timestamp_to_idx:
+        # New embedding for this timestamp - store it
+        emb_idx = len(collector.embeddings)
+        collector.embedding_timestamp_to_idx[ts_int] = emb_idx
+        
+        # Store embedding based on num_news_items setting
+        # N=1: store as (D,) - just the text embedding
+        # N=2: store as (2, D) - embedding + downtime indicator
+        if embedding is not None:
+            emb_arr = np.asarray(embedding)
+            
+            if collector.num_news_items == 1:
+                # N=1: Store only the text embedding, flattened to (D,)
+                # CRITICAL: Use .copy() to break references to parent arrays (prevents memory leaks)
+                # Array slicing creates views that keep references to the original large arrays
+                if emb_arr.ndim == 1:
+                    emb_to_store = emb_arr.copy()  # Copy to break reference
+                elif emb_arr.ndim == 2:
+                    emb_to_store = emb_arr[0].copy()  # Copy slice to break reference to parent
+                else:
+                    emb_to_store = emb_arr.flatten()  # flatten() already creates a copy
+                collector.embeddings.append(emb_to_store)
+                
+                # Update embed_dim if not yet set
+                if collector.shapes.embed_dim is None:
+                    collector.shapes.embed_dim = len(emb_to_store)
+            else:
+                # N=2: Store full embedding + downtime indicator as (2, D)
+                # If embedding is 1D, we need to handle this edge case
+                # If 2D with shape (N, D), store the full array
+                if emb_arr.ndim == 1:
+                    # Edge case: 1D embedding provided but N=2 requested
+                    # Create (2, D) with zeros for downtime
+                    embed_dim = len(emb_arr)
+                    emb_to_store = np.zeros((2, embed_dim), dtype=np.float32)
+                    emb_to_store[0] = emb_arr.copy()  # Copy to break reference
+                elif emb_arr.ndim == 2 and emb_arr.shape[0] >= 2:
+                    # Normal case: (N, D) array, take first 2 items
+                    # CRITICAL: Use .copy() to break references to parent arrays
+                    emb_to_store = emb_arr[:2].copy()  # (2, D) - copy to break reference
+                elif emb_arr.ndim == 2 and emb_arr.shape[0] == 1:
+                    # Edge case: Only 1 item, pad with zeros for downtime
+                    embed_dim = emb_arr.shape[1]
+                    emb_to_store = np.zeros((2, embed_dim), dtype=np.float32)
+                    emb_to_store[0] = emb_arr[0]
+                else:
+                    # Fallback: flatten and reshape
+                    emb_flat = emb_arr.flatten()
+                    embed_dim = len(emb_flat)
+                    emb_to_store = np.zeros((2, embed_dim), dtype=np.float32)
+                    emb_to_store[0] = emb_flat
+                
+                collector.embeddings.append(emb_to_store)
+                
+                # Update embed_dim if not yet set (based on actual embedding dim, not total)
+                if collector.shapes.embed_dim is None:
+                    collector.shapes.embed_dim = emb_to_store.shape[1]
+        else:
+            # Fallback to zeros with appropriate shape
+            embed_dim = collector.shapes.embed_dim or 768
+            if collector.num_news_items == 1:
+                collector.embeddings.append(np.zeros(embed_dim, dtype=np.float32))
+            else:
+                collector.embeddings.append(np.zeros((2, embed_dim), dtype=np.float32))
+    # else: embedding already exists for this timestamp, skip (reuse existing embedding)
 
 
 def _register_entity_data(
@@ -1058,6 +1080,10 @@ def _finalize_shared_tables(
             f"{entity_id}|{timestamp}": idx
             for (entity_id, timestamp), idx in collector.timestamp_to_idx.items()
         },
+        'embedding_timestamp_to_idx': {
+            str(timestamp): idx
+            for timestamp, idx in collector.embedding_timestamp_to_idx.items()
+        },
         'entity_to_idx': collector.entity_to_idx
     }
     
@@ -1079,8 +1105,10 @@ def _finalize_shared_tables(
 INDEXED_ARRAY_SPECS = {
     'sample_ids': {'dtype': 'U64'},        # Sample identifiers
     'entity_indices': {'dtype': 'int16'},  # Index into entity tables
-    'x_indices': {'dtype': 'int32'},       # Indices into shared tables for input
-    'y_indices': {'dtype': 'int32'},       # Indices into shared tables for output
+    'x_indices': {'dtype': 'int32'},       # Indices into shared timeseries table for input
+    'y_indices': {'dtype': 'int32'},       # Indices into shared timeseries table for output
+    'x_embedding_indices': {'dtype': 'int32'},  # Indices into shared embeddings table for input
+    'y_embedding_indices': {'dtype': 'int32'},  # Indices into shared embeddings table for output
     'x_time_features': {'dtype': 'float32'},  # Per-sample time features (not deduplicated)
     'y_time_features': {'dtype': 'float32'},  # Per-sample time features (not deduplicated)
 }
@@ -1160,6 +1188,7 @@ def _write_sample_indices(
     sample: tuple,
     entity_idx: int,
     timestamp_to_idx: Dict[str, int],
+    embedding_timestamp_to_idx: Dict[str, int],
     entity_id: str
 ) -> None:
     """
@@ -1168,10 +1197,17 @@ def _write_sample_indices(
     WHAT GETS WRITTEN:
     - sample_ids: The sample identifier string
     - entity_indices: Index into entity tables (same for all samples from entity)
-    - x_indices: Convert input timestamps → indices into shared tables
-    - y_indices: Convert output timestamps → indices into shared tables
+    - x_indices: Convert input timestamps → indices into shared timeseries table
+    - y_indices: Convert output timestamps → indices into shared timeseries table
+    - x_embedding_indices: Convert input timestamps → indices into shared embeddings table
+    - y_embedding_indices: Convert output timestamps → indices into shared embeddings table
     - x_time_features: Per-sample time features (NOT deduplicated - different per sample)
     - y_time_features: Per-sample time features (NOT deduplicated)
+    
+    WHY SEPARATE INDICES FOR EMBEDDINGS:
+    - Time series are deduplicated by (entity_id, timestamp) - each entity has its own values
+    - Embeddings are deduplicated by timestamp only - shared across entities
+    - This reduces memory usage since embeddings are the same across entities for a given timestamp
     
     WHY TIME FEATURES NOT DEDUPLICATED:
     - Time features encode position-in-sample information
@@ -1183,7 +1219,8 @@ def _write_sample_indices(
         write_idx: Position in arrays to write
         sample: 13-element tuple from dataset
         entity_idx: Index of this sample's entity in entity tables
-        timestamp_to_idx: Mapping from "entity_id|timestamp" to shared table index
+        timestamp_to_idx: Mapping from "entity_id|timestamp" to timeseries table index
+        embedding_timestamp_to_idx: Mapping from "timestamp" to embeddings table index
         entity_id: Entity identifier for disambiguation
     """
     # Sample ID
@@ -1192,7 +1229,7 @@ def _write_sample_indices(
     # Entity index
     arrays['entity_indices'][write_idx] = entity_idx
     
-    # Convert input timestamps to indices
+    # Convert input timestamps to timeseries indices (by entity_id + timestamp)
     x_time = np.asarray(sample[SAMPLE_IDX_X_TIME]).flatten()
     x_indices = np.array(
         [timestamp_to_idx.get(f"{entity_id}|{int(ts)}", 0) for ts in x_time],
@@ -1200,13 +1237,27 @@ def _write_sample_indices(
     )
     arrays['x_indices'][write_idx] = x_indices
     
-    # Convert output timestamps to indices
+    # Convert input timestamps to embedding indices (by timestamp only)
+    x_embedding_indices = np.array(
+        [embedding_timestamp_to_idx.get(str(int(ts)), 0) for ts in x_time],
+        dtype=np.int32
+    )
+    arrays['x_embedding_indices'][write_idx] = x_embedding_indices
+    
+    # Convert output timestamps to timeseries indices (by entity_id + timestamp)
     y_time = np.asarray(sample[SAMPLE_IDX_Y_TIME]).flatten()
     y_indices = np.array(
         [timestamp_to_idx.get(f"{entity_id}|{int(ts)}", 0) for ts in y_time],
         dtype=np.int32
     )
     arrays['y_indices'][write_idx] = y_indices
+    
+    # Convert output timestamps to embedding indices (by timestamp only)
+    y_embedding_indices = np.array(
+        [embedding_timestamp_to_idx.get(str(int(ts)), 0) for ts in y_time],
+        dtype=np.int32
+    )
+    arrays['y_embedding_indices'][write_idx] = y_embedding_indices
     
     # Per-sample time features (written directly, not indexed)
     x_tf = sample[SAMPLE_IDX_X_TIME_FEATURES]
@@ -1798,6 +1849,7 @@ class TensorCacheGenerator:
         
         # Convert mappings for efficient lookup
         timestamp_to_idx = index_mappings['timestamp_to_idx']
+        embedding_timestamp_to_idx = index_mappings.get('embedding_timestamp_to_idx', {})
         entity_to_idx = index_mappings['entity_to_idx']
         
         # Process datasets
@@ -1806,13 +1858,13 @@ class TensorCacheGenerator:
         if self.console is not None and RICH_AVAILABLE and self.verbose:
             self._process_with_rich_progress(
                 flag, datasets, arrays, entity_info, total_samples,
-                timestamp_to_idx, entity_to_idx, completed_entities,
+                timestamp_to_idx, embedding_timestamp_to_idx, entity_to_idx, completed_entities,
                 start_idx, progress_file
             )
         else:
             self._process_with_tqdm(
                 flag, datasets, arrays, entity_info,
-                timestamp_to_idx, entity_to_idx, completed_entities,
+                timestamp_to_idx, embedding_timestamp_to_idx, entity_to_idx, completed_entities,
                 start_idx, progress_file
             )
         
@@ -1852,6 +1904,8 @@ class TensorCacheGenerator:
             'entity_indices': (total_samples,),
             'x_indices': (total_samples, shapes.input_len),
             'y_indices': (total_samples, shapes.output_len),
+            'x_embedding_indices': (total_samples, shapes.input_len),
+            'y_embedding_indices': (total_samples, shapes.output_len),
         }
         
         if shapes.n_x_time_features and shapes.n_x_time_features > 0:
@@ -1874,6 +1928,7 @@ class TensorCacheGenerator:
         entity_info: dict,
         total_samples: int,
         timestamp_to_idx: dict,
+        embedding_timestamp_to_idx: dict,
         entity_to_idx: dict,
         completed_entities: set,
         start_idx: int,
@@ -1918,7 +1973,7 @@ class TensorCacheGenerator:
             for entity_id, dataset in datasets.items():
                 current_idx = self._process_entity(
                     entity_id, dataset, arrays, entity_info,
-                    timestamp_to_idx, entity_to_idx, completed_entities,
+                    timestamp_to_idx, embedding_timestamp_to_idx, entity_to_idx, completed_entities,
                     current_idx, progress_file,
                     progress, entity_task, samples_task, total_task
                 )
@@ -1932,6 +1987,7 @@ class TensorCacheGenerator:
         arrays: Dict[str, np.memmap],
         entity_info: dict,
         timestamp_to_idx: dict,
+        embedding_timestamp_to_idx: dict,
         entity_to_idx: dict,
         completed_entities: set,
         start_idx: int,
@@ -1949,7 +2005,7 @@ class TensorCacheGenerator:
         ):
             current_idx = self._process_entity(
                 entity_id, dataset, arrays, entity_info,
-                timestamp_to_idx, entity_to_idx, completed_entities,
+                timestamp_to_idx, embedding_timestamp_to_idx, entity_to_idx, completed_entities,
                 current_idx, progress_file,
                 progress=None, entity_task=None, samples_task=None, total_task=None
             )
@@ -1961,6 +2017,7 @@ class TensorCacheGenerator:
         arrays: Dict[str, np.memmap],
         entity_info: dict,
         timestamp_to_idx: dict,
+        embedding_timestamp_to_idx: dict,
         entity_to_idx: dict,
         completed_entities: set,
         current_idx: int,
@@ -2035,7 +2092,8 @@ class TensorCacheGenerator:
                 sample = dataset[i]
                 write_idx = current_idx + i
                 _write_sample_indices(
-                    arrays, write_idx, sample, entity_idx, timestamp_to_idx, str(entity_id)
+                    arrays, write_idx, sample, entity_idx, timestamp_to_idx, 
+                    embedding_timestamp_to_idx, str(entity_id)
                 )
             
             # Update progress
@@ -2299,9 +2357,19 @@ class TensorCacheDataset(Dataset):
         - Numpy advanced indexing is highly optimized
         """
         # Get indices for this sample
-        x_idx = self.arrays['x_indices'][index]        # (input_len,)
-        y_idx = self.arrays['y_indices'][index]        # (output_len,)
+        x_idx = self.arrays['x_indices'][index]        # (input_len,) - for time series
+        y_idx = self.arrays['y_indices'][index]        # (output_len,) - for time series
         entity_idx = self.arrays['entity_indices'][index]  # scalar
+        
+        # Get separate embedding indices (deduplicated by timestamp only, not entity+timestamp)
+        # Fallback to time series indices for backward compatibility with old caches
+        if 'x_embedding_indices' in self.arrays:
+            x_embedding_idx = self.arrays['x_embedding_indices'][index]  # (input_len,)
+            y_embedding_idx = self.arrays['y_embedding_indices'][index]  # (output_len,)
+        else:
+            # Backward compatibility: old caches use same indices for both
+            x_embedding_idx = x_idx
+            y_embedding_idx = y_idx
         
         # Look up time series from shared table
         seq_x = self.shared['timeseries'][x_idx] if 'timeseries' in self.shared else None
@@ -2315,10 +2383,10 @@ class TensorCacheDataset(Dataset):
         # This matches the striding done in data_loader.py:
         #   x_hetero = self.full_hetero[s_begin:s_end:self.hetero_stride]
         # Models like FiLMGenerator expect strided embeddings, not full resolution
-        x_hetero_idx = x_idx[::self.hetero_stride]
-        y_hetero_idx = y_idx[::self.hetero_stride]
+        x_hetero_idx = x_embedding_idx[::self.hetero_stride]
+        y_hetero_idx = y_embedding_idx[::self.hetero_stride]
         
-        # Look up embeddings from shared table using STRIDED indices
+        # Look up embeddings from shared table using STRIDED embedding indices
         # Shape depends on num_news_items in metadata:
         # - N=1: stored as (L, D), needs expansion to (L, 1, D)
         # - N=2: stored as (L, 2, D), already has N dimension
