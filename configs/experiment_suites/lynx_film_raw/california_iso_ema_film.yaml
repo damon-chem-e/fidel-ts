@@ -1,0 +1,86 @@
+# Experiment Suite: lynx_film_raw on California_ISO with EMA grad clipping
+# Description: Train lynx_film_raw model on California_ISO with aggressive EMA grad clipping on film parameters
+#              and more forgiving clipping elsewhere. Uses small film hidden layer (32) and large d_model (1024).
+# Usage: python -m cli.suite run configs/experiment_suites/lynx_film_raw/california_iso_ema_film.yaml
+# Note: California_ISO uses hourly sampling (downsampled to -h)
+#       Input: 360 samples = 15 days (half month), Output: 168 samples = 1 week (second smallest)
+#       Split points: {Jan. 1, 2021, Jan. 1, 2022}
+
+suite:
+  name: "lynx_film_raw_california_iso_ema_film"
+  description: "lynx_film_raw on California_ISO with aggressive EMA grad clipping on film parameters, small film hidden layer (32), and large d_model (1024)"
+  tags: ["lynx_film_raw", "multimodal", "pytorch", "fidel-ts", "california_iso", "film", "ema_clipping"]
+  
+  # Execution settings
+  execution:
+    parallel: false
+    continue_on_error: true
+    log_dir: "./logs/suites/lynx_film_raw/california_iso_ema_film"
+    
+  # Experiments in this suite
+  experiments:
+    - name: "lynx_film_raw_california_iso_ema_film"
+      description: "lynx_film_raw on California_ISO with aggressive EMA grad clipping on film parameters, small film hidden layer (32), and large d_model (1024)"
+      enabled: true
+      template: "configs/templates/pytorch_training.yaml"
+      overrides:
+        model:
+          name: "lynx_film_raw"
+          config_path: "model_configs/general/lynx_film_raw.yaml"
+        model_config_overrides:
+          input_text_dim: 768  # BERT embedding dimension (projects 768 -> text_dim=256)
+          # Architecture parameters
+          d_model: 1024        # Large model dimension
+          film_hidden_dim: 32  # Small hidden layer for film generator
+          # EMA gradient clipping configuration
+          grad_clip_mode: "ema"  # Enable EMA-based gradient clipping
+          grad_clip_ema_by_group: true  # Enable per-group EMA clipping
+          grad_clip_ema_beta: 0.95  # EMA decay factor
+          grad_clip_ema_mult: 2.0  # Default multiplier (for non-film parameters - more forgiving)
+          grad_clip_ema_warmup_steps: 0
+          grad_clip_ema_warmup_max_norm: null
+          grad_clip_ema_min: null
+          grad_clip_ema_max: null
+          # Per-group EMA clipping overrides
+          grad_clip_ema_group_overrides:
+            # Aggressive clipping for film parameters (lower mult = more aggressive)
+            text_film:
+              beta: 0.95
+              mult: 0.5  # Aggressive clipping (lower than default 2.0)
+              warmup_steps: 0
+              warmup_max_norm: null
+              min: null
+              max: null
+            # More forgiving clipping for other parameters (higher mult = more forgiving)
+            default:
+              beta: 0.95
+              mult: 4.0  # More forgiving clipping (higher than default 2.0)
+              warmup_steps: 0
+              warmup_max_norm: null
+              min: null
+              max: null
+        data:
+          name: "California_ISO"
+          config_path: "data_configs/California_ISO/fullCAISO_hetero_TGTSF_H.yaml"
+        training:
+          text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
+          input_len: 360      # 15 days at hourly intervals (half month)
+          output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720})
+          batch_size: 128     # Reasonable batch size for large d_model
+          learning_rate: 3e-4  # Learning rate appropriate for large model
+          patience: 7         # Patience for early stopping
+          epochs: 30          # Training epochs
+          track_per_sample: false
+          evaluate_test_during_training: true   # Enable to log test_loss per-epoch for evaluation
+          truncate_train_for_purge: true        # Remove lookahead bias, making val_loss reliable
+          torch_compile: true  # Enable torch.compile for faster training
+          compile_mode: "reduce-overhead"  # Recommended mode
+        wandb:
+          tags: ["lynx_film_raw", "california_iso", "ema_clipping", "film_aggressive"]
+          # Batch-level logging and validation
+          batch_log_interval: 10  # Log per batch metrics every 10 batches
+          validate_every_n_batches: 10  # Validate every 10 batches (must be multiple of batch_log_interval)
+          validate_num_val_batches: 1  # Validate only 1 batch per validation (low overhead)
+        experiment:
+          type: "pytorch"
+          output_dir: "outputs/suites/lynx_film_raw/california_iso_ema_film"
