@@ -800,6 +800,7 @@ class Data_Provider(object):
         # Models will handle dimension conversion with learned projections if needed
         embed_dim = self.dataset_config.get('timemmd_embed_dim', 768)
         force_reembed = self.dataset_config.get('timemmd_force_reembed', False)
+        use_old_pkl = self.dataset_config.get('timemmd_use_old_pkl', False)
         # Get aggregation method from embeddings config if available, default to 'cls'
         aggregation_method = self.dataset_config.get('aggregation_method', 'cls')
         # hf_cache_dir is data-agnostic; prefer global args.hf_cache_dir, fall back to dataset config, then default
@@ -847,6 +848,7 @@ class Data_Provider(object):
             embed_model_name=embed_model_name,
             embed_dim=embed_dim,
             force_reembed=force_reembed,
+            use_old_pkl=use_old_pkl,
             hf_cache_dir=hf_cache_dir,
             device=device,
             missing_value_strategy=missing_value_strategy,
