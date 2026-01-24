@@ -75,6 +75,7 @@ suite:
           truncate_train_for_purge: true        # Remove lookahead bias, making val_loss reliable
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
+          use_tensor_cache: true  # Enable tensor cache (will auto-resolve path)
         wandb:
           tags: ["lynx_film_raw", "jena_atmospheric", "ema_clipping", "film_aggressive"]
           # Batch-level logging and validation

@@ -1,26 +1,26 @@
-# Experiment Suite: lynx_film_raw on California_ISO with EMA grad clipping
-# Description: Train lynx_film_raw model on California_ISO with aggressive EMA grad clipping on film parameters
+# Experiment Suite: lynx_film_raw on NYC_traffic_speed with EMA grad clipping
+# Description: Train lynx_film_raw model on NYC_traffic_speed with aggressive EMA grad clipping on film parameters
 #              and more forgiving clipping elsewhere. Uses small film hidden layer (32) and large d_model (1024).
-# Usage: python -m cli.suite run configs/experiment_suites/lynx_film_raw/california_iso_ema_film.yaml
-# Note: California_ISO uses hourly sampling (downsampled to -h)
+# Usage: python -m cli.suite run configs/experiment_suites/lynx_film_raw/nyc_traffic_speed_ema_film.yaml
+# Note: NYC_traffic_speed uses hourly sampling (downsampled to -h)
 #       Input: 360 samples = 15 days (half month), Output: 168 samples = 1 week (second smallest)
 #       Split points: {Jan. 1, 2021, Jan. 1, 2022}
 
 suite:
-  name: "lynx_film_raw_california_iso_ema_film"
-  description: "lynx_film_raw on California_ISO with aggressive EMA grad clipping on film parameters, small film hidden layer (32), and large d_model (1024)"
-  tags: ["lynx_film_raw", "multimodal", "pytorch", "fidel-ts", "california_iso", "film", "ema_clipping"]
+  name: "lynx_film_raw_nyc_traffic_speed_ema_film"
+  description: "lynx_film_raw on NYC_traffic_speed with aggressive EMA grad clipping on film parameters, small film hidden layer (32), and large d_model (1024)"
+  tags: ["lynx_film_raw", "multimodal", "pytorch", "fidel-ts", "nyc_traffic_speed", "film", "ema_clipping"]
   
   # Execution settings
   execution:
     parallel: false
     continue_on_error: true
-    log_dir: "./logs/suites/lynx_film_raw/california_iso_ema_film"
+    log_dir: "./logs/suites/lynx_film_raw/nyc_traffic_speed_ema_film"
     
   # Experiments in this suite
   experiments:
-    - name: "lynx_film_raw_california_iso_ema_film"
-      description: "lynx_film_raw on California_ISO with aggressive EMA grad clipping on film parameters, small film hidden layer (32), and large d_model (1024)"
+    - name: "lynx_film_raw_nyc_traffic_speed_ema_film"
+      description: "lynx_film_raw on NYC_traffic_speed with aggressive EMA grad clipping on film parameters, small film hidden layer (32), and large d_model (1024)"
       enabled: true
       template: "configs/templates/pytorch_training.yaml"
       overrides:
@@ -60,8 +60,8 @@ suite:
               min: null
               max: null
         data:
-          name: "California_ISO"
-          config_path: "data_configs/California_ISO/fullCAISO_hetero_TGTSF_H.yaml"
+          name: "NYC_traffic_speed"
+          config_path: "data_configs/NYC_traffic_speed/fullNYCTS_hetero_TGTSF_H.yaml"
         training:
           text_embedding_stride: "full"  # Full resolution text embeddings (recommended)
           input_len: 360      # 15 days at hourly intervals (half month)
@@ -77,11 +77,11 @@ suite:
           compile_mode: "reduce-overhead"  # Recommended mode
           use_tensor_cache: true  # Enable tensor cache (will auto-resolve path)
         wandb:
-          tags: ["lynx_film_raw", "california_iso", "ema_clipping", "film_aggressive"]
+          tags: ["lynx_film_raw", "nyc_traffic_speed", "ema_clipping", "film_aggressive"]
           # Batch-level logging and validation
           batch_log_interval: 10  # Log per batch metrics every 10 batches
           validate_every_n_batches: 10  # Validate every 10 batches (must be multiple of batch_log_interval)
           validate_num_val_batches: 1  # Validate only 1 batch per validation (low overhead)
         experiment:
           type: "pytorch"
-          output_dir: "outputs/suites/lynx_film_raw/california_iso_ema_film"
+          output_dir: "outputs/suites/lynx_film_raw/nyc_traffic_speed_ema_film"
