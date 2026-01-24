@@ -264,6 +264,7 @@ class PolarsCollectorState:
     then converts to polars for final processing.
     """
     seen_timestamps: set = field(default_factory=set)
+    timestamp_keys: List[str] = field(default_factory=list)
     timestamps: List[int] = field(default_factory=list)
     timeseries: List[np.ndarray] = field(default_factory=list)
     embeddings: List[np.ndarray] = field(default_factory=list)
@@ -282,10 +283,11 @@ def register_timestamp_data_polars(
     timestamp: int,
     ts_value: Optional[np.ndarray],
     embedding: Optional[np.ndarray],
-    hetero_time_feat: Optional[np.ndarray]
+    hetero_time_feat: Optional[np.ndarray],
+    entity_id: str
 ) -> None:
     """
-    Register data for a timestamp if not already seen (polars version).
+    Register data for an entity-timestamp pair if not already seen (polars version).
 
     Uses a set for O(1) membership check instead of dict.
 
@@ -295,14 +297,16 @@ def register_timestamp_data_polars(
         ts_value: Time series value at this timestamp
         embedding: Text embedding at this timestamp
         hetero_time_feat: Hetero time features at this timestamp
+        entity_id: Entity identifier for disambiguation
     """
-    ts_key = int(timestamp)
+    ts_key = f"{entity_id}|{int(timestamp)}"
 
     if ts_key in state.seen_timestamps:
         return
 
     state.seen_timestamps.add(ts_key)
-    state.timestamps.append(ts_key)
+    state.timestamp_keys.append(ts_key)
+    state.timestamps.append(int(timestamp))
 
     # Store time series value
     if ts_value is not None:
@@ -398,7 +402,8 @@ def register_entity_data_polars(
 
 def process_sample_for_collection_polars(
     state: PolarsCollectorState,
-    sample: tuple
+    sample: tuple,
+    entity_id: str
 ) -> None:
     """
     Process a single sample, registering all unique timestamps and data.
@@ -408,6 +413,7 @@ def process_sample_for_collection_polars(
     Args:
         state: PolarsCollectorState to update
         sample: 13-element tuple from dataset.__getitem__
+        entity_id: Entity identifier for disambiguation
     """
     # Update shapes if not yet inferred
     if state.shapes.n_features is None:
@@ -419,19 +425,20 @@ def process_sample_for_collection_polars(
     # Process input window
     x_time = _safe_array(sample[SAMPLE_IDX_X_TIME])
     if x_time is not None:
-        _process_window(state, sample, x_time.flatten(), is_input=True)
+        _process_window(state, sample, x_time.flatten(), is_input=True, entity_id=entity_id)
 
     # Process output window
     y_time = _safe_array(sample[SAMPLE_IDX_Y_TIME])
     if y_time is not None:
-        _process_window(state, sample, y_time.flatten(), is_input=False)
+        _process_window(state, sample, y_time.flatten(), is_input=False, entity_id=entity_id)
 
 
 def _process_window(
     state: PolarsCollectorState,
     sample: tuple,
     time_array: np.ndarray,
-    is_input: bool
+    is_input: bool,
+    entity_id: str
 ) -> None:
     """Process input or output window timestamps."""
     if is_input:
@@ -458,7 +465,7 @@ def _process_window(
 
         htf_val = htf[i] if htf is not None and htf.ndim > 1 and i < len(htf) else None
 
-        register_timestamp_data_polars(state, ts, ts_val, emb, htf_val)
+        register_timestamp_data_polars(state, ts, ts_val, emb, htf_val, entity_id)
 
 
 # =============================================================================
@@ -483,49 +490,35 @@ def finalize_shared_tables_polars(
 
     # Convert timestamp data to arrays
     if state.timestamps:
-        # Use polars to sort and assign indices
-        ts_df = pl.DataFrame({'ts': state.timestamps})
-        index_df = build_timestamp_index(ts_df)
+        # Sort by composite key for deterministic ordering
+        key_df = pl.DataFrame({
+            'key': state.timestamp_keys,
+            'ts': state.timestamps,
+            'orig_idx': list(range(len(state.timestamps)))
+        }).sort('key')
 
-        # Create ordered arrays aligned with sorted timestamps
-        sorted_ts = index_df['ts'].to_numpy()
-
-        # Build lookup from original order to sorted order
-        original_to_sorted = {ts: i for i, ts in enumerate(sorted_ts)}
-
-        # Reorder data arrays to match sorted timestamp order
-        n_unique = len(state.timestamps)
+        sorted_ts = key_df['ts'].to_numpy()
+        order = key_df['orig_idx'].to_numpy()
 
         shared_tables['timestamps'] = sorted_ts.astype(np.int64)
 
         if state.timeseries:
             ts_arr = np.stack(state.timeseries)
-            reordered_ts = np.zeros_like(ts_arr)
-            for orig_idx, ts in enumerate(state.timestamps):
-                sorted_idx = original_to_sorted[ts]
-                reordered_ts[sorted_idx] = ts_arr[orig_idx]
-            shared_tables['timeseries'] = reordered_ts.astype(np.float32)
+            shared_tables['timeseries'] = ts_arr[order].astype(np.float32)
             state.timeseries.clear()
 
         if state.embeddings:
             emb_arr = np.stack(state.embeddings)
-            reordered_emb = np.zeros_like(emb_arr)
-            for orig_idx, ts in enumerate(state.timestamps):
-                sorted_idx = original_to_sorted[ts]
-                reordered_emb[sorted_idx] = emb_arr[orig_idx]
-            shared_tables['embeddings'] = reordered_emb.astype(np.float32)
+            shared_tables['embeddings'] = emb_arr[order].astype(np.float32)
             state.embeddings.clear()
 
         if state.hetero_time:
             htf_arr = np.stack(state.hetero_time)
-            reordered_htf = np.zeros_like(htf_arr)
-            for orig_idx, ts in enumerate(state.timestamps):
-                sorted_idx = original_to_sorted[ts]
-                reordered_htf[sorted_idx] = htf_arr[orig_idx]
-            shared_tables['hetero_time'] = reordered_htf.astype(np.float32)
+            shared_tables['hetero_time'] = htf_arr[order].astype(np.float32)
             state.hetero_time.clear()
 
         state.timestamps.clear()
+        state.timestamp_keys.clear()
         state.seen_timestamps.clear()
 
     # Entity data
@@ -539,12 +532,10 @@ def finalize_shared_tables_polars(
         shared_tables['entity_channel'] = np.stack(valid_channels).astype(np.float32)
     state.entity_channel.clear()
 
-    # Build index mappings (using sorted order)
+    # Build index mappings (using composite keys)
     if 'timestamps' in shared_tables:
-        timestamp_to_idx = {
-            str(int(ts)): idx
-            for idx, ts in enumerate(shared_tables['timestamps'])
-        }
+        sorted_keys = key_df['key'].to_list()
+        timestamp_to_idx = {key: idx for idx, key in enumerate(sorted_keys)}
     else:
         timestamp_to_idx = {}
 
@@ -679,7 +670,7 @@ class PolarsSharedTableBuilder:
         import time
         start_time = time.perf_counter()
 
-        # Collect all unique timestamps across all datasets
+        # Collect all unique entity-timestamp keys across all datasets
         all_timestamps_set = set()
         entity_data = {}  # entity_id -> list of raw_arrays (one per split)
 
@@ -697,7 +688,9 @@ class PolarsSharedTableBuilder:
 
                 # Get unique timestamps this dataset accesses
                 unique_ts = dataset.get_all_unique_timestamps()
-                all_timestamps_set.update(unique_ts.tolist())
+                all_timestamps_set.update(
+                    f"{entity_id}|{int(ts)}" for ts in unique_ts.tolist()
+                )
 
                 # Store raw arrays from ALL splits for this entity
                 if entity_id not in entity_data:
@@ -707,15 +700,19 @@ class PolarsSharedTableBuilder:
             del datasets
 
         if self.verbose:
-            logger.info(f"Collected {len(all_timestamps_set):,} unique timestamps "
+            logger.info(f"Collected {len(all_timestamps_set):,} unique entity-timestamps "
                        f"from {len(entity_data)} entities")
 
-        # Sort timestamps for consistent indexing
-        sorted_timestamps = np.array(sorted(all_timestamps_set), dtype=np.int64)
-        n_unique = len(sorted_timestamps)
+        # Sort composite keys for consistent indexing
+        sorted_keys = sorted(all_timestamps_set)
+        sorted_timestamps = np.array(
+            [int(key.split('|', 1)[1]) for key in sorted_keys],
+            dtype=np.int64
+        )
+        n_unique = len(sorted_keys)
 
-        # Build timestamp -> index mapping
-        timestamp_to_idx = {int(ts): idx for idx, ts in enumerate(sorted_timestamps)}
+        # Build entity-timestamp -> index mapping
+        timestamp_to_idx = {key: idx for idx, key in enumerate(sorted_keys)}
 
         # Infer shapes from first entity
         first_entity_id = next(iter(entity_data))
@@ -767,15 +764,16 @@ class PolarsSharedTableBuilder:
 
                 for local_idx in range(len(raw.timestamps)):
                     ts_int = int(raw.timestamps[local_idx])
+                    ts_key = f"{entity_id}|{ts_int}"
 
-                    if ts_int in seen_timestamps:
+                    if ts_key in seen_timestamps:
                         continue  # Already have data for this timestamp
 
-                    if ts_int not in timestamp_to_idx:
+                    if ts_key not in timestamp_to_idx:
                         continue  # Timestamp not in unique set (shouldn't happen)
 
-                    unique_idx = timestamp_to_idx[ts_int]
-                    seen_timestamps.add(ts_int)
+                    unique_idx = timestamp_to_idx[ts_key]
+                    seen_timestamps.add(ts_key)
 
                     # Extract timeseries data
                     timeseries_array[unique_idx] = data[local_idx]
@@ -820,7 +818,7 @@ class PolarsSharedTableBuilder:
             )
 
         if self.verbose:
-            logger.info(f"Data integrity: {n_filled:,}/{n_unique:,} timestamps filled ({fill_ratio:.1%})")
+            logger.info(f"Data integrity: {n_filled:,}/{n_unique:,} entity-timestamps filled ({fill_ratio:.1%})")
 
         # Build shared tables dict
         shared_tables = {
@@ -860,7 +858,7 @@ class PolarsSharedTableBuilder:
         elapsed = time.perf_counter() - start_time
 
         if self.verbose:
-            logger.info(f"Built shared tables (direct): {n_unique:,} unique timestamps, "
+            logger.info(f"Built shared tables (direct): {n_unique:,} unique entity-timestamps, "
                        f"{len(entity_to_idx)} entities in {elapsed:.2f}s")
             self._validate_splits(flags, timestamp_to_idx, timeseries_array)
 
@@ -873,7 +871,7 @@ class PolarsSharedTableBuilder:
     def _validate_splits(
         self,
         flags: List[str],
-        timestamp_to_idx: Dict[int, int],
+        timestamp_to_idx: Dict[str, int],
         timeseries_array: np.ndarray
     ) -> None:
         """
@@ -884,7 +882,7 @@ class PolarsSharedTableBuilder:
 
         Args:
             flags: List of split names to validate
-            timestamp_to_idx: Mapping from timestamp to array index
+            timestamp_to_idx: Mapping from "entity_id|timestamp" to array index
             timeseries_array: The populated timeseries shared table
 
         Raises:
@@ -904,8 +902,9 @@ class PolarsSharedTableBuilder:
                 sample_ts = raw.timestamps[:min(100, len(raw.timestamps))]
                 for ts in sample_ts:
                     ts_int = int(ts)
-                    if ts_int in timestamp_to_idx:
-                        idx = timestamp_to_idx[ts_int]
+                    ts_key = f"{entity_id}|{ts_int}"
+                    if ts_key in timestamp_to_idx:
+                        idx = timestamp_to_idx[ts_key]
                         if np.all(timeseries_array[idx] == 0):
                             zero_count += 1
                         sample_count += 1
@@ -940,7 +939,7 @@ class PolarsSharedTableBuilder:
         self._collect_data(state, flags)
 
         if self.verbose:
-            logger.info(f"Collected {len(state.timestamps):,} unique timestamps")
+            logger.info(f"Collected {len(state.timestamps):,} unique entity-timestamps")
 
         shared_tables, index_mappings = finalize_shared_tables_polars(state)
 
@@ -980,7 +979,7 @@ class PolarsSharedTableBuilder:
                 # Process all samples
                 for sample_idx in range(len(dataset)):
                     sample = dataset[sample_idx]
-                    process_sample_for_collection_polars(state, sample)
+                    process_sample_for_collection_polars(state, sample, str(entity_id))
 
             del datasets
             gc.collect()

@@ -64,7 +64,7 @@ tensor_cache/{hash}/
 │   │                          # Currently often empty - see HETERO TIME INDICES docs.
 │   ├── entity_general.npy     # (N_entities, embed_dim) - static general
 │   ├── entity_channel.npy     # (N_entities, embed_dim) - static channel
-│   └── index_mappings.json    # {timestamp: idx}, {entity_id: idx}
+│   └── index_mappings.json    # {entity_id|timestamp: idx}, {entity_id: idx}
 ├── train/
 │   ├── progress.json          # Checkpointing state (deleted on completion)
 │   ├── sample_ids.npy         # (N,) str
@@ -335,7 +335,8 @@ class TensorCacheMetadata:
     - Store num_news_items for embedding shape handling
     
     VERSIONING:
-    - VERSION = "2.1.0": Current version with indexed format and downtime handling
+    - VERSION = "2.2.0": Entity-aware indexed format to prevent cross-entity mixing
+    - VERSION = "2.1.0": Indexed format with downtime handling (timestamp-only keys)
     - VERSION = "2.0.0": Indexed format without explicit num_news_items
     - VERSION = "1.0.0": Legacy direct format (still readable)
     
@@ -349,7 +350,7 @@ class TensorCacheMetadata:
     - Determined during cache generation based on whether training data has downtime
     """
 
-    VERSION = "2.1.0"
+    VERSION = "2.2.0"
     FORMAT_DIRECT = "direct"    # V1: stores data directly per sample
     FORMAT_INDEXED = "indexed"  # V2: stores indices into shared tables
 
@@ -639,8 +640,8 @@ class SharedTableCollector:
     - If downtime in training: store N=2 (embeddings + downtime), matching original
     - Rationale: If no downtime in training, model won't learn to use it anyway
     """
-    # Mapping from timestamp to index in shared tables
-    timestamp_to_idx: Dict[int, int] = field(default_factory=dict)
+    # Mapping from (entity_id, timestamp) to index in shared tables
+    timestamp_to_idx: Dict[Tuple[str, int], int] = field(default_factory=dict)
     
     # Mapping from entity_id to index in entity tables  
     entity_to_idx: Dict[str, int] = field(default_factory=dict)
@@ -737,10 +738,11 @@ def _register_timestamp_data(
     timestamp: int,
     ts_value: Optional[np.ndarray],
     embedding: Optional[np.ndarray],
-    hetero_time_feat: Optional[np.ndarray]
+    hetero_time_feat: Optional[np.ndarray],
+    entity_id: str
 ) -> None:
     """
-    Register data for a timestamp if not already seen.
+    Register data for an entity-timestamp pair if not already seen.
     
     WHY DEDUPLICATION HAPPENS HERE:
     - Check if timestamp already in mapping (O(1) dict lookup)
@@ -758,8 +760,9 @@ def _register_timestamp_data(
         ts_value: Time series value at this timestamp
         embedding: Text embedding at this timestamp (may be (D,), (N, D), or full per-timestep)
         hetero_time_feat: Hetero time features at this timestamp
+        entity_id: Entity identifier for disambiguation
     """
-    ts_key = int(timestamp)
+    ts_key = (entity_id, int(timestamp))
     
     # Skip if already registered
     if ts_key in collector.timestamp_to_idx:
@@ -768,7 +771,7 @@ def _register_timestamp_data(
     # Assign next available index
     idx = len(collector.timestamps)
     collector.timestamp_to_idx[ts_key] = idx
-    collector.timestamps.append(ts_key)
+    collector.timestamps.append(int(timestamp))
     
     # Store time series value (with fallback to zeros)
     if ts_value is not None:
@@ -889,7 +892,8 @@ def _register_entity_data(
 
 def _process_sample_for_collection(
     collector: SharedTableCollector,
-    sample: tuple
+    sample: tuple,
+    entity_id: str
 ) -> None:
     """
     Process a single sample, registering all unique timestamps and entity data.
@@ -914,6 +918,7 @@ def _process_sample_for_collection(
     Args:
         collector: SharedTableCollector to update
         sample: 13-element tuple from dataset.__getitem__
+        entity_id: Entity identifier for disambiguation
     """
     # Update shapes if not yet inferred
     if collector.shapes.n_features is None:
@@ -953,7 +958,7 @@ def _process_sample_for_collection(
             
             htf = hetero_x_time[i] if hetero_x_time is not None and hetero_x_time.ndim > 1 and i < len(hetero_x_time) else None
             
-            _register_timestamp_data(collector, ts, ts_val, emb, htf)
+            _register_timestamp_data(collector, ts, ts_val, emb, htf, entity_id)
     
     # Process output window timestamps (same pattern as input)
     y_time = _safe_array(sample[SAMPLE_IDX_Y_TIME])
@@ -985,7 +990,7 @@ def _process_sample_for_collection(
             
             htf = hetero_y_time[i] if hetero_y_time is not None and hetero_y_time.ndim > 1 and i < len(hetero_y_time) else None
             
-            _register_timestamp_data(collector, ts, ts_val, emb, htf)
+            _register_timestamp_data(collector, ts, ts_val, emb, htf, entity_id)
 
 
 def _finalize_shared_tables(
@@ -1049,7 +1054,10 @@ def _finalize_shared_tables(
     
     # Build index mappings (JSON-serializable)
     index_mappings = {
-        'timestamp_to_idx': {str(k): v for k, v in collector.timestamp_to_idx.items()},
+        'timestamp_to_idx': {
+            f"{entity_id}|{timestamp}": idx
+            for (entity_id, timestamp), idx in collector.timestamp_to_idx.items()
+        },
         'entity_to_idx': collector.entity_to_idx
     }
     
@@ -1151,7 +1159,8 @@ def _write_sample_indices(
     write_idx: int,
     sample: tuple,
     entity_idx: int,
-    timestamp_to_idx: Dict[int, int]
+    timestamp_to_idx: Dict[str, int],
+    entity_id: str
 ) -> None:
     """
     Write index data for a single sample to memory-mapped arrays.
@@ -1174,7 +1183,8 @@ def _write_sample_indices(
         write_idx: Position in arrays to write
         sample: 13-element tuple from dataset
         entity_idx: Index of this sample's entity in entity tables
-        timestamp_to_idx: Mapping from timestamp to shared table index
+        timestamp_to_idx: Mapping from "entity_id|timestamp" to shared table index
+        entity_id: Entity identifier for disambiguation
     """
     # Sample ID
     arrays['sample_ids'][write_idx] = str(sample[SAMPLE_IDX_SAMPLE_ID])
@@ -1185,7 +1195,7 @@ def _write_sample_indices(
     # Convert input timestamps to indices
     x_time = np.asarray(sample[SAMPLE_IDX_X_TIME]).flatten()
     x_indices = np.array(
-        [timestamp_to_idx.get(int(ts), 0) for ts in x_time],
+        [timestamp_to_idx.get(f"{entity_id}|{int(ts)}", 0) for ts in x_time],
         dtype=np.int32
     )
     arrays['x_indices'][write_idx] = x_indices
@@ -1193,7 +1203,7 @@ def _write_sample_indices(
     # Convert output timestamps to indices
     y_time = np.asarray(sample[SAMPLE_IDX_Y_TIME]).flatten()
     y_indices = np.array(
-        [timestamp_to_idx.get(int(ts), 0) for ts in y_time],
+        [timestamp_to_idx.get(f"{entity_id}|{int(ts)}", 0) for ts in y_time],
         dtype=np.int32
     )
     arrays['y_indices'][write_idx] = y_indices
@@ -1474,7 +1484,7 @@ class TensorCacheGenerator:
                         samples_per_gc = 10000  # Run GC every 10K samples
                         for sample_idx in range(len(dataset)):
                             sample = dataset[sample_idx]
-                            _process_sample_for_collection(collector, sample)
+                            _process_sample_for_collection(collector, sample, str(entity_id))
                             progress.update(task, advance=1)
                             
                             # Periodic memory management during processing
@@ -1531,7 +1541,7 @@ class TensorCacheGenerator:
                     samples_per_gc = 10000  # Run GC every 10K samples
                     for sample_idx in range(len(dataset)):
                         sample = dataset[sample_idx]
-                        _process_sample_for_collection(collector, sample)
+                        _process_sample_for_collection(collector, sample, str(entity_id))
                         
                         # Periodic memory management during processing
                         if (sample_idx + 1) % samples_per_gc == 0:
@@ -1787,7 +1797,7 @@ class TensorCacheGenerator:
         arrays = _create_index_arrays(split_dir, array_shapes, bool(completed_entities))
         
         # Convert mappings for efficient lookup
-        timestamp_to_idx = {int(k): v for k, v in index_mappings['timestamp_to_idx'].items()}
+        timestamp_to_idx = index_mappings['timestamp_to_idx']
         entity_to_idx = index_mappings['entity_to_idx']
         
         # Process datasets
@@ -1974,7 +1984,7 @@ class TensorCacheGenerator:
             dataset: Dataset for this entity
             arrays: Memory-mapped arrays to write to
             entity_info: Dict to update with entity metadata
-            timestamp_to_idx: Timestamp to index mapping
+            timestamp_to_idx: Entity-timestamp to index mapping
             entity_to_idx: Entity to index mapping
             completed_entities: Set of already-completed entities (modified in place)
             current_idx: Current write position
@@ -2025,7 +2035,7 @@ class TensorCacheGenerator:
                 sample = dataset[i]
                 write_idx = current_idx + i
                 _write_sample_indices(
-                    arrays, write_idx, sample, entity_idx, timestamp_to_idx
+                    arrays, write_idx, sample, entity_idx, timestamp_to_idx, str(entity_id)
                 )
             
             # Update progress
@@ -2571,6 +2581,13 @@ def validate_cache(cache_dir: Union[str, Path], config: dict) -> Tuple[bool, str
         metadata = TensorCacheMetadata.load(metadata_path)
     except Exception as e:
         return False, f"Failed to load metadata: {e}"
+    
+    # Enforce version compatibility (entity-aware keying is required for correctness)
+    if metadata.version != TensorCacheMetadata.VERSION:
+        return False, (
+            f"Cache version mismatch. Expected {TensorCacheMetadata.VERSION}, "
+            f"got {metadata.version}. Regenerate the cache."
+        )
 
     # Check for incomplete cache (progress file exists)
     for flag in ['train', 'val', 'test']:

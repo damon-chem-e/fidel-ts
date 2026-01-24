@@ -1,0 +1,47 @@
+{
+    "314106": {
+        "name": "Calgary Fire Hall Headquarters",
+        "address": "1212 42 AV SE",
+        "len": 34185
+    },
+    "319086": {
+        "name": "Whitehorn Multi-Service Centre",
+        "address": "3705 35 ST NE",
+        "len": 36634
+    },
+    "164440": {
+        "name": "Southland Leisure Centre",
+        "address": "2000 SOUTHLAND DR SW",
+        "len": 40205
+    },
+    "355827": {
+        "name": "Glenmore Water Treatment Plant",
+        "address": "1634 56 AV SW",
+        "len": 33354
+    },
+    "331901": {
+        "name": "City of Calgary North Corporate Warehouse",
+        "address": "2340 22 ST NE",
+        "len": 35398
+    },
+    "332785": {
+        "name": "Richmond - Knob Hill Community Hall",
+        "address": "2433 26 AV SW",
+        "len": 35006
+    },
+    "577650": {
+        "name": "Bearspaw Water Treatment Plant",
+        "address": "11444 Bearspaw Dam RD NW",
+        "len": 33591
+    },
+    "551172": {
+        "name": "CFD Firehall #7",
+        "address": "2708 4 ST NW",
+        "len": 31213
+    },
+    "570079": {
+        "name": "Manchester Building M",
+        "address": "651M 25 AV SE",
+        "len": 29897
+    }
+}

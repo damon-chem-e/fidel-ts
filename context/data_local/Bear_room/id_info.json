@@ -1,0 +1,2002 @@
+{
+  "104": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "105": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "107": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "108": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "110": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "114": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "120": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "121": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "122": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "208": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "213": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "216": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "217": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "221": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "223": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "227": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "229": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "240": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "245": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "247": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "248": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "249": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "252": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "254": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "261": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "264": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "268": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "280": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "281": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "288": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "290": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "302": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "304": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "308": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "314": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "317": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "323": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "328": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "329": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "330": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "336": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "340": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "345": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "348": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "350": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "353": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "361": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "362": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "363": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "368": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "371": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "375": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "380": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "386": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "387": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "402": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "403": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "405": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "409": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "413": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "415": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "417": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "420": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "423": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "428": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "429": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "432": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "436": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "437": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "445": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "448": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "450": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "453": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "461": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "462": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "463": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "469": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "470": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "484": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  },
+  "490": {
+    "len": 59538,
+    "sensor_downtime": {
+      "Real Energy Into the Load Interval": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      },
+      "Real Power Mean": {
+        "time": [
+          "2020-05-03 00:00:00",
+          "2020-06-01 00:00:00"
+        ],
+        "index": [
+          0,
+          7775
+        ]
+      }
+    }
+  }
+}

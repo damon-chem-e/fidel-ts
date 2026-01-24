@@ -57,7 +57,7 @@ class TimeMMD_HeteroGetter:
                  output_format='json', embed_model_name='bert-base-uncased', 
                  embed_dim=768, force_reembed=False, hf_cache_dir='./HF_cache/',
                  root_path=None, data_path=None, device='cpu', num_channels=None, channel_names=None,
-                 aggregation_method='cls', use_old_pkl=False):
+                 aggregation_method='cls', use_old_pkl=False, entity_id=None):
         """
         Initialize TimeMMD_HeteroGetter.
         
@@ -80,6 +80,7 @@ class TimeMMD_HeteroGetter:
                 channel_info with its name (e.g., "Weather variables: temperature" for channel "temperature")
             aggregation_method: Aggregation method for embeddings ('cls', 'average', 'none'). Default: 'cls'
             use_old_pkl: If True, explicitly use old .pkl format (default: False). NO fallback - must be explicitly requested.
+            entity_id: Optional entity identifier for multi-entity cache isolation
         """
         self.text_data = text_data
         self.timestamps = timestamps
@@ -97,6 +98,7 @@ class TimeMMD_HeteroGetter:
         self.num_channels = num_channels  # Number of channels for expanding channel_info embedding
         self.channel_names = channel_names  # List of channel/column names for per-channel embeddings
         self.use_old_pkl = use_old_pkl
+        self.entity_id = str(entity_id) if entity_id is not None else None
         
         # Create a mapping for fast lookup
         self.text_dict = text_data.to_dict()
@@ -185,6 +187,10 @@ class TimeMMD_HeteroGetter:
                 if data_path_obj.parent != Path('.'):
                     cache_path = str(data_path_obj.parent)
             
+            # Add entity-specific suffix for multi-entity cache isolation
+            if self.entity_id:
+                cache_path = os.path.join(cache_path, f"entity_{self.entity_id}")
+            
             self.embedder = TextEmbedder(
                 model_name=self.embed_model_name,
                 aggregation_method=self.aggregation_method,
@@ -198,6 +204,30 @@ class TimeMMD_HeteroGetter:
             )
             # Get embedding dimension from embedder
             self.bert_dim = self.embedder.embedding_dim
+    
+    def _should_use_entity_cache_key(self) -> bool:
+        """
+        Decide whether to use entity-prefixed cache keys.
+        
+        Returns:
+            True when using the new cache system and entity_id is provided.
+        """
+        return self.entity_id is not None and not self.use_old_pkl
+    
+    def _build_cache_key(self, timestamp: str) -> str:
+        """
+        Build a cache key for a timestamp, optionally prefixed with entity_id.
+        
+        Args:
+            timestamp: Timestamp string (YYYYMMDDHHMMSS)
+        
+        Returns:
+            Cache key string for embedding lookup
+        """
+        timestamp_str = str(timestamp)
+        if self._should_use_entity_cache_key():
+            return f"{self.entity_id}|{timestamp_str}"
+        return timestamp_str
     
     
     def _load_or_create_embeddings(self):
@@ -240,8 +270,11 @@ class TimeMMD_HeteroGetter:
         - If use_old_pkl=False: Use new cache system ONLY (no old .pkl check)
         - NO automatic fallback between systems
         """
-        # Convert text_data to dict format (needed for both paths)
-        text_dict = {str(ts): text for ts, text in self.text_data.items()}
+        # Convert text_data to dict format (keys are entity-safe when needed)
+        text_dict = {
+            self._build_cache_key(ts): text
+            for ts, text in self.text_data.items()
+        }
         
         # If explicitly requested, use old .pkl format (NO fallback)
         if self.use_old_pkl:
@@ -261,7 +294,7 @@ class TimeMMD_HeteroGetter:
                                 self.bert_dim = sample_emb.shape[0]
                     
                     # Count missing embeddings
-                    missing_count = sum(1 for ts in text_dict.keys() if str(ts) not in self.embeddings)
+                    missing_count = sum(1 for ts in text_dict.keys() if ts not in self.embeddings)
                     if missing_count > 0:
                         print(f"[ warning ] {missing_count} timestamps missing from old .pkl cache (will use zero vectors)")
                     
@@ -309,8 +342,9 @@ class TimeMMD_HeteroGetter:
         
         for ts in matched_times:
             # ts is string 'YYYYMMDDHHMMSS'
-            if ts in self.embeddings:
-                emb = self.embeddings[ts]
+            key = self._build_cache_key(ts)
+            if key in self.embeddings:
+                emb = self.embeddings[key]
                 # Validate and normalize shape
                 emb = self._normalize_embedding_shape(emb)
             else:
@@ -727,7 +761,8 @@ class TimeMMD_Dataset(Universal_Dataset):
             device=self.device,
             num_channels=num_channels,
             channel_names=channel_names,  # Pass actual channel names for per-channel embeddings
-            use_old_pkl=self.use_old_pkl
+            use_old_pkl=self.use_old_pkl,
+            entity_id=self.entity_id
         )
         
         # Set as hetero_data_getter
