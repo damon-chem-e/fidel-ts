@@ -474,26 +474,236 @@ class Experiment(Exp_Basic):
             ).item()
         return group_norms
 
-    def _apply_grad_clipping(self, grad_clip_max_norm, text_film_grad_clip_max_norm, group_params):
+    def _compute_params_norm(self, params):
+        """
+        Compute gradient norm for a specific parameter list without clipping.
+        
+        Args:
+            params: List of parameters to measure.
+        
+        Returns:
+            float: L2 norm of gradients for the provided params.
+        """
+        # Step 1: keep only parameters with gradients.
+        params_with_grad = self._filter_params_with_grad(params)
+        # Step 2: return zero for empty parameter sets.
+        if not params_with_grad:
+            return 0.0
+        # Step 3: compute L2 norm with max_norm=inf.
+        return torch.nn.utils.clip_grad_norm_(
+            params_with_grad,
+            max_norm=float('inf')
+        ).item()
+
+    def _get_non_text_film_params(self, text_film_params):
+        """
+        Collect all model parameters that are not part of the text-FiLM group.
+        
+        Args:
+            text_film_params: List of parameters belonging to the text-FiLM group.
+        
+        Returns:
+            list: Parameters excluding text-FiLM parameters.
+        """
+        # Step 1: build an identity set for fast exclusion.
+        text_film_ids = {id(param) for param in text_film_params}
+        # Step 2: collect all parameters not in the text-FiLM group.
+        return [param for param in self.model.parameters() if id(param) not in text_film_ids]
+
+    def _get_grad_clip_mode(self):
+        """
+        Resolve gradient clipping mode from model configuration.
+        
+        Returns:
+            str: Normalized clip mode ("fixed", "ema", or "none").
+        """
+        # Step 1: read the configured mode (default to "fixed" for legacy behavior).
+        grad_clip_mode = getattr(self.args.model_config, 'grad_clip_mode', 'fixed')
+        # Step 2: normalize the mode to lowercase string.
+        grad_clip_mode = str(grad_clip_mode).strip().lower()
+        # Step 3: validate and fallback to "fixed" when unsupported.
+        if grad_clip_mode not in {"fixed", "ema", "none"}:
+            return "fixed"
+        return grad_clip_mode
+
+    def _get_grad_clip_ema_settings(self, group_name):
+        """
+        Resolve EMA clipping settings for a specific group.
+        
+        Args:
+            group_name: Group identifier for overrides (e.g., "text_film", "default").
+        
+        Returns:
+            dict: EMA settings with keys: beta, mult, warmup_steps, warmup_max_norm, min, max.
+        """
+        # Step 1: load default EMA settings from model config.
+        defaults = {
+            "beta": float(getattr(self.args.model_config, 'grad_clip_ema_beta', 0.95)),
+            "mult": float(getattr(self.args.model_config, 'grad_clip_ema_mult', 2.0)),
+            "warmup_steps": int(getattr(self.args.model_config, 'grad_clip_ema_warmup_steps', 0)),
+            "warmup_max_norm": getattr(self.args.model_config, 'grad_clip_ema_warmup_max_norm', None),
+            "min": getattr(self.args.model_config, 'grad_clip_ema_min', None),
+            "max": getattr(self.args.model_config, 'grad_clip_ema_max', None),
+        }
+        # Step 2: apply group overrides when provided.
+        overrides = getattr(self.args.model_config, 'grad_clip_ema_group_overrides', None)
+        if isinstance(overrides, dict) and group_name in overrides:
+            defaults.update(overrides[group_name] or {})
+        return defaults
+
+    def _compute_ema_clip_max_norm(self, raw_total_norm, group_name, ema_settings):
+        """
+        Compute EMA-based gradient clip threshold and update internal state.
+        
+        Args:
+            raw_total_norm: Current raw total gradient norm (float).
+            group_name: Identifier for EMA state tracking.
+            ema_settings: Dict of EMA hyperparameters.
+        
+        Returns:
+            float: EMA-scaled max norm for clipping (<=0 disables).
+        """
+        # Step 1: read EMA hyperparameters from resolved settings.
+        beta = float(ema_settings.get("beta", 0.95))
+        mult = float(ema_settings.get("mult", 2.0))
+        warmup_steps = int(ema_settings.get("warmup_steps", 0))
+        warmup_max_norm = ema_settings.get("warmup_max_norm", None)
+        min_norm = ema_settings.get("min", None)
+        max_norm = ema_settings.get("max", None)
+        # Step 2: ensure EMA state is initialized.
+        if not hasattr(self, '_grad_clip_ema_state'):
+            self._grad_clip_ema_state = {}
+        # Step 3: update step counter and EMA value.
+        state = self._grad_clip_ema_state.setdefault(group_name, {"value": None, "step": 0})
+        state["step"] += 1
+        raw_value = float(raw_total_norm)
+        if state["value"] is None:
+            state["value"] = raw_value
+        else:
+            state["value"] = beta * state["value"] + (1.0 - beta) * raw_value
+        # Step 4: compute EMA-based threshold.
+        clip_max_norm = state["value"] * mult
+        # Step 5: optionally override during warmup.
+        if warmup_steps > 0 and state["step"] <= warmup_steps:
+            if warmup_max_norm is None:
+                warmup_max_norm = getattr(self.args.model_config, 'grad_clip_max_norm', None)
+            if warmup_max_norm is not None:
+                clip_max_norm = float(warmup_max_norm)
+        # Step 6: apply optional floor and ceiling.
+        if min_norm is not None:
+            clip_max_norm = max(float(min_norm), clip_max_norm)
+        if max_norm is not None:
+            clip_max_norm = min(float(max_norm), clip_max_norm)
+        return float(clip_max_norm)
+
+    def _apply_grad_clipping(self, grad_clip_mode, grad_clip_max_norm,
+                             text_film_grad_clip_max_norm, group_params,
+                             raw_norms):
         """
         Apply gradient clipping based on configured thresholds.
         
         Args:
+            grad_clip_mode: Clipping mode ("fixed", "ema", or "none").
             grad_clip_max_norm: Global clipping threshold (None/<=0 disables).
             text_film_grad_clip_max_norm: Text-FiLM threshold (None/<=0 disables).
             group_params: Mapping of group name -> parameters.
+            raw_norms: Raw gradient norms by group.
         
         Returns:
-            str: Clip mode used ("global", "text_film", or "none").
+            str: Clip mode used ("global", "ema", "ema_by_group", "text_film", or "none").
         """
-        # Step 1: apply global clipping when configured.
+        # Step 1: apply EMA-based clipping when configured.
+        if grad_clip_mode == "ema":
+            ema_by_group = bool(getattr(self.args.model_config, 'grad_clip_ema_by_group', False))
+            if ema_by_group:
+                # Step 1a: get list of groups to clip with per-group EMA settings.
+                group_overrides = getattr(self.args.model_config, 'grad_clip_ema_group_overrides', {}) or {}
+                groups_to_clip = set(group_overrides.keys())
+                # Step 1b: track which groups were actually clipped.
+                any_clipped = False
+                # Step 1c: clip each group with its own EMA settings.
+                for group_name in groups_to_clip:
+                    group_params_list = group_params.get(group_name, [])
+                    if not group_params_list:
+                        continue
+                    # Compute norm for this group.
+                    group_norm = raw_norms.get(group_name, 0.0)
+                    # Get EMA settings for this group (with overrides).
+                    group_settings = self._get_grad_clip_ema_settings(group_name)
+                    # Compute EMA-based clip threshold.
+                    group_max = self._compute_ema_clip_max_norm(
+                        group_norm,
+                        group_name,
+                        group_settings
+                    )
+                    # Apply clipping if threshold is valid.
+                    if group_max > 0:
+                        torch.nn.utils.clip_grad_norm_(
+                            self._filter_params_with_grad(group_params_list),
+                            max_norm=float(group_max)
+                        )
+                        any_clipped = True
+                # Step 1d: clip remaining groups (not in overrides) with default EMA.
+                # Collect all parameter IDs that were already clipped.
+                clipped_param_ids = set()
+                for group_name in groups_to_clip:
+                    for param in group_params.get(group_name, []):
+                        clipped_param_ids.add(id(param))
+                # Find remaining parameters (excluding 'total' which is all params).
+                remaining_groups = {
+                    name: params for name, params in group_params.items()
+                    if name != 'total' and name not in groups_to_clip
+                }
+                # Group remaining params by whether they've been clipped.
+                unclipped_params = []
+                for params_list in remaining_groups.values():
+                    for param in params_list:
+                        if id(param) not in clipped_param_ids:
+                            unclipped_params.append(param)
+                # Clip remaining params with default EMA settings.
+                if unclipped_params:
+                    remaining_norm = self._compute_params_norm(unclipped_params)
+                    default_settings = self._get_grad_clip_ema_settings('default')
+                    default_max = self._compute_ema_clip_max_norm(
+                        remaining_norm,
+                        'default',
+                        default_settings
+                    )
+                    if default_max > 0:
+                        torch.nn.utils.clip_grad_norm_(
+                            self._filter_params_with_grad(unclipped_params),
+                            max_norm=float(default_max)
+                        )
+                        any_clipped = True
+                # Return status based on whether any clipping occurred.
+                if any_clipped:
+                    return "ema_by_group"
+                return "none"
+            # Step 1c: apply global EMA clipping when not grouping.
+            raw_total_norm = raw_norms.get("total", None)
+            if raw_total_norm is None:
+                return "none"
+            default_settings = self._get_grad_clip_ema_settings('default')
+            clip_max_norm = self._compute_ema_clip_max_norm(
+                raw_total_norm,
+                'total',
+                default_settings
+            )
+            if clip_max_norm > 0:
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(),
+                    max_norm=float(clip_max_norm)
+                )
+                return "ema"
+            return "none"
+        # Step 2: apply fixed global clipping when configured.
         if grad_clip_max_norm is not None and float(grad_clip_max_norm) > 0:
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(),
                 max_norm=float(grad_clip_max_norm)
             )
             return "global"
-        # Step 2: apply text-FiLM-only clipping when configured and present.
+        # Step 3: apply text-FiLM-only clipping when configured and present.
         text_film_params = group_params.get('text_film', [])
         if text_film_params and text_film_grad_clip_max_norm is not None and float(text_film_grad_clip_max_norm) > 0:
             torch.nn.utils.clip_grad_norm_(
@@ -501,7 +711,7 @@ class Experiment(Exp_Basic):
                 max_norm=float(text_film_grad_clip_max_norm)
             )
             return "text_film"
-        # Step 3: no clipping applied.
+        # Step 4: no clipping applied.
         return "none"
 
     def _merge_raw_clipped_norms(self, raw_norms, clipped_norms):
@@ -542,6 +752,7 @@ class Experiment(Exp_Basic):
             tuple: (legacy_total_norm, group_norms) where group_norms includes raw/clipped.
         """
         # Step 1: read clipping thresholds from model config.
+        grad_clip_mode = self._get_grad_clip_mode()
         grad_clip_max_norm = getattr(self.args.model_config, 'grad_clip_max_norm', None)
         text_film_grad_clip_max_norm = getattr(
             self.args.model_config,
@@ -554,16 +765,18 @@ class Experiment(Exp_Basic):
         raw_norms = self._compute_group_norms(group_params)
         # Step 4: apply configured clipping and track the mode used.
         clip_mode = self._apply_grad_clipping(
+            grad_clip_mode,
             grad_clip_max_norm,
             text_film_grad_clip_max_norm,
-            group_params
+            group_params,
+            raw_norms
         )
         # Step 5: compute clipped (post-clip) norms.
         clipped_norms = self._compute_group_norms(group_params)
         # Step 6: merge raw and clipped norms per group.
         group_norms = self._merge_raw_clipped_norms(raw_norms, clipped_norms)
         # Step 7: preserve legacy total norm behavior for existing logging.
-        if clip_mode == "global":
+        if clip_mode in {"global", "ema"}:
             legacy_total_norm = float(raw_norms.get("total", 0.0))
         else:
             legacy_total_norm = float(clipped_norms.get("total", raw_norms.get("total", 0.0)))

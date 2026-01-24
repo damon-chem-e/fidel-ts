@@ -47,3 +47,14 @@ task: TGTSF
 # Training stability
 # Gradient clipping max norm (null disables clipping)
 grad_clip_max_norm: null
+
+# Enable per-group EMA clipping and override settings per group
+grad_clip_ema_by_group: false
+grad_clip_ema_group_overrides:
+  text_film:
+    beta: 0.95
+    mult: 1.0
+    warmup_steps: 0
+    warmup_max_norm: null
+    min: null
+    max: null
