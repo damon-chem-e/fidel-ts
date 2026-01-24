@@ -624,10 +624,22 @@ class Experiment(Exp_Basic):
                 # Step 1c: clip each group with its own EMA settings.
                 for group_name in groups_to_clip:
                     group_params_list = group_params.get(group_name, [])
+                    # Step 1c.1: if group doesn't exist, try to identify params by name pattern.
+                    if not group_params_list and group_name == 'text_film':
+                        # Fallback: identify text_film params by module name patterns.
+                        text_film_markers = ("text_encoder", "text_projection", "film_generators")
+                        group_params_list = []
+                        for name, param in self.model.named_parameters():
+                            if param.requires_grad and any(marker in name for marker in text_film_markers):
+                                group_params_list.append(param)
                     if not group_params_list:
+                        # Group not found - skip (will be handled by default clipping later).
                         continue
-                    # Compute norm for this group.
-                    group_norm = raw_norms.get(group_name, 0.0)
+                    # Compute norm for this group (recompute if we built it from patterns).
+                    if group_name not in raw_norms:
+                        group_norm = self._compute_params_norm(group_params_list)
+                    else:
+                        group_norm = raw_norms.get(group_name, 0.0)
                     # Get EMA settings for this group (with overrides).
                     group_settings = self._get_grad_clip_ema_settings(group_name)
                     # Compute EMA-based clip threshold.
@@ -647,8 +659,17 @@ class Experiment(Exp_Basic):
                 # Collect all parameter IDs that were already clipped.
                 clipped_param_ids = set()
                 for group_name in groups_to_clip:
-                    for param in group_params.get(group_name, []):
-                        clipped_param_ids.add(id(param))
+                    # Check both named groups and pattern-matched groups.
+                    group_params_list = group_params.get(group_name, [])
+                    if not group_params_list and group_name == 'text_film':
+                        # Re-identify text_film params to exclude from remaining.
+                        text_film_markers = ("text_encoder", "text_projection", "film_generators")
+                        for name, param in self.model.named_parameters():
+                            if param.requires_grad and any(marker in name for marker in text_film_markers):
+                                clipped_param_ids.add(id(param))
+                    else:
+                        for param in group_params_list:
+                            clipped_param_ids.add(id(param))
                 # Find remaining parameters (excluding 'total' which is all params).
                 remaining_groups = {
                     name: params for name, params in group_params.items()
@@ -661,8 +682,10 @@ class Experiment(Exp_Basic):
                         if id(param) not in clipped_param_ids:
                             unclipped_params.append(param)
                 # Clip remaining params with default EMA settings.
+                # Check if 'default' has special overrides, otherwise use base defaults.
                 if unclipped_params:
                     remaining_norm = self._compute_params_norm(unclipped_params)
+                    # Use 'default' key if present in overrides, otherwise use base config defaults.
                     default_settings = self._get_grad_clip_ema_settings('default')
                     default_max = self._compute_ema_clip_max_norm(
                         remaining_norm,

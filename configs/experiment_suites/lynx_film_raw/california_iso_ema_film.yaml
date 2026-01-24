@@ -42,6 +42,9 @@ suite:
           grad_clip_ema_min: null
           grad_clip_ema_max: null
           # Per-group EMA clipping overrides
+          # Note: If text_film_lr is not set, the text_film group won't exist in the optimizer.
+          # The code will automatically identify text_film parameters by name pattern (text_encoder, 
+          # text_projection, film_generators) and apply clipping to them.
           grad_clip_ema_group_overrides:
             # Aggressive clipping for film parameters (lower mult = more aggressive)
             text_film:
@@ -52,6 +55,7 @@ suite:
               min: null
               max: null
             # More forgiving clipping for other parameters (higher mult = more forgiving)
+            # The 'default' key applies to all remaining parameters not in other override groups.
             default:
               beta: 0.95
               mult: 4.0  # More forgiving clipping (higher than default 2.0)
@@ -68,6 +72,7 @@ suite:
           output_len: 168     # 1 week at hourly intervals (second smallest: {24, 168, 336, 720})
           batch_size: 128     # Reasonable batch size for large d_model
           learning_rate: 3e-4  # Learning rate appropriate for large model
+          text_film_learning_rate: 3e-4  # Learning rate for text/FiLM parameters (creates text_film group for EMA clipping)
           patience: 7         # Patience for early stopping
           epochs: 30          # Training epochs
           track_per_sample: false
