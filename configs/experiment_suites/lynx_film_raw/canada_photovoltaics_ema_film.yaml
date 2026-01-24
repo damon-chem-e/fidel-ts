@@ -49,7 +49,7 @@ suite:
             # Aggressive clipping for film parameters (lower mult = more aggressive)
             text_film:
               beta: 0.95
-              mult: 0.5  # Aggressive clipping (lower than default 2.0)
+              mult: 0.8  # Aggressive clipping (lower than default 2.0)
               warmup_steps: 0
               warmup_max_norm: null
               min: null
@@ -76,7 +76,7 @@ suite:
           patience: 5         # Patience from base config
           epochs: 50          # Training epochs from base config
           track_per_sample: false
-          evaluate_test_during_training: false  # Same as base config
+          evaluate_test_during_training: true  # Same as base config
           truncate_train_for_purge: true        # Remove lookahead bias, making val_loss reliable
           torch_compile: true  # Enable torch.compile for faster training
           compile_mode: "reduce-overhead"  # Recommended mode
