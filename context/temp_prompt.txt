@@ -509,6 +509,17 @@ timeline:
 
 01/21 afternoon dump:
 
+right now (old):
+- finish and test the fix to the tgtsf for multichannel broadcasting -> resubmit jobs on preemptable -> possibly move the origres tgtsf jobs from mit sloan to preemptable
+- fix leret resumption problem then submit resumption jobs (submit nyc with fewer epochs: 5 pretrain, 5 fine tune, but ensure it picks up from where it left off)
+- test zhanghanbest with split lr on cluster -> get zhanghanbest running (pending) on cluster
+- test tensor_cache_llm on cluster -> get the tensor cache jobs going on cluster (cpu ideally)
+- test and submit mmtsflib jobs with tensor cache, then timecma (mmtsflib higher priority)
+- analyze results so far and work on getting high performance on my own models everywhere -- iterate fast and ensure we beat benchmarks
+- submit re-runs of lynx film raw on pods for caiso, jena, and bear_room (and make a clear note in experiment tracking that the previous ones had channel descriptions all concatenated and broadcast across channels, so it wasn't clear which channel was which, but this one is clear which channel is which -- a measure of channel importance is the difference between the runs)
+- submit and run lynx film raw original resolution on pods if full resolution beats tgtsf full res
+- mmvision 
+
 Tuesday night / Wednesday:
 then submit zhanghanbest jobs (using the new commit with double lr -- tested and it works)
 then resubmit / restart lynx_* jobs with static embeddings fix
@@ -541,21 +552,112 @@ path:
 
 note on hparam tuning for zhanghanbest: I can hparam tune later after other things are done -- it's not the priority right now (tuning the hparam that determines the mixing rate)
 
-right now (old):
-- finish and test the fix to the tgtsf for multichannel broadcasting -> resubmit jobs on preemptable -> possibly move the origres tgtsf jobs from mit sloan to preemptable
-- fix leret resumption problem then submit resumption jobs (submit nyc with fewer epochs: 5 pretrain, 5 fine tune, but ensure it picks up from where it left off)
-- test zhanghanbest with split lr on cluster -> get zhanghanbest running (pending) on cluster
-- test tensor_cache_llm on cluster -> get the tensor cache jobs going on cluster (cpu ideally)
-- test and submit mmtsflib jobs with tensor cache, then timecma (mmtsflib higher priority)
-- analyze results so far and work on getting high performance on my own models everywhere -- iterate fast and ensure we beat benchmarks
-- submit re-runs of lynx film raw on pods for caiso, jena, and bear_room (and make a clear note in experiment tracking that the previous ones had channel descriptions all concatenated and broadcast across channels, so it wasn't clear which channel was which, but this one is clear which channel is which -- a measure of channel importance is the difference between the runs)
-- submit and run lynx film raw original resolution on pods if full resolution beats tgtsf full res
-- mmvision 
-
 
 get the agent monitor working is a side quest (currently uv run stuff)
 
 ---
+
+1/22
+
+we have benchmarks. timecma and mmtsflib (and leret) are going to wait until the final submission probably. today is getting something solid for abstract tomorrow. hparam tuning the zhanghanbest-* and tgtsf-fullres also come after getting mine really strong.  
+
+goals:
+- beat unimodal everywhere 
+- beat benchmarks everywhere
+- train faster than benchmarks everywhere
+
+investigations:
+- why is ttc medical way worse now than in the 01/12 run? what is different? 
+- why is nyc traffic way worse now than in sweeps? what is different? 
+
+possibilities (investigation):
+- full resolution -> more overfitting. looks like overfitting (high data -> too many batches)
+- the elementwise_affine is only in lynx film enhanced, so that didn't change.
+- looks very much like it is *not* full resolution because there are recent entries in the sweeps on nyc traffic that have decent val loss (like before) with full text resolution. looks like batch size, model dimension, learning rate. 
+- it could be tensor cache. will find out from the run on nyc pod that will use tensor cache and the neat sweep configs
+
+experiments [paradigm: first fix lynx film raw and lynx film before moving to lynx film enhanced]
+- allow different learning rate for the film encoder, sweep over timemmd ttc, see how well we can do. log batches, and evaluate on val every few batches so we can see it (but keep early stopping at epochs for now). We can look after at whether we would have wanted to stop before end of epoch.
+- run on nyc traffic the same configs as the sweep with (every n) batch level logging (of val and train loss) and tensor cache, see how it does. 
+...
+- test swapping out the text encoder to ignore channel descriptions and just self-attend, or try a couple other encoder types (MLP, no attention) on time mmd and ttc and a short fidel-ts (canada)
+- test and run lynx_film_enhanced on time mmd and ttc and a short fidel-ts (canada)
+- keeping the same film architectures in lynx film raw, lynx film, and lynx film enhanced, try applying film to patchtst
+
+
+enhancements:
+- gating
+- stricter early stopping by step (batch) rather than epoch (requires checkpointing and validation by batch or every n batches rather than epoch)
+- lower learning rate on the film modules (to reduce overfitting)
+
+gpus:
+- one for evals and timemmd ttc interactive-gpu-a (mit_normal_gpu)
+- one for testing lynx_film_enhanced (mit_normal_gpu)
+
+
+1/23 1 am
+
+spinning up sweeps of lynx film enhanced (interpolative, shared). parallel doesn't work yet (just need right itransformer baseline) but shared works like a charm.
+spinning up sweeps of the lynx film raw with regularization stuff as well. 
+
+sweeps work great on time mmd ttc but don't really want to run on fidel-ts (jena)
+
+
+looks like enhanced doesn't help much on small data (naturally). lynx film (non-raw) probably better on small datasets, but tuned well. 
+try the hetero stride -- get back to the runs that did better.
+aggressive grad clipping (grad norm spikes -> bad val loss]
+less expressivity in the film, try mlp. enhanced is far too expressive -- well overfits.
+looks like the seasonality is from a gradient that moved too much overfitting at a particular step. aggressive grad clipping. I think if we fix those spikes, our val loss and test loss will go waaayyy down. They become massive outliers.
+i think caiso and ttc medical are drastic overfitters because it's learning per channel (per entity -- lots of entities). limiting film to apply constant across entities.
+
+I think the things I've been thinking about will be much more important on less clean, more noisy, larger datasets with more complex longer passages of text.
+
+not getting the exact results desired. might revert to the jan12 area and see. submit an abstract, and keep tinkering away til I get some things that are decent. need to sleep. look again after sleep at the various results. keep submitting runs. fix the entities thing and also revert back in a branch and try running things. just sleep, keep pods open and jobs open and keep running stuff. I think tensor cache fix ideally + regularization -> results. fiats honestly is pretty good. run it on time mmd ttc. my main contribution if this flops is the panel stuff which I think is really important. my own datasets and full control over standardization will also be incredibly useful. 
+
+
+1/24 2 am:
+- carve back to the reasoning_baselines branch -- bare bones but where I got the venv working and tgtsf running. then add lynx film raw and sweep.
+- also try the grad clipping, hadn't been working. probably pretty impactful. looks like canada is going pretty decently.
+
+lynx_film_raw_canada_photovoltaics_ema_film_20260124_022654/20260124-022654_d10b78e3e4f2 -- got canada down from .29 on test to .19 on test (basically unimodal, but still have to get to .16). might be able to increase the dimension (from 32) of the mlp hidden state for the text encoder, and/or use self attention encoder. no channel specificity on film.
+
+maybe separate normalization per entity, particularly on canada, would be useful.
+
+I think cls embeddings aren't great. Ideally I take entire sequence length and self attend and project as part of learning rather than cls embeddings which have little left. But, memory bottleneck.
+
+I think weekend is carve back, replicate tgtsf, see how film fares in that environment. I have the commit hash in metadata.json for that good first run on nyc traffic (output/lynx_film_raw_test_20251209_174125/20251209-174125_829687193058/metadata.json). would take a long time to run without tensor cache, but can go back and look at it in cursor and see what we can bring back from it (possibly using old embeddings, and the old lynx film raw implementation and dataloaders that were able to use them). 0.5 val loss on nyc traffic! -> try to recreate, then sweep w/1 epoch only (for all the fidel-ts datasets)
+- could be the old (smaller) embeddings with large (768) batch size and higher (0.0008) learning rate that did the trick. carefully work into a tensor cache verifying with a test that it comes out exactly the same from the dataloader for a sample (not the entire thing -- the data loader is the bottleneck). a new tensor cache with new tests.
+- bring back the model, but keep my experiment management and test during train etc (if possible -- run in both an old branch and a new branch). first priority is to branch off old, keep everything same, make sure it's tracking metrics (including test every epoch), then apply a robust tensor cache, then train everything and sweep everything.
+
+We also have lynx_film_raw_time_mmd_ttc_20260112_165034 where ttc medical was sota (output/lynx_film_raw_time_mmd_ttc_20260112_165034/20260112-180721_b6904e01040e/metadata.json contains git hash) once again, dig back and identify and bring back what worked. actually it looks like this was incorrect data aggregation. it was just as bad then as it is now. good to know. try to remove entity specificity for medical and any others that seem to overfit with many entities.
+
+for caiso, predict only currend demand, wind, and solar. see how tgtsf and my stuff fares doing just those three.
+
+We also have the bear room runs in experiment tracker that are sota, but that might be using non-weather info (check).
+
+plan going forward:
+- continue to keep gpus spinning and analyzing the results while I work on other things during the coming months. keep tweaking and hyperparameter tuning
+- I will re-build from the ground up for my own work -- fresh repository, no heritage stuff, strict design specifications and standardization.
+--- before data comes into the new repository, it will strictly adhere to the standards. there will be checks to ensure everything is in place before a dataset is allowed through. 
+--- very careful and clear separation of target prediction variables and input variables not being predicted; of entity vs variables, and entity types (with variables attached)
+--- very clear and careful treatment of time data available, time of event (if data is an event), time data is about (if data is something known in advance about a future time)
+--- duplicate the codebase in written traces of functionality and in actual code. an src and a written (intended functionality) and tests (that check the intended functionality). specific functionalities or specific delineated entities (like an entity, or a piece of data) have their own doc page that defines them as if they were a class, then traces their (more efficient) representations all through the codebase through transformations.
+--- carefully look at and understand the data. the data is the core of everything. understand the structure of the data. 
+--- do good careful work first, then think about publication after. publication is a side effect of good work, not the other way around. this also lends to life.
+--- very careful experiment tracking will be maintained, including mandatory git hash in output.
+--- keep the tensor cache -- very quick. make it fully comprehensible, fast, and memory and disk efficient.
+--- much more careful project state tracking. every commit comes with a thorough markdown documentation of what was changed, and everything run is tagged with the git hash
+--- wandb tracking much more carefully. kill old runs.
+- use learned down-projections from the text embedding side (self-attention, allowing gradient through from passing entire text sequence), and probably put that on a separate GPU (learn to manage multi-device on engaging and on runpod) for VRAM considerations (only goes to the other device for cross-attention or fusion when compressed in low rank after text self-attention)
+- for this paper going forward, I think looking at what I think is actually impactful is a good idea (the embeddings type, shying away from cls or naive pooling), then showing impact across benchmarks and models. dimension of text low rank space is another that I think is interesting for a paper. conditional gating and unconditional regularization (noise) is another. unimodal integration types and how to stay parity and better is another. 
+- neurips 2026 might be a stretch. first focus is passing courses and quals and making money. have summer for third year paper and good careful work, and developing a pipeline for trading simultaneously.
+- when making money, adhere to the same design strictness and standards, and clear understanding of how everything works. 
+- data focus in summer and pre-summer. panel work comes naturally after data. interpretability comes naturally after panel work. 3rd year paper just presentation of where I'm at (chat with David)
+- noise injection and ensuring outperformance of unimodal despite noise by end of summer I also think is sensible (possibly neurips, but only if it's quality naturally by then) -- conditional gating with low capacity when it's identifiable, strong regularization, unconditional (or weakly conditional) unimodal prediction level ensemble -- once again tweak, try, and keep gpus going. maybe give myself one day a week while working on other things to debug, analyze, iterate, and carefully get more jobs going on the gpus for the coming week.
+- fashion actual experiments to run, varying things in a controlled and careful way, then look at the results.
+- bring the fidel-ts and timemmd datasets into a very carefully designed new repo, they must fit the structure impeccably (later, only after it makes sense to build the new repo)
+- really, focus on making money and what I really care about, and publication and academia etc falls completely secondary. publication in CS has similar issues to pub in finance. favorite method: pub when there's something genuinely interesting and useful to share, not just for the sake of publishing.
+
 
 [damonp@eosloan chimera_proj]$ du -h --max-depth=2 . | sort -h
 du: cannot read directory ‘./mts/data/TTC/Medical’: Permission denied
