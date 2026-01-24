@@ -229,6 +229,22 @@ class TimeMMD_HeteroGetter:
             return f"{self.entity_id}|{timestamp_str}"
         return timestamp_str
     
+    def _validate_cached_embedding_keys(self, embeddings: dict) -> bool:
+        """
+        Validate that cached embedding keys match the expected entity-aware format.
+        
+        Args:
+            embeddings: Embedding dict loaded from cache
+        
+        Returns:
+            True if keys match expected format, False otherwise
+        """
+        if not self._should_use_entity_cache_key():
+            return True
+        
+        expected_prefix = f"{self.entity_id}|"
+        return all(str(key).startswith(expected_prefix) for key in embeddings.keys())
+    
     
     def _load_or_create_embeddings(self):
         """
@@ -313,6 +329,14 @@ class TimeMMD_HeteroGetter:
         # format_for_time_mmd=True ensures shape (1, bert_dim) for CLS/average
         try:
             embeddings_dict = self.embedder.embed_text_dict(text_dict, format_for_time_mmd=True)
+            
+            # If cache keys don't match entity-aware format, force re-embedding
+            if not self._validate_cached_embedding_keys(embeddings_dict):
+                original_force = self.embedder.force_reembed
+                self.embedder.force_reembed = True
+                embeddings_dict = self.embedder.embed_text_dict(text_dict, format_for_time_mmd=True)
+                self.embedder.force_reembed = original_force
+            
             self.embeddings = embeddings_dict
             
             # Count missing embeddings (shouldn't happen if embedder handles empty strings)
